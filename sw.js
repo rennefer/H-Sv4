@@ -1,4 +1,4 @@
-const CACHE_NAME = 'horus-and-seth-v1';
+const CACHE_NAME = 'horus-and-seth-v10';
 const APP_SHELL = [
   './',
   './index.html',
@@ -7,6 +7,11 @@ const APP_SHELL = [
   './wenamun.html',
   './horus-and-seth.html',
   './manifest.webmanifest',
+  './site-update-check.js',
+  './ship-creak.js',
+  './divine-chime.js',
+  './book-open.js',
+  './sign-list-pling.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-192.png',
@@ -35,6 +40,41 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+
+  // version.json is the update-check heartbeat -- it must always come from
+  // the network, never from this cache, or the on-page update checker would
+  // just be comparing a stale cached copy against itself.
+  if (url.pathname.endsWith('/version.json')) {
+    event.respondWith(
+      fetch(event.request).catch(
+        () => new Response('{}', { headers: { 'Content-Type': 'application/json' } })
+      )
+    );
+    return;
+  }
+
+  const isNavigation = event.request.mode === 'navigate' || event.request.destination === 'document';
+
+  if (isNavigation) {
+    // network-first for page loads: opening (or reopening) any page always
+    // tries to fetch the latest deployed HTML first, and only falls back to
+    // the cached copy when offline.
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // cache-first for static assets (icons, manifest, the checker script itself)
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

@@ -999,13 +999,29 @@ async function ghCommitWenamun(cfg, htmlString, message){
   const parentSha = refData.object.sha;
   const parentCommit = await ghApi(cfg, `/repos/${owner}/${repo}/git/commits/${parentSha}`);
   const baseTreeSha = parentCommit.tree.sha;
+  // Bump the shared build stamp, both in version.json and baked into the
+  // page being committed, so this file lines up with the freshness marker
+  // it's about to publish (see site-update-check.js).
+  const newBuild = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const stampedHtml = htmlString.replace(
+    /window\.__BUILD__\s*=\s*"[^"]*"/,
+    `window.__BUILD__ = "2026-08-23T14:11:53Z"`
+  );
   const blob = await ghApi(cfg, `/repos/${owner}/${repo}/git/blobs`, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({content: htmlString, encoding:'utf-8'})
+    body: JSON.stringify({content: stampedHtml, encoding:'utf-8'})
+  });
+  const versionJson = JSON.stringify({build: newBuild});
+  const versionBlob = await ghApi(cfg, `/repos/${owner}/${repo}/git/blobs`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({content: versionJson, encoding:'utf-8'})
   });
   const tree = await ghApi(cfg, `/repos/${owner}/${repo}/git/trees`, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({base_tree: baseTreeSha, tree:[{path:'wenamun.html', mode:'100644', type:'blob', sha:blob.sha}]})
+    body: JSON.stringify({base_tree: baseTreeSha, tree:[
+      {path:'wenamun.html', mode:'100644', type:'blob', sha:blob.sha},
+      {path:'version.json', mode:'100644', type:'blob', sha:versionBlob.sha}
+    ]})
   });
   const commit = await ghApi(cfg, `/repos/${owner}/${repo}/git/commits`, {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -1266,5 +1282,9 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+<script>window.__BUILD__ = "2026-08-23T15:00:00Z";</script>
+<script src="site-update-check.js" defer></script>
+<script src="ship-creak.js" defer></script>
+<script src="sign-list-pling.js" defer></script>
 </body>
 </html>
