@@ -722,7 +722,7 @@ nav.tabs a::before{
       <p class="al-sub">Paste a GitHub personal access token with write access to this repo, and new lines you load into the page will be committed straight to GitHub automatically — no more manual download-and-upload. The token is kept only in this browser (in localStorage); it is never written into the page itself or into what gets committed.</p>
       <div class="al-grid" style="grid-template-columns:1fr 1fr 90px;">
         <div class="al-field"><label>Repo owner</label><input type="text" id="ghOwner" placeholder="rennefer"></div>
-        <div class="al-field"><label>Repo name</label><input type="text" id="ghRepo" placeholder="horus-and-seth-"></div>
+        <div class="al-field"><label>Repo name</label><input type="text" id="ghRepo" placeholder="H-Sv4"></div>
         <div class="al-field"><label>Branch</label><input type="text" id="ghBranch" placeholder="main"></div>
       </div>
       <div class="al-field" style="margin-bottom:16px; max-width:420px;">
@@ -986,7 +986,11 @@ async function ghApi(cfg, path, options){
   if(!res.ok){
     let detail = '';
     try{ const j = await res.json(); detail = j.message || ''; }catch(e){}
-    throw new Error(`GitHub API ${res.status}${detail ? ' — ' + detail : ''}`);
+    let hint = '';
+    if(res.status === 404){
+      hint = ' — check the repo owner/name/branch are exactly right and the token has access to this repo (classic token: "repo" scope; fine-grained token: this repo’s Contents set to Read and write). GitHub returns 404 (not 403) for a repo your token can’t see, same as a truly missing repo.';
+    }
+    throw new Error(`GitHub API ${res.status}${detail ? ' — ' + detail : ''}${hint}`);
   }
   return res.json();
 }
@@ -1068,9 +1072,9 @@ const wenamunGithub = (function(){
     panel.classList.toggle('open');
   });
 
-  saveBtn.addEventListener('click', ()=>{
+  saveBtn.addEventListener('click', async ()=>{
     const owner = ownerInput.value.trim() || 'rennefer';
-    const repo = repoInput.value.trim() || 'horus-and-seth-';
+    const repo = repoInput.value.trim() || 'H-Sv4';
     const branch = branchInput.value.trim() || 'main';
     const token = tokenInput.value.trim();
     if(!token){
@@ -1078,10 +1082,29 @@ const wenamunGithub = (function(){
       msg.textContent = 'Paste a personal access token first.';
       return;
     }
-    ghSaveConfig({owner, repo, branch, token});
-    refreshStatus();
-    msg.style.color = 'var(--malachite)';
-    msg.textContent = `Connected to ${owner}/${repo} (${branch}).`;
+    saveBtn.disabled = true;
+    msg.style.color = 'var(--ink-soft)';
+    msg.textContent = `Checking access to ${owner}/${repo}…`;
+    try{
+      // Verify the repo is reachable with this token *before* saving, and
+      // confirm the branch actually exists — this is the same check
+      // ghCommitWenamun relies on later, surfaced here where a wrong repo
+      // name, wrong branch, or bad/under-scoped token is easy to fix.
+      const repoData = await ghApi({token}, `/repos/${owner}/${repo}`);
+      await ghApi({token}, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`);
+      ghSaveConfig({owner, repo, branch, token});
+      refreshStatus();
+      msg.style.color = 'var(--malachite)';
+      msg.textContent = `Connected to ${owner}/${repo} (${branch}).`;
+    }catch(err){
+      msg.style.color = 'var(--rubric-deep)';
+      if(/404/.test(err.message)){
+        msg.textContent = `Could not find ${owner}/${repo} on branch "${branch}" with this token — check the repo name is exactly right (it's "H-Sv4", not "horus-and-seth-"), the branch exists, and the token has access to this repo (classic token: "repo" scope; fine-grained token: this repo's Contents set to Read and write).`;
+      } else {
+        msg.textContent = `Could not connect: ${err.message}`;
+      }
+    }
+    saveBtn.disabled = false;
   });
 
   forgetBtn.addEventListener('click', ()=>{
