@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Horus and Seth — Hieratic Word List Project</title>
+<title>Horus and Seth — Playbook</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=EB+Garamond:ital,wght@0,500;1,500;1,600&family=Inter:wght@400;500;600;700&family=Noto+Sans+Egyptian+Hieroglyphs&display=swap" rel="stylesheet">
@@ -24,16 +24,7 @@
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
-body{
-  background:
-    radial-gradient(ellipse at 20% -10%, #f3e8c9 0%, transparent 55%),
-    radial-gradient(ellipse at 90% 10%, #f0e2bd 0%, transparent 45%),
-    var(--papyrus);
-  color:var(--ink);
-  font-family:'Inter',sans-serif;
-  min-height:100vh;
-  position:relative;
-}
+body{margin:0;padding:0;}
 body::before{
   content:"";
   position:fixed; inset:0;
@@ -76,10 +67,6 @@ h1{
   margin:0 0 6px;
   letter-spacing:.5px;
 }
-h1 em{
-  font-style:normal;
-  color:var(--rubric);
-}
 .subtitle{
   font-family:'EB Garamond',serif;
   font-style:italic;
@@ -113,486 +100,6 @@ nav.tabs{
   gap:10px 6px;
   margin:26px 0 0;
 }
-nav.tabs button{
-  font-family:'Spectral',serif;
-  font-size:16px;
-  background:none; border:none; cursor:pointer;
-  color:var(--ink-soft);
-  padding:12px 22px 14px;
-  position:relative;
-  letter-spacing:.02em;
-}
-nav.tabs button.active{ color:var(--ink); }
-nav.tabs button.active::after{
-  content:"";
-  position:absolute; left:22px; right:22px; bottom:0; height:2px;
-  background:var(--rubric);
-}
-nav.tabs button::before{
-  content:attr(data-glyph);
-  font-family:'Noto Sans Egyptian Hieroglyphs';
-  margin-right:8px;
-  color:var(--rubric);
-  font-size:15px;
-}
-
-section.panel{ display:none; padding-top:30px; }
-section.panel.active{ display:block; animation:fade .35s ease; }
-@keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
-
-/* ---------- search ---------- */
-.search-row{
-  display:flex; gap:10px; margin-bottom:8px; flex-wrap:wrap;
-}
-.search-box{
-  flex:1; min-width:240px;
-  position:relative;
-}
-.search-box input{
-  width:100%;
-  font-family:'EB Garamond',serif;
-  font-size:19px;
-  padding:13px 16px 13px 42px;
-  border:1px solid var(--line);
-  border-radius:3px;
-  background:var(--card);
-  color:var(--ink);
-  outline:none;
-}
-.search-box input:focus{ border-color:var(--rubric); box-shadow:0 0 0 3px rgba(168,70,29,0.12); }
-.search-box::before{
-  content:"𓊃";
-  font-family:'Noto Sans Egyptian Hieroglyphs';
-  position:absolute; left:14px; top:50%; transform:translateY(-52%);
-  color:var(--ink-faint); font-size:18px;
-}
-select#fieldSelect{
-  font-family:'Inter',sans-serif;
-  font-size:13px;
-  padding:0 14px;
-  border:1px solid var(--line);
-  border-radius:3px;
-  background:var(--card);
-  color:var(--ink-soft);
-  cursor:pointer;
-}
-.result-count{
-  font-size:12.5px; color:var(--ink-soft); letter-spacing:.04em;
-  margin:10px 2px 18px;
-  text-transform:uppercase;
-}
-.col-toggle{
-  font-family:'Inter',sans-serif; font-size:12.5px;
-  background:var(--card); border:1px solid var(--line); border-radius:3px;
-  color:var(--ink-soft); padding:0 14px; cursor:pointer; white-space:nowrap;
-}
-.col-toggle:hover{ border-color:var(--rubric); color:var(--rubric-deep); }
-.col-search-row{
-  display:none;
-  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-  gap:10px;
-  background:var(--card);
-  border:1px solid var(--line);
-  border-radius:3px;
-  padding:14px 16px 16px;
-  margin-bottom:4px;
-}
-.col-search-row.open{ display:grid; }
-.col-field{ display:flex; flex-direction:column; gap:4px; }
-.col-field label{
-  font-family:'Inter',sans-serif; font-size:10.5px; letter-spacing:.05em;
-  text-transform:uppercase; color:var(--ink-faint);
-}
-.col-field input{
-  font-family:'EB Garamond',serif; font-size:15px;
-  padding:7px 9px; border:1px solid var(--line); border-radius:3px;
-  background:var(--papyrus); color:var(--ink); outline:none;
-}
-.col-field input:focus{ border-color:var(--rubric); box-shadow:0 0 0 2px rgba(168,70,29,0.12); }
-.clear-cols{
-  align-self:end;
-  font-family:'Inter',sans-serif; font-size:12px;
-  background:none; border:1px solid var(--line); border-radius:3px;
-  color:var(--ink-soft); padding:7px 12px; cursor:pointer; height:34px;
-}
-.clear-cols:hover{ border-color:var(--rubric); color:var(--rubric-deep); }
-.result-count b{ color:var(--rubric); font-style:normal; }
-
-/* ---------- dictionary layout: results + slider ---------- */
-.dict-layout{
-  display:grid;
-  grid-template-columns:1fr 280px;
-  gap:26px;
-  align-items:start;
-}
-@media (max-width:880px){
-  .dict-layout{ grid-template-columns:1fr; }
-}
-
-/* ---------- entry cards ---------- */
-#results{ display:flex; flex-direction:column; gap:10px; min-width:0; }
-.entry{
-  background:var(--card);
-  border:1px solid var(--line);
-  border-left:3px solid var(--rubric);
-  border-radius:2px;
-  padding:14px 18px;
-  display:grid;
-  grid-template-columns:auto auto 1fr auto;
-  gap:16px;
-  align-items:center;
-  box-shadow:0 1px 0 var(--shadow);
-  cursor:pointer;
-  transition:background .15s;
-}
-.entry:hover{ background:var(--papyrus-deep); }
-.entry.is-active{ border-left-color:var(--malachite); background:var(--papyrus-deep); }
-.entry .thumb{
-  width:52px; height:52px;
-  object-fit:contain;
-  border-radius:2px;
-  border:1px solid var(--line);
-  background:var(--papyrus);
-  flex-shrink:0;
-  padding:3px;
-}
-.entry .thumb.none{
-  display:flex; align-items:center; justify-content:center;
-  color:var(--ink-faint); font-size:10px; text-align:center;
-}
-.entry .glyphs{
-  font-family:'Noto Sans Egyptian Hieroglyphs';
-  font-size:34px;
-  color:var(--ink);
-  min-width:70px;
-  text-align:center;
-  line-height:1;
-}
-.entry .body{ min-width:0; }
-.entry .translit{
-  font-family:'EB Garamond',serif;
-  font-style:italic;
-  font-size:19px;
-  color:var(--rubric-deep);
-  margin-bottom:2px;
-}
-.entry .translit .alt{
-  color:var(--ink-faint);
-  font-size:15px;
-  margin-left:8px;
-}
-.entry .english{
-  font-size:16px;
-  color:var(--ink);
-  margin-bottom:6px;
-}
-.entry .line-trans{
-  font-family:'EB Garamond',serif;
-  font-size:14px;
-  color:var(--ink-soft);
-  border-left:2px solid var(--line);
-  padding-left:8px;
-  margin-top:4px;
-}
-.entry .meta{
-  display:flex; flex-direction:column; align-items:flex-end; gap:6px;
-  font-size:11.5px; color:var(--ink-soft);
-  min-width:110px;
-}
-.chip{
-  font-family:'Inter',sans-serif;
-  font-size:10.5px; letter-spacing:.04em;
-  background:var(--papyrus-deep);
-  border:1px solid var(--line);
-  border-radius:20px;
-  padding:2px 9px;
-  color:var(--ink-soft);
-  white-space:nowrap;
-}
-.chip.gender{ color:var(--malachite); border-color:var(--malachite); background:transparent; }
-.ref{ font-family:'Spectral',serif; font-style:italic; color:var(--ink-faint); text-align:right; }
-
-.load-more{
-  display:block; margin:22px auto 0;
-  font-family:'Spectral',serif; font-size:15px;
-  background:var(--rubric); color:#f4ecd6;
-  border:none; border-radius:3px;
-  padding:11px 28px; cursor:pointer;
-  letter-spacing:.03em;
-}
-.load-more:hover{ background:var(--rubric-deep); }
-.empty{
-  text-align:center; padding:60px 20px;
-  color:var(--ink-soft);
-  font-family:'EB Garamond',serif; font-style:italic; font-size:18px;
-}
-
-/* ---------- image slider ---------- */
-.slider-col{
-  position:sticky; top:22px;
-  background:var(--card);
-  border:1px solid var(--line);
-  border-radius:3px;
-  padding:16px 16px 18px;
-}
-.slider-col h3{
-  font-family:'Spectral',serif; font-weight:600; font-size:14px;
-  margin:0 0 3px; color:var(--ink);
-  display:flex; align-items:center; gap:7px;
-}
-.slider-col h3::before{
-  content:"𓊮"; font-family:'Noto Sans Egyptian Hieroglyphs'; color:var(--rubric); font-size:16px;
-}
-.slider-sub{
-  font-size:11px; color:var(--ink-soft); margin-bottom:12px; letter-spacing:.03em;
-}
-.slider-stage{
-  background:var(--papyrus);
-  border:1px solid var(--line);
-  border-radius:3px;
-  height:190px;
-  display:flex; align-items:center; justify-content:center;
-  overflow:hidden;
-  position:relative;
-}
-.slider-stage img{
-  max-width:100%; max-height:100%; object-fit:contain;
-}
-.slider-stage .no-img{
-  font-family:'EB Garamond',serif; font-style:italic; color:var(--ink-faint); font-size:13px; padding:0 14px; text-align:center;
-}
-.slider-nav{
-  display:flex; align-items:center; justify-content:space-between;
-  margin-top:10px;
-}
-.slider-nav button{
-  width:30px; height:30px;
-  border:1px solid var(--line); background:var(--papyrus);
-  border-radius:50%; cursor:pointer;
-  font-family:'Spectral',serif; font-size:15px; color:var(--ink-soft);
-  display:flex; align-items:center; justify-content:center;
-}
-.slider-nav button:hover{ border-color:var(--rubric); color:var(--rubric-deep); }
-.slider-nav button:disabled{ opacity:.3; cursor:default; }
-.slider-count{
-  font-size:11.5px; color:var(--ink-soft); letter-spacing:.03em;
-}
-.slider-caption{
-  margin-top:12px; padding-top:12px; border-top:1px solid var(--line);
-}
-.slider-caption .translit{
-  font-family:'EB Garamond',serif; font-style:italic; color:var(--rubric-deep); font-size:16px; margin-bottom:2px;
-}
-.slider-caption .english{ font-size:13.5px; color:var(--ink); margin-bottom:4px; }
-.slider-caption .ref{ font-family:'Spectral',serif; font-style:italic; font-size:11.5px; color:var(--ink-faint); }
-.slider-dots{
-  display:flex; flex-wrap:wrap; gap:4px; margin-top:12px; max-height:64px; overflow-y:auto;
-}
-.slider-dots span{
-  width:7px; height:7px; border-radius:50%; background:var(--line); cursor:pointer; flex-shrink:0;
-}
-.slider-dots span.active{ background:var(--rubric); }
-
-/* ---------- sign list ---------- */
-.cat-row{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:22px; }
-.cat-chip{
-  font-family:'Inter',sans-serif; font-size:12px; letter-spacing:.03em;
-  border:1px solid var(--line); background:var(--card);
-  border-radius:20px; padding:5px 13px; cursor:pointer; color:var(--ink-soft);
-}
-.cat-chip.active{ background:var(--rubric); color:#f4ecd6; border-color:var(--rubric); }
-.sign-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(96px,1fr));
-  gap:10px;
-}
-.sign-tile{
-  background:var(--card); border:1px solid var(--line); border-radius:3px;
-  padding:14px 8px 10px; text-align:center;
-  cursor:pointer; transition:background .15s, transform .1s;
-}
-.sign-tile:hover{ background:var(--papyrus-deep); border-color:var(--rubric); }
-.sign-tile:active{ transform:scale(0.97); }
-.sign-tile .g{
-  font-family:'Noto Sans Egyptian Hieroglyphs'; font-size:30px; color:var(--ink);
-  margin-bottom:8px;
-}
-.sign-tile .n{
-  font-family:'Spectral',serif; font-style:italic; font-size:13px; color:var(--rubric-deep);
-}
-
-/* ---------- sign modal ---------- */
-.sign-modal-backdrop{
-  display:none;
-  position:fixed; inset:0; z-index:50;
-  background:rgba(30,23,14,0.55);
-  align-items:center; justify-content:center;
-  padding:20px;
-}
-.sign-modal-backdrop.open{ display:flex; }
-.sign-modal{
-  background:var(--papyrus);
-  border:1px solid var(--line);
-  border-radius:4px;
-  max-width:560px; width:100%;
-  max-height:88vh; overflow-y:auto;
-  padding:26px 28px 28px;
-  position:relative;
-  box-shadow:0 10px 40px rgba(0,0,0,0.35);
-}
-.sign-modal-close{
-  position:absolute; top:14px; right:16px;
-  background:none; border:none; cursor:pointer;
-  font-family:'Spectral',serif; font-size:22px; color:var(--ink-soft);
-  line-height:1;
-}
-.sign-modal-close:hover{ color:var(--rubric); }
-.sign-modal-head{
-  display:flex; align-items:center; gap:18px;
-  border-bottom:1px solid var(--line);
-  padding-bottom:16px; margin-bottom:18px;
-}
-.sign-modal-head .g{
-  font-family:'Noto Sans Egyptian Hieroglyphs'; font-size:52px; color:var(--ink);
-}
-.sign-modal-head .n{
-  font-family:'Spectral',serif; font-weight:600; font-size:22px; color:var(--rubric-deep);
-}
-.sign-modal-head .cat{
-  font-size:12px; color:var(--ink-soft); letter-spacing:.04em; text-transform:uppercase; margin-top:2px;
-}
-.sign-variants{
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:12px;
-  margin-bottom:18px;
-}
-.sign-variant{
-  background:var(--card); border:1px solid var(--line); border-radius:3px;
-  padding:10px 8px; text-align:center;
-}
-.sign-variant .stage{
-  height:70px; display:flex; align-items:center; justify-content:center;
-  margin-bottom:6px;
-}
-.sign-variant .stage img{ max-width:100%; max-height:100%; object-fit:contain; }
-.sign-variant .stage .none{ font-family:'EB Garamond',serif; font-style:italic; color:var(--ink-faint); font-size:11px; }
-.sign-variant label{ font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-soft); }
-.variant-ref{
-  font-family:'Spectral',serif; font-style:italic; font-size:10.5px;
-  color:var(--ink-faint); margin-top:3px;
-}
-.sign-stroke{
-  background:var(--card); border:1px solid var(--line); border-radius:3px;
-  padding:14px; text-align:center;
-}
-.sign-stroke label{
-  display:block; font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-soft);
-  margin-bottom:8px;
-}
-.sign-stroke .stage{ height:120px; display:flex; align-items:center; justify-content:center; }
-.sign-stroke .stage img{ max-width:100%; max-height:100%; object-fit:contain; }
-.sign-stroke .stage .none{ font-family:'EB Garamond',serif; font-style:italic; color:var(--ink-faint); font-size:12px; }
-
-footer{
-  text-align:center; padding:40px 0 10px; color:var(--ink-faint);
-  font-family:'EB Garamond',serif; font-style:italic; font-size:13.5px;
-}
-
-@media (max-width:640px){
-  .entry{ grid-template-columns:auto auto 1fr; }
-  .entry .meta{ grid-column:1 / -1; flex-direction:row; justify-content:space-between; align-items:center; margin-top:6px; }
-  .entry .glyphs{ font-size:28px; min-width:50px; }
-  .entry .thumb{ width:40px; height:40px; }
-}
-
-/* ---------- Wenamun transcription tab ---------- */
-.wenamun-lines{ display:flex; flex-direction:column; gap:14px; }
-.wenamun-line{
-  background:var(--card);
-  border:1px solid var(--line);
-  border-left:3px solid var(--rubric);
-  border-radius:2px;
-  padding:14px 18px;
-}
-.wenamun-line .line-head{
-  display:flex; align-items:center; gap:10px; margin-bottom:10px;
-}
-.wenamun-line .line-num{
-  font-family:'Spectral',serif; font-style:italic; color:var(--rubric-deep); font-size:15px;
-}
-.wenamun-line .photo-stage, .wenamun-line .glyph-stage{
-  background:var(--papyrus);
-  border:1px solid var(--line);
-  border-radius:3px;
-  padding:10px;
-  overflow-x:auto;
-}
-.wenamun-line .photo-stage{ margin-bottom:8px; }
-.wenamun-line .photo-stage img, .wenamun-line .glyph-stage img{
-  display:block; max-width:100%; height:auto; margin:0 auto;
-}
-.wenamun-line .pending{
-  font-family:'EB Garamond',serif; font-style:italic; color:var(--ink-faint);
-  font-size:13px; text-align:center; padding:12px 0;
-}
-.glyph-slider{
-  position:relative;
-  background:var(--papyrus);
-  border:1px solid var(--line);
-  border-radius:3px;
-  overflow:hidden;
-  height:150px;
-  margin-top:8px;
-  touch-action:none;
-}
-.glyph-slider .layer{
-  position:absolute; inset:0;
-  display:flex; align-items:center; justify-content:center;
-  padding:10px;
-  pointer-events:none;
-}
-.glyph-slider .layer img{
-  max-width:100%; max-height:100%; object-fit:contain;
-}
-.glyph-slider .gs-handle{
-  position:absolute; top:0; bottom:0; width:2px;
-  background:var(--rubric);
-  left:100%; transform:translateX(-50%);
-  cursor:ew-resize;
-  touch-action:none;
-}
-.glyph-slider .gs-handle::before{
-  content:"";
-  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  width:30px; height:30px; border-radius:50%;
-  background:var(--rubric);
-  box-shadow:0 2px 6px var(--shadow);
-}
-.glyph-slider .gs-handle::after{
-  content:"\2194";
-  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-  color:#f4ecd6; font-size:14px; line-height:1;
-}
-.glyph-slider .gs-caption{
-  position:absolute; bottom:8px; left:8px;
-  font-family:'Inter',sans-serif; font-size:9.5px; letter-spacing:.05em; text-transform:uppercase;
-  background:rgba(244,236,214,.88); padding:2px 8px; border-radius:10px; color:var(--ink-soft);
-  pointer-events:none;
-}
-.ref.ref-link{
-  cursor:pointer;
-  text-decoration:underline dotted;
-  text-underline-offset:2px;
-  color:var(--rubric-deep);
-}
-.ref.ref-link:hover{ color:var(--rubric); }
-.wenamun-line.hs-flash{ animation:hsFlash 1.6s ease; }
-@keyframes hsFlash{
-  0%{ background:rgba(168,70,29,0.22); }
-  100%{ background:var(--card); }
-}
-
 nav.tabs a{
   font-family:'Spectral',serif;
   font-size:16px;
@@ -617,30 +124,129 @@ nav.tabs a::before{
   font-size:15px;
 }
 
-.landing-intro{
-  max-width:640px; margin:0 auto 36px; text-align:center;
-  font-family:'EB Garamond',serif; font-size:17px; color:var(--ink-soft); font-style:italic;
+footer{
+  text-align:center; padding:40px 0 10px; color:var(--ink-faint);
+  font-family:'EB Garamond',serif; font-style:italic; font-size:13.5px;
 }
-.landing-grid{
-  display:grid; grid-template-columns:repeat(2, 1fr); gap:18px;
-  margin-top:20px;
+
+/* ---------- playbook page ---------- */
+.pb-lede{
+  font-family:'EB Garamond',serif; font-style:italic; font-size:19px;
+  color:var(--ink-soft); max-width:70ch; margin:0 0 20px;
 }
-@media (max-width:640px){ .landing-grid{ grid-template-columns:1fr; } }
-.landing-card{
-  display:block; text-decoration:none; color:var(--ink);
-  background:var(--card); border:1px solid var(--line); border-left:4px solid var(--rubric);
-  border-radius:3px; padding:22px 24px; transition:transform .15s ease, box-shadow .15s ease;
+.pb-facts{
+  display:flex; flex-wrap:wrap; gap:8px 22px;
+  font-family:'Inter',sans-serif; font-size:12px; letter-spacing:.03em;
+  color:var(--ink-soft); margin:0 0 44px; padding-bottom:22px;
+  border-bottom:1px solid var(--line);
 }
-.landing-card:hover{ transform:translateY(-2px); box-shadow:0 6px 18px var(--shadow); }
-.landing-card .glyph{
-  font-family:'Noto Sans Egyptian Hieroglyphs'; font-size:28px; color:var(--rubric); margin-bottom:10px;
+.pb-facts b{ color:var(--ink); font-weight:600; }
+main.pb-body{ max-width:760px; margin:0 auto; }
+main.pb-body h2{
+  font-family:'Spectral',serif; font-weight:600; font-size:23px; color:var(--ink);
+  margin:52px 0 14px; display:flex; align-items:baseline; gap:12px;
 }
-.landing-card h2{
-  font-family:'Spectral',serif; font-size:20px; margin:0 0 6px; color:var(--ink);
+main.pb-body h2:first-of-type{ margin-top:0; }
+.pb-num{
+  font-family:'Inter',sans-serif; font-size:12px; letter-spacing:.06em;
+  color:var(--rubric); border:1px solid var(--rubric); border-radius:20px;
+  padding:2px 10px; flex-shrink:0;
 }
-.landing-card p{
-  font-family:'EB Garamond',serif; font-style:italic; font-size:14.5px; color:var(--ink-soft); margin:0;
+main.pb-body h3{
+  font-family:'Spectral',serif; font-weight:600; font-size:16.5px; color:var(--ink);
+  margin:26px 0 8px;
 }
+main.pb-body p{ max-width:68ch; margin:0 0 15px; font-size:15.5px; }
+main.pb-body p.wide{ max-width:74ch; }
+main.pb-body ul{ max-width:66ch; padding-left:20px; margin:0 0 16px; }
+main.pb-body ul li{ margin-bottom:6px; }
+main.pb-body strong{ color:var(--ink); font-weight:600; }
+
+.pb-frame{
+  border:1px solid var(--line); background:var(--card);
+  border-left:3px solid var(--line);
+  padding:16px 20px; margin:16px 0 20px; max-width:74ch; border-radius:2px;
+}
+.pb-frame-rubric{ border-left-color:var(--rubric); }
+.pb-frame-malachite{ border-left-color:var(--malachite); }
+.pb-frame-label{
+  display:block; font-family:'Inter',sans-serif; font-size:10.5px; letter-spacing:.08em;
+  text-transform:uppercase; margin-bottom:7px;
+}
+.pb-frame-rubric .pb-frame-label{ color:var(--rubric-deep); }
+.pb-frame-malachite .pb-frame-label{ color:var(--malachite); }
+.pb-frame p{ margin-bottom:0; max-width:70ch; font-size:15px; }
+
+.pb-decision{ max-width:70ch; margin:0 0 16px; }
+.pb-decision dt{
+  font-family:'Spectral',serif; font-weight:600; font-style:italic; color:var(--rubric-deep);
+  font-size:16px; margin:18px 0 3px;
+}
+.pb-decision dt:first-child{ margin-top:0; }
+.pb-decision dd{ margin:0 0 4px; color:var(--ink-soft); font-size:15px; max-width:66ch; }
+
+ol.pb-steps{ counter-reset:pbstep; list-style:none; padding-left:0; max-width:70ch; margin:0 0 16px; }
+ol.pb-steps > li{ counter-increment:pbstep; position:relative; padding-left:46px; margin-bottom:20px; }
+ol.pb-steps > li::before{
+  content:counter(pbstep);
+  position:absolute; left:0; top:1px;
+  width:28px; height:28px; border-radius:50%;
+  background:var(--rubric); color:#f4ecd6;
+  font-family:'Spectral',serif; font-weight:600; font-size:13.5px;
+  display:flex; align-items:center; justify-content:center;
+}
+ol.pb-steps strong.pb-step-title{
+  display:block; font-family:'Spectral',serif; font-weight:600; font-size:16.5px;
+  color:var(--ink); margin-bottom:3px;
+}
+ol.pb-steps p{ margin:0; font-size:15px; }
+
+.pb-stat-strip{
+  display:grid; grid-template-columns:repeat(4,1fr);
+  gap:1px; background:var(--line); border:1px solid var(--line);
+  margin:18px 0 24px; max-width:74ch;
+}
+@media (max-width:640px){ .pb-stat-strip{ grid-template-columns:repeat(2,1fr); } }
+.pb-stat{ background:var(--card); padding:16px 18px; }
+.pb-stat .pb-stat-label{
+  font-family:'Inter',sans-serif; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--ink-faint); margin-bottom:7px;
+}
+.pb-stat .pb-stat-value{
+  font-family:'Spectral',serif; font-weight:600; font-size:24px; color:var(--ink); line-height:1;
+}
+.pb-stat .pb-stat-value .pb-arrow{ color:var(--ink-faint); font-size:16px; margin:0 3px; }
+.pb-stat .pb-stat-value .pb-after{ color:var(--malachite); }
+
+.pb-table-wrap{ overflow-x:auto; margin:18px 0 26px; max-width:100%; }
+table.pb-table{
+  border-collapse:collapse; width:100%; min-width:520px;
+  font-family:'Inter',sans-serif; font-size:13.5px;
+  font-variant-numeric:tabular-nums;
+}
+table.pb-table caption{
+  text-align:left; font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--ink-faint); margin-bottom:8px;
+}
+table.pb-table th, table.pb-table td{
+  text-align:left; padding:7px 14px; border-bottom:1px solid var(--line);
+}
+table.pb-table th{
+  font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-soft);
+  border-bottom:1px solid var(--ink-soft);
+}
+table.pb-table td.num, table.pb-table th.num{ text-align:right; }
+table.pb-table td.pb-ref{ font-family:'Spectral',serif; font-style:italic; color:var(--ink-faint); }
+table.pb-table td.pb-up{ color:var(--malachite); }
+table.pb-table td.pb-down{ color:var(--rubric-deep); }
+table.pb-table td.pb-flat{ color:var(--ink-faint); }
+table.pb-table tr.pb-totals td{ border-top:2px solid var(--ink); border-bottom:none; font-weight:600; }
+
+code.pb-code{
+  font-family:'Inter',sans-serif; font-size:.92em; background:var(--papyrus-deep);
+  border:1px solid var(--line); border-radius:2px; padding:.05em .4em;
+}
+
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -658,49 +264,159 @@ nav.tabs a::before{
       <div><b>4,973</b>headwords</div>
       <div><b>277</b>gardiner signs</div>
     </div>
-        <nav class="tabs">
-      <a class="active" data-glyph="𓊪" href="index.html">Home</a>
+    <nav class="tabs">
+      <a data-glyph="𓊪" href="index.html">Home</a>
       <a data-glyph="𓏞" href="dictionary.html">Dictionary</a>
       <a data-glyph="𓊃" href="sign-list.html">Sign List</a>
       <a data-glyph="𓊛" href="wenamun.html">Wenamun</a>
       <a data-glyph="𓅃𓅆𓁣𓅆" href="horus-and-seth.html">Horus and Seth</a>
-      <a data-glyph="𓏛" href="playbook.html">Playbook</a>
+      <a class="active" data-glyph="𓏛" href="playbook.html">Playbook</a>
     </nav>
   </header>
 
-    <section class="panel active" style="padding-top:30px;">
-    <p class="landing-intro">A browsable hieratic word list and set of papyrus transcriptions from the Papyrus Chester Beatty and related manuscripts, compiled by Katrine Iversen.</p>
-    <div class="landing-grid">
-      <a class="landing-card" href="dictionary.html">
-        <div class="glyph">𓏞</div>
-        <h2>Dictionary</h2>
-        <p>Search 4,973 headwords by Egyptian glyphs, transliteration, English gloss, Gardiner code, or reference — with photographed examples.</p>
-      </a>
-      <a class="landing-card" href="sign-list.html">
-        <div class="glyph">𓊃</div>
-        <h2>Sign List</h2>
-        <p>277 Gardiner signs with photographed hand variants and stroke-order diagrams.</p>
-      </a>
-      <a class="landing-card" href="wenamun.html">
-        <div class="glyph">𓊛</div>
-        <h2>Wenamun</h2>
-        <p>Line-by-line transcription of Papyrus Moscow 120, the tale of Wenamun's journey to Byblos.</p>
-      </a>
-      <a class="landing-card" href="horus-and-seth.html">
-        <div class="glyph">𓅃𓅆𓁣𓅆</div>
-        <h2>Horus and Seth</h2>
-        <p>Line-by-line transcription of the Papyrus Chester Beatty I, paired with manuscript photographs.</p>
-      </a>
-      <a class="landing-card" href="playbook.html">
-        <div class="glyph">𓏛</div>
-        <h2>Playbook</h2>
-        <p>How the sign-recognition trainer behind this site was bootstrapped, and a step-by-step method for doing the same on any script.</p>
-      </a>
-    </div>
+  <section class="panel active" id="panel-playbook">
+    <main class="pb-body">
+
+      <p class="pb-lede">How we bootstrapped the sign-recognition trainer behind this site from almost no labeled data &mdash; and a step-by-step version of the method, so it can be repeated on any script with a growing digitized dictionary.</p>
+      <div class="pb-facts">
+        <span><b>Trained signs</b> 56 &rarr; 76</span>
+        <span><b>Training crops</b> 2,846 &rarr; 4,023</span>
+        <span><b>Validated on</b> 14 held-out lines, 957 signs</span>
+      </div>
+
+      <h2><span class="pb-num">01</span> The problem</h2>
+      <p>This dictionary has thousands of hieratic word entries, each with a scanned image and a Gardiner sign-code transcription &mdash; the standard reference list of hieroglyphic sign shapes. Behind the scenes, a matching tool tries to automatically localize and read each individual sign in a scanned line of running text, which is useful for working through a page of hieratic without already knowing every sign by sight.</p>
+      <p>The obvious approach is template matching: for each candidate sign, slide known examples of that sign across the line image and see where it matches best. The catch is that this needs <em>examples</em> of each sign already cropped out and labeled &mdash; and almost none of the dictionary comes that way. Most entries are whole words, three, four, five signs run together with no boundaries marked. Hand-boxing enough crops of all 277 sign types one at a time was never going to happen.</p>
+      <p class="wide">Everything below is the answer we landed on: get a small number of true ground-truth boxes from a person, then use the structure of the dictionary itself &mdash; the fact that many words repeat, sign-for-sign, dozens or hundreds of times &mdash; to multiply each ground-truth box into many training crops automatically.</p>
+
+      <h2><span class="pb-num">02</span> The core method</h2>
+      <p>Once a sign has training crops, matching it into a target word image works like this: crop every training example down to its ink using an Otsu threshold; resize that crop across thirteen scales, 25% to 100% of the target image's height, and run normalized cross-correlation against the target at each scale; keep the best-scoring position across every training example and every scale; then check ink density inside the winning box, since a high correlation score over a nearly blank region is usually a false positive.</p>
+      <div class="pb-table-wrap">
+        <table class="pb-table">
+          <caption>confidence flag, from score and ink density</caption>
+          <thead><tr><th>Condition</th><th>Flag</th></tr></thead>
+          <tbody>
+            <tr><td>no training crops exist for this sign</td><td>no_training_data</td></tr>
+            <tr><td>score &lt; 0.55</td><td>low_score</td></tr>
+            <tr><td>ink density inside the box &lt; 0.06</td><td>low_ink_density</td></tr>
+            <tr><td>score &lt; 0.65</td><td>borderline</td></tr>
+            <tr><td>otherwise</td><td>confident</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="wide">For full lines rather than single words, the same per-sign matcher runs inside a dynamic-programming pass that first splits the line into word-sized chunks by column ink-density gaps, then aligns the expected sign sequence against those chunks. A sign with zero training data doesn't break the pass &mdash; it just scores 0.0 and the alignment works around it, which matters for a dictionary where coverage is still being built.</p>
+
+      <h2><span class="pb-num">03</span> The trick: layout transfer</h2>
+      <p>The dictionary contains many entries that are literally the same fixed word, scanned dozens or hundreds of times from different manuscript pages &mdash; a common particle, a title, a stock phrase. That repetition is the entire trick.</p>
+      <div class="pb-frame pb-frame-rubric">
+        <span class="pb-frame-label">Ground truth, once</span>
+        <p>A person draws one bounding box per sign on <em>one</em> occurrence of the word, as a percentage of that image's width and height. For a two-sign word this is one annotation; for a five-sign word it's five boxes on one image.</p>
+      </div>
+      <div class="pb-frame pb-frame-malachite">
+        <span class="pb-frame-label">Transferred, automatically</span>
+        <p>Every <em>other</em> dictionary entry with that exact sign sequence gets the same percentage boxes applied to its own image dimensions and cropped out. One annotation on a word that repeats 155 times yields up to 154 new training crops per sign in it &mdash; for free.</p>
+      </div>
+      <p>The best single round this project ran picked one four-sign word that occurs 155 times in the dictionary and turned four ground-truth boxes into 462 new training entries in one pass.</p>
+
+      <h2><span class="pb-num">04</span> Choosing a technique</h2>
+      <p>Layout transfer assumes every occurrence of a word is laid out the same way, which is true often enough to be useful but false often enough to matter. Before trusting it, we check how much the ground-truth boxes for adjacent signs overlap (their IoU) and look at the actual crops at high zoom before merging anything in. Which technique to use ends up depending on box overlap and on how many total occurrences of the word exist.</p>
+      <dl class="pb-decision">
+        <dt>Low overlap, many occurrences</dt>
+        <dd><strong>Plain layout transfer.</strong> The percentage boxes rarely clip a neighboring sign. This is the default and the cheapest option.</dd>
+        <dt>High overlap, many occurrences</dt>
+        <dd><strong>Blob separation instead.</strong> Threshold the image into connected ink components and assign each blob to whichever sign's marked center is closer, rather than using a rectangle at all. Occurrences where two signs are physically merged into one stroke get skipped rather than guessed at.</dd>
+        <dt>Very few total occurrences (roughly six or fewer)</dt>
+        <dd><strong>Layout transfer anyway, despite visible bleed.</strong> Blob separation on that little data yields too few clean samples; a slightly noisy crop still beats no crop.</dd>
+        <dt>Exactly one occurrence in the whole dictionary</dt>
+        <dd><strong>Direct crop</strong> from the ground-truth box on the target image itself, since there's no other occurrence to transfer to.</dd>
+        <dt>No repeating word of its own, but several single-occurrence contexts</dt>
+        <dd><strong>Cross-context aggregation.</strong> Direct-crop the sign from each different one-off word it happens to appear in &mdash; three unrelated words become a genuine three-sample training set.</dd>
+        <dt>A sign that appears twice within the same word</dt>
+        <dd><strong>Doubled slots.</strong> Two picker slots map to the one underlying sign code, and both get cropped and appended as separate training entries.</dd>
+      </dl>
+
+      <h2><span class="pb-num">05</span> The playbook</h2>
+      <p class="wide">The repeatable procedure, generalized past this specific project. It assumes a digitized dictionary or corpus where entries carry both an image and a transcription into discrete symbol codes &mdash; true for most historical script projects, not just this one.</p>
+      <ol class="pb-steps">
+        <li><strong class="pb-step-title">Bootstrap from single-symbol entries</strong><p>Filter the dictionary for entries whose transcription is exactly one symbol &mdash; the whole entry image already <em>is</em> a single crop, no annotation needed.</p></li>
+        <li><strong class="pb-step-title">Build the matcher and a confidence score</strong><p>Multi-scale normalized cross-correlation plus an ink-density check, as above. Get this working early, since every later step depends on being able to measure whether a training set actually helps.</p></li>
+        <li><strong class="pb-step-title">Find untrained symbols by word, not just by pair</strong><p>Search for candidate words at every length, not only two-symbol words &mdash; see the blind spot below.</p></li>
+        <li><strong class="pb-step-title">Build (or reuse) an annotator tool</strong><p>A single-page tool: load the target word image, draw one draggable box per symbol slot, export the boxes as percentage coordinates. Generalizes cleanly from two slots to N; a doubled symbol just gets two slots sharing one code.</p></li>
+        <li><strong class="pb-step-title">Get one ground-truth annotation per word</strong><p>A person boxes each symbol once, on the clearest available occurrence of that word.</p></li>
+        <li><strong class="pb-step-title">Check box overlap before trusting the boxes</strong><p>Compute pairwise IoU between every pair of symbol boxes in that one annotation &mdash; a five-second check that decides which derivation technique to use.</p></li>
+        <li><strong class="pb-step-title">Derive and zoom in to check</strong><p>Run the chosen technique across every other occurrence of the exact same sequence, then actually look at a sample of the resulting crops at high zoom. Moderate overlap (5&ndash;30% IoU) can look fine in the numbers and still bleed visibly.</p></li>
+        <li><strong class="pb-step-title">Merge into the training database</strong><p>Append the new crops, tag each with how it was derived, and keep the crop's own dictionary reference attached.</p></li>
+        <li><strong class="pb-step-title">Test held-out, not in-sample</strong><p>Exclude any training crop whose reference matches the word being tested, including a doubled symbol's own crops &mdash; otherwise a symbol always "recognizes itself."</p></li>
+        <li><strong class="pb-step-title">Re-run full-line validation periodically</strong><p>Single-symbol tests are fast, but whole-line accuracy on real scanned text, tested against the same fixed sample every time, is the number that actually matters.</p></li>
+      </ol>
+
+      <h2><span class="pb-num">06</span> The blind spot we found</h2>
+      <p>For most of this project, "find an untrained symbol worth training" meant searching for dictionary words of exactly one or exactly two symbols. That search felt exhaustive &mdash; it eventually turned up only symbols occurring once, with nothing higher-value left.</p>
+      <p class="wide">It wasn't exhaustive. It was scoped to the wrong thing. Widening the search to symbols appearing in words of <em>any</em> length surfaced <strong>177 untrained symbols with two or more total dictionary occurrences</strong> that the narrow search had never been able to see, because every one of their occurrences happened to sit inside a longer word. The top ten by frequency ranged from 55 to 198 total uses each.</p>
+      <div class="pb-frame pb-frame-rubric">
+        <span class="pb-frame-label">Takeaway</span>
+        <p>A coverage-discovery step should be scoped to the unit you actually care about (symbols), not to the shape of the search that's easiest to run (short words). Acting on this discovery &mdash; training the top ten by frequency, plus three more found along the way &mdash; added 20 symbols and 1,177 training crops across nine annotation rounds.</p>
+      </div>
+
+      <h2><span class="pb-num">07</span> Validating at scale</h2>
+      <p class="wide">Held-out testing on individual symbols is fast but can be misleading in aggregate. The real check is running the full line-matching pipeline against a fixed, randomly sampled set of real scanned lines and comparing localization and confidence rates before and after a training push &mdash; including the lines that got worse, not only the ones that improved.</p>
+
+      <h2><span class="pb-num">08</span> Results</h2>
+      <div class="pb-stat-strip">
+        <div class="pb-stat"><div class="pb-stat-label">Trained symbols</div><div class="pb-stat-value">56 <span class="pb-arrow">&rarr;</span><span class="pb-after">76</span></div></div>
+        <div class="pb-stat"><div class="pb-stat-label">Training crops</div><div class="pb-stat-value">2,846 <span class="pb-arrow">&rarr;</span><span class="pb-after">4,023</span></div></div>
+        <div class="pb-stat"><div class="pb-stat-label">Localized (957 signs)</div><div class="pb-stat-value">69.9% <span class="pb-arrow">&rarr;</span><span class="pb-after">82.0%</span></div></div>
+        <div class="pb-stat"><div class="pb-stat-label">Confident (957 signs)</div><div class="pb-stat-value">57.3% <span class="pb-arrow">&rarr;</span><span class="pb-after">66.9%</span></div></div>
+      </div>
+      <p>Line by line, on the identical 14-line, 957-symbol sample, before and after the training push:</p>
+      <div class="pb-table-wrap">
+        <table class="pb-table">
+          <caption>held-out full-line validation, seed-fixed sample</caption>
+          <thead><tr><th>Line</th><th class="num">Localized before</th><th class="num">after</th><th class="num">Confident before</th><th class="num">after</th></tr></thead>
+          <tbody>
+            <tr><td class="pb-ref">H&amp;S 02,02</td><td class="num">66%</td><td class="num pb-up">90%</td><td class="num">63%</td><td class="num pb-up">77%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 06,04</td><td class="num">55%</td><td class="num pb-down">49%</td><td class="num">62%</td><td class="num pb-up">67%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 02,11</td><td class="num">52%</td><td class="num pb-up">86%</td><td class="num">62%</td><td class="num pb-up">68%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 16,07</td><td class="num">60%</td><td class="num pb-up">80%</td><td class="num">23%</td><td class="num pb-up">30%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 08,13</td><td class="num">77%</td><td class="num pb-down">68%</td><td class="num">63%</td><td class="num pb-up">78%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 03,03</td><td class="num">71%</td><td class="num pb-up">87%</td><td class="num">71%</td><td class="num pb-up">81%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 01,10</td><td class="num">84%</td><td class="num pb-up">88%</td><td class="num">75%</td><td class="num pb-up">82%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 08,06</td><td class="num">68%</td><td class="num pb-up">82%</td><td class="num">46%</td><td class="num pb-up">68%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 11,09</td><td class="num">78%</td><td class="num pb-up">89%</td><td class="num">38%</td><td class="num pb-up">52%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 12,03</td><td class="num">73%</td><td class="num pb-up">90%</td><td class="num">45%</td><td class="num pb-flat">45%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 07,07</td><td class="num">67%</td><td class="num pb-up">84%</td><td class="num">73%</td><td class="num pb-up">84%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 07,09</td><td class="num">73%</td><td class="num pb-up">83%</td><td class="num">67%</td><td class="num pb-up">70%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 04,03</td><td class="num">79%</td><td class="num pb-up">92%</td><td class="num">66%</td><td class="num pb-up">75%</td></tr>
+            <tr><td class="pb-ref">H&amp;S 03,10</td><td class="num">78%</td><td class="num pb-up">80%</td><td class="num">60%</td><td class="num pb-up">69%</td></tr>
+            <tr class="pb-totals"><td>Overall (957 signs)</td><td class="num">69.9%</td><td class="num pb-up">82.0%</td><td class="num">57.3%</td><td class="num pb-up">66.9%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>12 of 14 lines improved on localization and 13 of 14 improved on confidence; the two lines that dipped on localization gained on confidence instead, and only one line was exactly flat on confidence.</p>
+
+      <h2><span class="pb-num">09</span> Lessons &amp; pitfalls</h2>
+      <h3>IoU is a screening tool, not a guarantee</h3>
+      <p>Boxes with 5&ndash;30% overlap can still bleed visibly into a neighbor's crop even though the number looks tolerable. Zoomed visual review of a sample of the derived crops is not optional.</p>
+      <h3>Automated checks need to re-measure, not cache, unstable state</h3>
+      <p>A browser-automation check of a multi-box annotation tool intermittently reported a box in the wrong place &mdash; not because the tool was wrong, but because the test cached the page's layout once and reused it across several drags, after the layout had shifted slightly. Re-measuring immediately before each interaction fixed it.</p>
+      <h3>A weak result is information, not a failure to hide</h3>
+      <p>One training round scored far below the others in held-out testing. Printing the raw scores showed an already well-established symbol <em>also</em> failing on the exact same lines, which ruled out "bad new data" and pointed instead at real scan-to-scan layout drift for that particular word.</p>
+      <h3>Scope your discovery search to the unit that matters</h3>
+      <p>Worth repeating as the single highest-leverage lesson from this project: a search that only looks at short words will only ever find symbols confined to short words.</p>
+
+      <h2><span class="pb-num">10</span> Adapting this to your script</h2>
+      <p class="wide">Nothing above is specific to hieratic. It needs three things from a corpus: a digitized image for each entry, a transcription into a sequence of discrete symbol codes, and enough repetition that some exact sequences occur more than once. Cuneiform sign lists, manuscript abbreviation corpora, historical shorthand, and consistently-formatted handwritten forms all tend to satisfy this.</p>
+      <p class="wide">Where repetition is thinner than this project's (word repeat counts here ranged from 4 to over 400), lean harder on cross-context aggregation and accept smaller per-symbol training sets rather than skipping low-frequency symbols entirely.</p>
+      <div class="pb-frame pb-frame-malachite">
+        <span class="pb-frame-label">Minimum viable version</span>
+        <p>You don't need the full tooling to start. A spreadsheet of symbol&ndash;to&ndash;box-percentage pairs, one ground-truth annotation per repeating word, and a plain template-matching loop is enough to prove the approach out before investing in an annotator tool or a confidence-scoring pipeline.</p>
+      </div>
+
+    </main>
   </section>
 </div>
 
-<footer>Compiled as a browsable reference · transliteration follows the Manuel de Codage convention</footer>
+<footer>Compiled as a browsable reference &middot; transliteration follows the Manuel de Codage convention</footer>
 
 <script>
 if ('serviceWorker' in navigator) {
@@ -709,7 +425,6 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
-<script>window.__BUILD__ = "2026-08-23T15:00:00Z";</script>
 <script src="site-update-check.js" defer></script>
 <script src="ship-creak.js" defer></script>
 <script src="sign-list-pling.js" defer></script>
