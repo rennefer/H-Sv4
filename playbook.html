@@ -247,6 +247,23 @@ code.pb-code{
   border:1px solid var(--line); border-radius:2px; padding:.05em .4em;
 }
 
+/* ---------- second playbook entry ---------- */
+.pb-entry-divider{
+  display:flex; align-items:center; gap:16px;
+  margin:70px 0 40px; max-width:760px;
+}
+.pb-entry-divider::before, .pb-entry-divider::after{
+  content:""; flex:1; height:1px; background:var(--line);
+}
+.pb-entry-divider span{
+  font-family:'Inter',sans-serif; font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+  color:var(--ink-faint); white-space:nowrap;
+}
+.pb-entry-title{
+  font-family:'Spectral',serif; font-weight:600; font-size:clamp(26px,4vw,34px);
+  color:var(--ink); margin:0 0 10px; letter-spacing:.2px;
+}
+
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -411,6 +428,61 @@ code.pb-code{
         <span class="pb-frame-label">Minimum viable version</span>
         <p>You don't need the full tooling to start. A spreadsheet of symbol&ndash;to&ndash;box-percentage pairs, one ground-truth annotation per repeating word, and a plain template-matching loop is enough to prove the approach out before investing in an annotator tool or a confidence-scoring pipeline.</p>
       </div>
+
+      <div class="pb-entry-divider"><span>A separate entry</span></div>
+
+      <div class="pb-entry-title">Building the Word-Level Annotations</div>
+      <p class="pb-lede">The entry above covers the sign-recognition trainer. This one is the layer underneath it: how each word on the Horus &amp; Seth page got its own clickable box and cropped image in the first place, built from the dictionary and a folder of individual word-image files rather than typed in by hand.</p>
+      <div class="pb-facts">
+        <span><b>215</b> page/line pairs matched</span>
+        <span><b>54</b> flagged for a file&ndash;dictionary count mismatch</span>
+        <span><b>198</b> lines re-matched against clean line photos</span>
+      </div>
+
+      <h2><span class="pb-num">01</span> The problem</h2>
+      <p>Three things existed before any of this ran: a folder of pre-cropped word-image files for every line, one small image per word, sorted into page/line subfolders; the dictionary itself, where every entry carries a reference like &ldquo;H&amp;S 02,10,07&rdquo; identifying its exact page, line, and word position; and photographs of the manuscript &mdash; full-page scans at first, later replaced by cleaner per-line photos pulled from a line-by-line transliteration document.</p>
+      <p class="wide">None of this pipeline reads hieratic. It only ever aligns things that already exist &mdash; which file belongs to which dictionary row, and where that file's contents actually sit on a photo of the line &mdash; so the page can show the right crop in the right place and let a click jump straight to the matching dictionary entry.</p>
+
+      <h2><span class="pb-num">02</span> Matching files to dictionary entries</h2>
+      <p>For every line, the dictionary entries were sorted by word number and the image files sitting in that line's folder were sorted by creation time, then the two lists were zipped together position by position: word 1 with the first file, word 2 with the second, and so on. That only works cleanly when both lists are the same length. Whenever they weren't &mdash; a missing dictionary entry, a stray or duplicated file &mdash; the mismatch was logged, and the pairing for that line became unreliable from that point on. Across the project, 54 of 215 page/line pairs were flagged this way.</p>
+      <div class="pb-table-wrap">
+        <table class="pb-table">
+          <caption>largest file&ndash;dictionary count gaps caught at this step</caption>
+          <thead><tr><th>Line</th><th class="num">Dictionary words</th><th class="num">Image files</th></tr></thead>
+          <tbody>
+            <tr><td class="pb-ref">H&amp;S 02,02</td><td class="num">19</td><td class="num">23</td></tr>
+            <tr><td class="pb-ref">H&amp;S 12,05</td><td class="num">24</td><td class="num">27</td></tr>
+            <tr><td class="pb-ref">H&amp;S 16,12</td><td class="num">28</td><td class="num">31</td></tr>
+            <tr><td class="pb-ref">H&amp;S 01,09</td><td class="num">10</td><td class="num">12</td></tr>
+            <tr><td class="pb-ref">H&amp;S 02,10</td><td class="num">15</td><td class="num">17</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Page 2, line 10 &mdash; 15 dictionary words against 17 files &mdash; is on this list. It's the same line whose word 4, 7, 15, and 16 annotations needed a manual repair pass later; that repair fixed what this step could only flag.</p>
+
+      <h2><span class="pb-num">03</span> Locating each word on the page</h2>
+      <p>With a file assigned to each word, however reliably, the next question was purely visual: where does that small crop actually appear on a photo of the full page? Each word's crop was searched for inside the page photograph with template matching &mdash; a coarse pass at low resolution to find roughly the right neighborhood, then a refined pass at full resolution to lock in an exact pixel position and a confidence score. Two later pages (16 and 17) used their own dedicated per-line photos in place of a full-page scan, since those existed separately. Matches scoring below a threshold were flagged as low-confidence for a later pass.</p>
+
+      <h2><span class="pb-num">04</span> From pixel positions to on-page boxes</h2>
+      <p>Working from every word's pixel position, a bounding box was drawn around all the words on a line, padded slightly, and that strip was cropped out of the full page photo &mdash; producing the compact per-line photo the page actually shows, rather than the whole scanned page. Each word's pixel box was then re-expressed as a percentage of that new, smaller photo's width and height, since percentages are what let the page draw a box responsively at any zoom level, and the results were written directly into the page's own embedded data.</p>
+
+      <h2><span class="pb-num">05</span> A cleaner source: photos from the transliteration document</h2>
+      <p>Full-page scans were coarse enough that some lines' word positions stayed unreliable. A better source existed: the line-by-line transliteration document, where each &ldquo;Page X, Line Y&rdquo; heading is followed by a clean, isolated photo of just that line. The pipeline pulled every embedded line photo out of that document and re-ran matching and locating against these sharper images across all 198 lines, trying the match in both directions (crop-inside-photo and photo-inside-crop) and at a range of sizes, since scale wasn't always consistent between the two sources. Cases that still fell outside the photo's bounds got one more pass: aligning the site's existing crop image onto the new document photo by matching distinctive feature points between the two, which tolerates rotation and scale differences plain template matching can't, then re-searching within that aligned region.</p>
+
+      <h2><span class="pb-num">06</span> Fixing the file-matching problem properly</h2>
+      <p>Step 02's position-by-position zip was always the weak point, and a later pass went back and solved it properly instead of trusting the original order.</p>
+      <div class="pb-frame pb-frame-rubric">
+        <span class="pb-frame-label">What step 02 did</span>
+        <p>Paired dictionary word N with whichever file happened to be Nth in creation order &mdash; correct only as long as the two lists stayed the same length all the way through.</p>
+      </div>
+      <div class="pb-frame pb-frame-malachite">
+        <span class="pb-frame-label">The fix</span>
+        <p>For every line, built each word's expected label from the dictionary &mdash; its transliteration, normalized, with an occurrence number if the same word appears twice, and a lookup table smoothing over names written more than one way (Seth as &ldquo;stx&rdquo; or &ldquo;seth,&rdquo; Horus as &ldquo;hr,&rdquo; Thoth as &ldquo;dhwty&rdquo;) &mdash; then scored every label against every filename actually present and solved for the single best assignment across the whole line at once, rather than pairing them off in whatever order they happened to sit in.</p>
+      </div>
+      <p>Even the best possible assignment can't place extra files anywhere correct when there's no dictionary word for them to belong to. Page 2, line 10's two-file surplus is exactly that case &mdash; which is why word 4's box still copied word 2's, word 15 still shared word 13's image and position, word 16 still never carried onto the page, and word 7 still had no file to assign, until a person's eyes closed the gap by hand.</p>
+
+      <h2><span class="pb-num">07</span> Final polish and merge into the site</h2>
+      <p class="wide">A handful of later passes cleaned up the results before they went live: several rounds targeting outlier boxes (sized or positioned oddly against their neighbors) with a fresh, more targeted search; a pass re-running low-confidence matches with the surrounding clutter masked out, so a template wasn't accidentally locking onto a neighboring word's ink; and a repackaging pass that trimmed every line photo down to a tight, padded crop around just that line's words and resized it for the web. A composite-page renderer drew every located box onto full assembled pages so the whole set could be spot-checked visually, line by line, before anything was finalized. The very last step, each time, was a direct merge: the finished line photos and percentage boxes were substituted into the page's own embedded data &mdash; the same two blocks of JSON the page still reads today to know what photo to show for a line and where to draw each word's box &mdash; working from a saved backup copy so a bad run could always be undone.</p>
 
     </main>
   </section>
