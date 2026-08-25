@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Horus and Seth — Training Data</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=EB+Garamond:ital,wght@0,500;1,500;1,600&family=Inter:wght@400;500;600;700&family=Noto+Sans+Egyptian+Hieroglyphs&display=swap" rel="stylesheet">
+<style>
+:root{
+  --papyrus: #ece2c6;
+  --papyrus-deep: #e1d3ac;
+  --papyrus-edge: #d8c896;
+  --ink: #2a2116;
+  --ink-soft: #6b5c44;
+  --ink-faint: #a1927099;
+  --rubric: #a8461d;
+  --rubric-deep: #8a3714;
+  --malachite: #4c6650;
+  --malachite-deep: #3c5240;
+  --line: #c8b688;
+  --card: #f4ecd6;
+  --shadow: rgba(42,33,22,0.18);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(ellipse at 20% -10%, #f3e8c9 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 10%, #f0e2bd 0%, transparent 45%),
+    var(--papyrus);
+  color:var(--ink);
+  font-family:'Inter',sans-serif;
+  min-height:100vh;
+}
+.wrap{position:relative; max-width:1300px; margin:0 auto; padding:0 22px 90px;}
+header{
+  position:relative;
+  width:100vw; margin-left:calc(50% - 50vw);
+  padding:56px 24px 26px; text-align:center;
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg, rgba(236,226,198,0.9), rgba(236,226,198,0.74));
+}
+.glyph-strip{
+  font-family:'Noto Sans Egyptian Hieroglyphs';
+  font-size:26px; color:var(--rubric); letter-spacing:6px; opacity:.85; margin-bottom:14px;
+}
+header h1{
+  font-family:'Spectral',serif; font-weight:600; font-size:clamp(32px,5vw,52px); margin:0 0 6px;
+  letter-spacing:.5px;
+}
+.subtitle{ font-family:'EB Garamond',serif; font-style:italic; color:var(--ink-soft); font-size:18px; margin:0 0 8px; }
+.byline{ font-family:'Inter',sans-serif; font-size:12px; letter-spacing:.04em; color:var(--ink-faint); margin:0 0 22px; }
+.stat-row{
+  display:flex; gap:28px; justify-content:center; flex-wrap:wrap;
+  font-size:12.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:8px;
+}
+.stat-row b{ display:block; font-family:'Spectral',serif; font-size:22px; color:var(--ink); letter-spacing:0; text-transform:none; font-weight:600; }
+nav.tabs{ display:flex; justify-content:center; gap:6px; flex-wrap:wrap; margin:26px 0 0; }
+nav.tabs a{
+  font-family:'Spectral',serif; font-size:16px; text-decoration:none; color:var(--ink-soft);
+  padding:12px 22px 14px; position:relative; letter-spacing:.02em; display:inline-block;
+}
+nav.tabs a.active{ color:var(--ink); }
+nav.tabs a.active::after{
+  content:""; position:absolute; left:22px; right:22px; bottom:0; height:2px; background:var(--rubric);
+}
+nav.tabs a::before{
+  content:attr(data-glyph); font-family:'Noto Sans Egyptian Hieroglyphs'; margin-right:8px;
+  color:var(--rubric); font-size:15px;
+}
+.intro{ padding:34px 0 4px; text-align:center; }
+.intro h2{ font-family:'Spectral',serif; font-weight:600; font-size:1.7rem; margin:0 0 8px; }
+.intro p{ color:var(--ink-soft); font-size:1rem; max-width:640px; margin:0 auto; }
+.stats{ margin-top:14px; font-size:.85rem; color:var(--ink-soft); }
+.stats b{ color:var(--rubric); }
+
+.layout{ display:grid; grid-template-columns: 1fr 280px; gap:26px; margin-top:30px; align-items:start; }
+@media (max-width: 880px){ .layout{ grid-template-columns:1fr; } .sidebar{ order:-1; } }
+
+.cards{ display:flex; flex-direction:column; gap:22px; }
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:8px;
+  padding:18px 20px; box-shadow:0 2px 10px var(--shadow);
+}
+.card.done{ opacity:.55; }
+.card-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; flex-wrap:wrap; gap:8px; }
+.card-head .word{ font-family:'Spectral',serif; font-size:1.3rem; }
+.card-head .mdc{ color:var(--rubric); font-style:italic; }
+.card-head .gard{ color:var(--ink-soft); font-size:.85rem; }
+.card-head .ref{ color:var(--ink-faint); font-size:.78rem; }
+
+.progress{ font-size:.82rem; color:var(--ink-soft); margin-bottom:8px; }
+.progress .cur{ color:var(--rubric-deep); font-weight:600; }
+
+.stage-wrap{ overflow:auto; border:1px solid var(--line); background:#fff; border-radius:4px; }
+.stage{ position:relative; display:inline-block; }
+.stage img{ display:block; -webkit-user-drag:none; user-select:none; pointer-events:none; }
+.img-error{
+  display:none; align-items:center; justify-content:center; flex-direction:column; gap:4px;
+  min-height:100px; min-width:180px; padding:14px; text-align:center;
+  color:var(--ink-faint); font-size:.78rem; background:repeating-linear-gradient(45deg,#f4ecd6,#f4ecd6 8px,#ece0c4 8px,#ece0c4 16px);
+}
+.img-error span{ font-size:.68rem; word-break:break-all; }
+.stage img.broken{ display:none; }
+.stage img.broken + .img-error{ display:flex; }
+.box{ position:absolute; border:2px solid var(--rubric); background:rgba(168,70,29,0.14); }
+.box .lab{ position:absolute; top:-19px; left:0; background:var(--rubric); color:#fff; font-size:10px; padding:1px 4px; white-space:nowrap; border-radius:2px; }
+
+.controls-row{ display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; align-items:center; }
+button{ font-family:'Inter',sans-serif; border:none; border-radius:5px; padding:8px 14px; font-size:.86rem; cursor:pointer; }
+.btn-primary{ background:var(--malachite); color:#fff; }
+.btn-primary:hover{ background:var(--malachite-deep); }
+.btn-primary:disabled{ background:#a9b8ab; cursor:not-allowed; }
+.btn-ghost{ background:transparent; border:1px solid var(--line); color:var(--ink-soft); }
+.btn-ghost:hover{ background:var(--papyrus-deep); }
+.zoom-row{ display:flex; gap:4px; align-items:center; font-size:.8rem; color:var(--ink-soft); }
+.zoom-row button{ padding:4px 9px; background:var(--papyrus-deep); color:var(--ink); }
+
+.submit-row{ margin-top:26px; display:flex; justify-content:center; }
+.submit-row button{ font-size:1rem; padding:13px 34px; font-family:'Spectral',serif; }
+
+.sidebar{
+  position:sticky; top:20px; background:var(--card); border:1px solid var(--line);
+  border-radius:8px; padding:16px 16px 4px; max-height:calc(100vh - 40px); overflow-y:auto;
+}
+.sidebar h3{ font-family:'Spectral',serif; font-size:1.05rem; margin:0 0 4px; }
+.sidebar .hint{ font-size:.76rem; color:var(--ink-soft); margin-bottom:12px; }
+.sign-ref{ display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--papyrus-deep); }
+.sign-ref img{ width:44px; height:44px; object-fit:contain; background:#fff; border:1px solid var(--line); border-radius:3px; }
+.sign-ref .code{ font-family:'Spectral',serif; font-weight:600; color:var(--rubric-deep); font-size:.92rem; }
+.sign-ref .missing{ font-size:.72rem; color:var(--ink-faint); font-style:italic; }
+
+.toast{
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  background:var(--malachite-deep); color:#fff; padding:10px 22px; border-radius:6px;
+  font-size:.88rem; box-shadow:0 4px 16px var(--shadow); opacity:0; pointer-events:none;
+  transition:opacity .25s;
+}
+.toast.show{ opacity:1; }
+
+.loading{ text-align:center; padding:60px 0; color:var(--ink-soft); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="glyph-strip">𓅃𓅆  𓎛𓈖𓂝  𓁣𓅆</div>
+    <h1>Horus and Seth</h1>
+    <p class="subtitle">Hieratic word list from the Papyrus Chester Beatty</p>
+    <p class="byline">A project by Katrine Iversen, made possible with the help of others</p>
+    <div class="stat-row">
+      <div><b>4,973</b>headwords</div>
+      <div><b>277</b>gardiner signs</div>
+    </div>
+    <nav class="tabs">
+      <a data-glyph="𓊪" href="index.html">Home</a>
+      <a data-glyph="𓏞" href="dictionary.html">Dictionary</a>
+      <a data-glyph="𓊃" href="sign-list.html">Sign List</a>
+      <a data-glyph="𓊛" href="wenamun.html">Wenamun</a>
+      <a data-glyph="𓅃𓅆𓁣𓅆" href="horus-and-seth.html">Horus and Seth</a>
+      <a class="active" data-glyph="𓁹" href="training-data.html">Training Data</a>
+    </nav>
+  </header>
+
+  <div class="intro">
+    <h2>Find the Signs</h2>
+    <p>You'll see three words pulled at random from the dictionary. Draw a box around each sign in reading order, then submit — your marks feed directly into the search training data.</p>
+    <div class="stats">Signs marked this session: <b id="sessionCount">0</b></div>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div id="cards" class="cards">
+        <div class="loading">Loading a batch of words…</div>
+      </div>
+      <div class="submit-row">
+        <button id="submitBtn" class="btn-primary" disabled>Submit &amp; get 3 more</button>
+      </div>
+    </div>
+
+    <div class="sidebar">
+      <h3>Sign reference</h3>
+      <div class="hint">What to look for in the current words.</div>
+      <div id="signRefs"></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+// ======= CONFIGURE THIS =======
+const SUBMIT_URL = "https://script.google.com/macros/s/AKfycbyxJPg6pl3VNnjc6wXUWd2xEyD8iLtQYw3OP_MXYWjRbt8x0cCqJdJrWJvL8jXn4RY/exec";
+// ================================
+
+const BASE_IMG_HEIGHT = 130; // all crops display at this height at 1x, regardless of native size
+
+let manifest = null;
+let signRefs = null;
+let currentBatch = [];   // [{entry, instance, toks, boxes:[], skipped:false}]
+let sessionId = null;
+
+function getSessionId() {
+  try {
+    let id = localStorage.getItem('hs_training_session');
+    if (!id) {
+      id = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      localStorage.setItem('hs_training_session', id);
+    }
+    return id;
+  } catch (e) {
+    return 'sess_' + Date.now();
+  }
+}
+
+function getSessionCount() {
+  try { return parseInt(localStorage.getItem('hs_training_count') || '0', 10); }
+  catch (e) { return 0; }
+}
+function addSessionCount(n) {
+  try {
+    const c = getSessionCount() + n;
+    localStorage.setItem('hs_training_count', String(c));
+    document.getElementById('sessionCount').textContent = c;
+  } catch (e) {}
+}
+
+async function init() {
+  sessionId = getSessionId();
+  document.getElementById('sessionCount').textContent = getSessionCount();
+  const [mRes, sRes] = await Promise.all([fetch('manifest.json'), fetch('sign_refs.json')]);
+  manifest = await mRes.json();
+  signRefs = await sRes.json();
+  newBatch();
+}
+
+function pickRandom(arr, n) {
+  const pool = arr.slice();
+  const out = [];
+  while (out.length < n && pool.length) {
+    const i = Math.floor(Math.random() * pool.length);
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
+
+function newBatch() {
+  const entries = pickRandom(manifest, 3);
+  currentBatch = entries.map(entry => {
+    const instance = entry.instances[Math.floor(Math.random() * entry.instances.length)];
+    return { entry, instance, boxes: [], skipped: false, skip_reason: '' };
+  });
+  renderCards();
+  renderSignRefs();
+  updateSubmitState();
+}
+
+function renderSignRefs() {
+  const codes = new Set();
+  currentBatch.forEach(w => w.entry.toks.forEach(t => codes.add(t)));
+  const container = document.getElementById('signRefs');
+  container.innerHTML = '';
+  [...codes].sort().forEach(code => {
+    const div = document.createElement('div');
+    div.className = 'sign-ref';
+    const b64 = signRefs[code];
+    if (b64) {
+      div.innerHTML = `<img src="data:image/jpeg;base64,${b64}"><div><div class="code">${code}</div></div>`;
+    } else {
+      div.innerHTML = `<div style="width:44px;height:44px;background:#eee;border:1px solid var(--line);border-radius:3px;"></div><div><div class="code">${code}</div><div class="missing">no reference image</div></div>`;
+    }
+    container.appendChild(div);
+  });
+}
+
+function renderCards() {
+  const container = document.getElementById('cards');
+  container.innerHTML = '';
+  currentBatch.forEach((w, idx) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'card' + idx;
+    card.innerHTML = `
+      <div class="card-head">
+        <div><span class="word">${w.entry.mdc}</span> <span class="mdc">(${w.entry.gardiner})</span></div>
+        <div class="ref">${w.instance.reference}</div>
+      </div>
+      <div class="progress" id="progress${idx}"></div>
+      <div class="stage-wrap"><div class="stage" id="stage${idx}">
+        <img id="img${idx}" src="${w.instance.crop}" draggable="false" onerror="imgFailed(${idx})">
+        <div class="img-error" id="imgError${idx}">Image failed to load<br><span>${w.instance.crop}</span></div>
+      </div></div>
+      <div class="controls-row">
+        <div class="zoom-row">
+          Zoom:
+          <button onclick="setZoom(${idx},1)">1x</button>
+          <button onclick="setZoom(${idx},2)">2x</button>
+          <button onclick="setZoom(${idx},3)">3x</button>
+          <button onclick="setZoom(${idx},4)">4x</button>
+        </div>
+        <button class="btn-ghost" onclick="undoBox(${idx})">Undo last box</button>
+        <button class="btn-ghost" onclick="clearBoxes(${idx})">Clear</button>
+        <button class="btn-ghost" onclick="skipWord(${idx})">Skip / can't read this one</button>
+      </div>
+    `;
+    container.appendChild(card);
+    w._zoomLevel = 2;
+    setupStage(idx);
+    setZoom(idx, 2);
+    updateProgress(idx);
+  });
+}
+
+function updateProgress(idx) {
+  const w = currentBatch[idx];
+  const el = document.getElementById('progress' + idx);
+  if (w.skipped) { el.innerHTML = '<em>skipped</em>'; return; }
+  const toks = w.entry.toks;
+  const n = w.boxes.length;
+  if (n >= toks.length) {
+    el.innerHTML = `all ${toks.length} signs marked ✓`;
+  } else {
+    el.innerHTML = `sign ${n + 1} of ${toks.length}: <span class="cur">${toks[n]}</span>`;
+  }
+}
+
+function setZoom(idx, z) {
+  const w = currentBatch[idx];
+  w._zoomLevel = z;
+  // all crops render at the same BASE_IMG_HEIGHT regardless of native size, so cards
+  // are visually consistent; the zoom buttons then scale up/down from that baseline.
+  w._scale = (BASE_IMG_HEIGHT / w.instance.H) * z;
+  const img = document.getElementById('img' + idx);
+  img.style.width = (w.instance.W * w._scale) + 'px';
+  img.style.height = (w.instance.H * w._scale) + 'px';
+  renderBoxes(idx);
+}
+
+function imgFailed(idx) {
+  const img = document.getElementById('img' + idx);
+  if (img) img.classList.add('broken');
+}
+
+function setupStage(idx) {
+  const stage = document.getElementById('stage' + idx);
+  let drawing = null, dragging = false;
+
+  function getPos(e) {
+    const rect = stage.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  stage.addEventListener('pointerdown', (e) => {
+    const w = currentBatch[idx];
+    if (w.skipped || w.boxes.length >= w.entry.toks.length) return;
+    e.preventDefault();
+    stage.setPointerCapture(e.pointerId);
+    const p = getPos(e);
+    drawing = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    dragging = true;
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!dragging || !drawing) return;
+    const p = getPos(e);
+    drawing.x1 = p.x; drawing.y1 = p.y;
+    renderBoxes(idx, drawing);
+  });
+  stage.addEventListener('pointerup', () => {
+    if (!dragging) return;
+    dragging = false;
+    if (drawing) {
+      const w = currentBatch[idx];
+      const z = w._scale;
+      const bw = Math.abs(drawing.x1 - drawing.x0), bh = Math.abs(drawing.y1 - drawing.y0);
+      if (bw > 4 && bh > 4) {
+        const x0 = Math.min(drawing.x0, drawing.x1) / z, y0 = Math.min(drawing.y0, drawing.y1) / z;
+        const x1 = Math.max(drawing.x0, drawing.x1) / z, y1 = Math.max(drawing.y0, drawing.y1) / z;
+        w.boxes.push({ code: w.entry.toks[w.boxes.length], x0, y0, x1, y1 });
+        updateProgress(idx);
+        updateSubmitState();
+      }
+      drawing = null;
+      renderBoxes(idx);
+    }
+  });
+}
+
+function renderBoxes(idx, tempDraw) {
+  const stage = document.getElementById('stage' + idx);
+  [...stage.querySelectorAll('.box')].forEach(b => b.remove());
+  const w = currentBatch[idx];
+  const z = w._scale;
+  w.boxes.forEach((b, i) => {
+    const div = document.createElement('div');
+    div.className = 'box';
+    div.style.left = (b.x0 * z) + 'px'; div.style.top = (b.y0 * z) + 'px';
+    div.style.width = ((b.x1 - b.x0) * z) + 'px'; div.style.height = ((b.y1 - b.y0) * z) + 'px';
+    const lab = document.createElement('div'); lab.className = 'lab'; lab.textContent = b.code;
+    div.appendChild(lab);
+    stage.appendChild(div);
+  });
+  if (tempDraw) {
+    const div = document.createElement('div');
+    div.className = 'box';
+    const x0 = Math.min(tempDraw.x0, tempDraw.x1), y0 = Math.min(tempDraw.y0, tempDraw.y1);
+    const x1 = Math.max(tempDraw.x0, tempDraw.x1), y1 = Math.max(tempDraw.y0, tempDraw.y1);
+    div.style.left = x0 + 'px'; div.style.top = y0 + 'px';
+    div.style.width = (x1 - x0) + 'px'; div.style.height = (y1 - y0) + 'px';
+    stage.appendChild(div);
+  }
+}
+
+function undoBox(idx) {
+  currentBatch[idx].boxes.pop();
+  renderBoxes(idx);
+  updateProgress(idx);
+  updateSubmitState();
+}
+function clearBoxes(idx) {
+  currentBatch[idx].boxes = [];
+  renderBoxes(idx);
+  updateProgress(idx);
+  updateSubmitState();
+}
+function skipWord(idx) {
+  const w = currentBatch[idx];
+  w.skipped = !w.skipped;
+  w.skip_reason = w.skipped ? 'user flagged unreadable' : '';
+  document.getElementById('card' + idx).classList.toggle('done', w.skipped);
+  updateProgress(idx);
+  updateSubmitState();
+}
+
+function updateSubmitState() {
+  const ready = currentBatch.every(w => w.skipped || w.boxes.length === w.entry.toks.length);
+  document.getElementById('submitBtn').disabled = !ready;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+async function submitBatch() {
+  const payload = {
+    session_id: sessionId,
+    submitted_at: new Date().toISOString(),
+    words: currentBatch.map(w => ({
+      mdc: w.entry.mdc,
+      gardiner: w.entry.gardiner,
+      reference: w.instance.reference,
+      W: w.instance.W, H: w.instance.H,
+      skipped: w.skipped,
+      skip_reason: w.skip_reason,
+      boxes: w.boxes
+    }))
+  };
+
+  document.getElementById('submitBtn').disabled = true;
+  document.getElementById('submitBtn').textContent = 'Sending…';
+
+  if (SUBMIT_URL.indexOf('PASTE_YOUR') === -1) {
+    try {
+      await fetch(SUBMIT_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+    } catch (e) { /* no-cors gives no readable result either way */ }
+  } else {
+    console.warn('SUBMIT_URL not configured yet — payload not sent:', payload);
+  }
+
+  const boxCount = payload.words.reduce((s, w) => s + w.boxes.length, 0);
+  addSessionCount(boxCount);
+  showToast('Thanks! Loading 3 more words…');
+  document.getElementById('submitBtn').textContent = 'Submit & get 3 more';
+  newBatch();
+}
+
+document.getElementById('submitBtn').addEventListener('click', submitBatch);
+init();
+</script>
+</body>
+</html>

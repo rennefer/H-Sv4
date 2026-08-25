@@ -1,4 +1,4 @@
-const CACHE_NAME = 'horus-and-seth-v10';
+const CACHE_NAME = 'horus-and-seth-v11';
 const APP_SHELL = [
   './',
   './index.html',
