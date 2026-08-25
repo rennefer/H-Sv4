@@ -216,18 +216,36 @@ let signRefs = null;
 let currentBatch = [];   // [{entry, instance, toks, boxes:[], skipped:false}]
 let sessionId = null;
 
-// Every crop's image data is embedded directly in manifest.json (instance.data, base64 jpeg) —
-// no separate image files or folders at all, so there's nothing that can be left out of an upload.
+// Images aren't stored here at all — dictionary.html (already live on the site) already embeds
+// a base64 photo for every one of the 4,973 headwords, keyed by "reference". We fetch that page's
+// text once at startup, pull out its embedded JSON, and index it by reference. That means this
+// page needs no image data of its own and nothing new to upload for pictures to work.
+const imageByReference = {};
+
+function buildImageIndex(dictHtml) {
+  const m = dictHtml.match(/<script id="dict-data" type="application\/json">([\s\S]*?)<\/script>/);
+  if (!m) { console.warn('could not find dict-data in dictionary.html'); return; }
+  let entries;
+  try { entries = JSON.parse(m[1]); }
+  catch (e) { console.warn('failed to parse dict-data JSON', e); return; }
+  for (const d of entries) {
+    if (d.reference && d.img && !(d.reference in imageByReference)) {
+      imageByReference[d.reference] = d.img;
+    }
+  }
+}
+
 function loadCardImage(idx) {
   const w = currentBatch[idx];
   const img = document.getElementById('img' + idx);
   if (!img) return;
-  if (!w.instance.data) {
-    console.warn('no embedded image data for', w.instance.reference);
+  const src = imageByReference[w.instance.reference];
+  if (!src) {
+    console.warn('no dictionary image found for', w.instance.reference);
     imgFailed(idx);
     return;
   }
-  img.src = 'data:image/jpeg;base64,' + w.instance.data;
+  img.src = src; // already a full "data:image/jpeg;base64,..." URI
   img.classList.add('ready');
 }
 
@@ -259,9 +277,12 @@ function addSessionCount(n) {
 async function init() {
   sessionId = getSessionId();
   document.getElementById('sessionCount').textContent = getSessionCount();
-  const [mRes, sRes] = await Promise.all([fetch('manifest.json'), fetch('sign_refs.json')]);
+  const [mRes, sRes, dRes] = await Promise.all([
+    fetch('manifest.json'), fetch('sign_refs.json'), fetch('dictionary.html')
+  ]);
   manifest = await mRes.json();
   signRefs = await sRes.json();
+  buildImageIndex(await dRes.text());
   newBatch();
 }
 
