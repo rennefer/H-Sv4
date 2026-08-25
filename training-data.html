@@ -173,6 +173,7 @@ button{ font-family:'Inter',sans-serif; border:none; border-radius:5px; padding:
       <a data-glyph="𓊃" href="sign-list.html">Sign List</a>
       <a data-glyph="𓊛" href="wenamun.html">Wenamun</a>
       <a data-glyph="𓅃𓅆𓁣𓅆" href="horus-and-seth.html">Horus and Seth</a>
+      <a data-glyph="𓏛" href="playbook.html">Playbook</a>
       <a class="active" data-glyph="𓁹" href="training-data.html">Training Data</a>
     </nav>
   </header>
@@ -215,37 +216,19 @@ let signRefs = null;
 let currentBatch = [];   // [{entry, instance, toks, boxes:[], skipped:false}]
 let sessionId = null;
 
-// Crop images are split across chunks/chunk_N.json (base64-keyed by crop path) instead of
-// being individual files, so the whole dataset can be uploaded as a handful of files.
-const chunkCache = {};    // chunkIdx -> {cropPath: base64}
-const chunkPromises = {}; // chunkIdx -> in-flight fetch promise, so concurrent cards don't double-fetch
-
-function getChunk(chunkIdx) {
-  if (chunkCache[chunkIdx]) return Promise.resolve(chunkCache[chunkIdx]);
-  if (chunkPromises[chunkIdx]) return chunkPromises[chunkIdx];
-  chunkPromises[chunkIdx] = fetch(`chunks/chunk_${chunkIdx}.json`)
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(data => { chunkCache[chunkIdx] = data; delete chunkPromises[chunkIdx]; return data; })
-    .catch(err => { delete chunkPromises[chunkIdx]; throw err; });
-  return chunkPromises[chunkIdx];
-}
-
-async function loadCardImage(idx) {
+// Every crop's image data is embedded directly in manifest.json (instance.data, base64 jpeg) —
+// no separate image files or folders at all, so there's nothing that can be left out of an upload.
+function loadCardImage(idx) {
   const w = currentBatch[idx];
-  try {
-    const chunk = await getChunk(w.instance.chunk);
-    const b64 = chunk[w.instance.crop];
-    if (!b64) throw new Error('crop not found in chunk: ' + w.instance.crop);
-    // if the batch moved on before this resolved, don't touch a stale/reused DOM node
-    if (currentBatch[idx] !== w) return;
-    const img = document.getElementById('img' + idx);
-    if (!img) return;
-    img.src = 'data:image/jpeg;base64,' + b64;
-    img.classList.add('ready');
-  } catch (err) {
-    console.warn('image load failed for', w.instance.crop, err);
+  const img = document.getElementById('img' + idx);
+  if (!img) return;
+  if (!w.instance.data) {
+    console.warn('no embedded image data for', w.instance.reference);
     imgFailed(idx);
+    return;
   }
+  img.src = 'data:image/jpeg;base64,' + w.instance.data;
+  img.classList.add('ready');
 }
 
 function getSessionId() {
