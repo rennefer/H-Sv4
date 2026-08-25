@@ -57,7 +57,13 @@ header h1{
   font-size:12.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:8px;
 }
 .stat-row b{ display:block; font-family:'Spectral',serif; font-size:22px; color:var(--ink); letter-spacing:0; text-transform:none; font-weight:600; }
-nav.tabs{ display:flex; justify-content:center; gap:6px; flex-wrap:wrap; margin:26px 0 0; }
+nav.tabs{
+  display:grid;
+  grid-template-columns:repeat(3,auto);
+  justify-content:center;
+  gap:10px 6px;
+  margin:26px 0 0;
+}
 nav.tabs a{
   font-family:'Spectral',serif; font-size:16px; text-decoration:none; color:var(--ink-soft);
   padding:12px 22px 14px; position:relative; letter-spacing:.02em; display:inline-block;
@@ -104,7 +110,13 @@ nav.tabs a::before{
 }
 .img-error span{ font-size:.68rem; word-break:break-all; }
 .stage img.broken{ display:none; }
-.stage img.broken + .img-error{ display:flex; }
+.stage img.broken ~ .img-error{ display:flex; }
+.img-loading{
+  display:flex; align-items:center; justify-content:center;
+  min-height:100px; min-width:180px; padding:14px;
+  color:var(--ink-faint); font-size:.8rem; font-style:italic;
+}
+.stage img.ready ~ .img-loading{ display:none; }
 .box{ position:absolute; border:2px solid var(--rubric); background:rgba(168,70,29,0.14); }
 .box .lab{ position:absolute; top:-19px; left:0; background:var(--rubric); color:#fff; font-size:10px; padding:1px 4px; white-space:nowrap; border-radius:2px; }
 
@@ -203,6 +215,39 @@ let signRefs = null;
 let currentBatch = [];   // [{entry, instance, toks, boxes:[], skipped:false}]
 let sessionId = null;
 
+// Crop images are split across chunks/chunk_N.json (base64-keyed by crop path) instead of
+// being individual files, so the whole dataset can be uploaded as a handful of files.
+const chunkCache = {};    // chunkIdx -> {cropPath: base64}
+const chunkPromises = {}; // chunkIdx -> in-flight fetch promise, so concurrent cards don't double-fetch
+
+function getChunk(chunkIdx) {
+  if (chunkCache[chunkIdx]) return Promise.resolve(chunkCache[chunkIdx]);
+  if (chunkPromises[chunkIdx]) return chunkPromises[chunkIdx];
+  chunkPromises[chunkIdx] = fetch(`chunks/chunk_${chunkIdx}.json`)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(data => { chunkCache[chunkIdx] = data; delete chunkPromises[chunkIdx]; return data; })
+    .catch(err => { delete chunkPromises[chunkIdx]; throw err; });
+  return chunkPromises[chunkIdx];
+}
+
+async function loadCardImage(idx) {
+  const w = currentBatch[idx];
+  try {
+    const chunk = await getChunk(w.instance.chunk);
+    const b64 = chunk[w.instance.crop];
+    if (!b64) throw new Error('crop not found in chunk: ' + w.instance.crop);
+    // if the batch moved on before this resolved, don't touch a stale/reused DOM node
+    if (currentBatch[idx] !== w) return;
+    const img = document.getElementById('img' + idx);
+    if (!img) return;
+    img.src = 'data:image/jpeg;base64,' + b64;
+    img.classList.add('ready');
+  } catch (err) {
+    console.warn('image load failed for', w.instance.crop, err);
+    imgFailed(idx);
+  }
+}
+
 function getSessionId() {
   try {
     let id = localStorage.getItem('hs_training_session');
@@ -290,7 +335,8 @@ function renderCards() {
       </div>
       <div class="progress" id="progress${idx}"></div>
       <div class="stage-wrap"><div class="stage" id="stage${idx}">
-        <img id="img${idx}" src="${w.instance.crop}" draggable="false" onerror="imgFailed(${idx})">
+        <img id="img${idx}" draggable="false" onerror="imgFailed(${idx})">
+        <div class="img-loading" id="imgLoading${idx}">Loading image…</div>
         <div class="img-error" id="imgError${idx}">Image failed to load<br><span>${w.instance.crop}</span></div>
       </div></div>
       <div class="controls-row">
@@ -311,6 +357,7 @@ function renderCards() {
     setupStage(idx);
     setZoom(idx, 2);
     updateProgress(idx);
+    loadCardImage(idx);
   });
 }
 
@@ -342,6 +389,8 @@ function setZoom(idx, z) {
 function imgFailed(idx) {
   const img = document.getElementById('img' + idx);
   if (img) img.classList.add('broken');
+  const loading = document.getElementById('imgLoading' + idx);
+  if (loading) loading.style.display = 'none';
 }
 
 function setupStage(idx) {
