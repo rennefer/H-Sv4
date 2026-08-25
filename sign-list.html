@@ -107,7 +107,10 @@ h1 em{
 
 /* ---------- tabs ---------- */
 nav.tabs{
-  display:flex; justify-content:center; gap:6px;
+  display:grid;
+  grid-template-columns:repeat(3,auto);
+  justify-content:center;
+  gap:10px 6px;
   margin:26px 0 0;
 }
 nav.tabs button{
