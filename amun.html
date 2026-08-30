@@ -169,6 +169,16 @@ main.pb-body strong{ color:var(--ink); font-weight:600; }
 }
 .pb-frame-rubric{ border-left-color:var(--rubric); }
 .pb-frame-malachite{ border-left-color:var(--malachite); }
+.pb-cta{
+  display:inline-flex; align-items:center; gap:8px; margin-top:4px;
+  background:var(--rubric-deep); color:#f4ecd6; text-decoration:none;
+  font-family:'Inter',sans-serif; font-weight:600; font-size:14px; letter-spacing:.02em;
+  padding:12px 22px; border-radius:6px; box-shadow:0 3px 10px var(--shadow);
+  transition:background .15s ease;
+}
+.pb-cta:hover{ background:var(--rubric); }
+.pb-cta .arrow{ transition:transform .15s ease; }
+.pb-cta:hover .arrow{ transform:translateX(3px); }
 .pb-frame-label{
   display:block; font-family:'Inter',sans-serif; font-size:10.5px; letter-spacing:.08em;
   text-transform:uppercase; margin-bottom:7px;
@@ -296,13 +306,28 @@ code.pb-code{
   <section class="panel active" id="panel-amun">
     <main class="pb-body">
 
-      <p class="pb-lede">A second project, still taking shape. Nothing is loaded here yet &mdash; check back soon, or ask Katrine what's planned for Project Amun.</p>
+      <p class="pb-lede">The manual-annotation companion to Project Thoth &mdash; instead of boxing signs inside words that already have crops, this is where whole words get annotated by hand from scratch, straight from a line photograph.</p>
       <div class="pb-facts">
-        <span><b>Status</b> Not started</span>
+        <span><b>Status</b> In progress</span>
+        <span><b>Current dataset</b> Wenamun &mdash; pages 1&ndash;2, 89 lines</span>
+        <span><b>Saves to</b> the shared submissions spreadsheet, Wenamun tab</span>
       </div>
 
-      <h2><span class="pb-num">01</span> Coming soon</h2>
-      <p class="wide">This tab is a placeholder for Project Amun. Once there's real content &mdash; a tool, a dataset, a write-up &mdash; it'll replace this page.</p>
+      <h2><span class="pb-num">01</span> Open the tool</h2>
+      <p class="wide">The annotator shows one manuscript line at a time. Draw a box around each word, fill in its transliteration, hieroglyphs, English gloss, Gardiner code and gender, then submit &mdash; it saves straight to the sheet and moves you to the next line.</p>
+      <div class="pb-frame pb-frame-rubric">
+        <span class="pb-frame-label">Wenamun word annotation</span>
+        <p><a class="pb-cta" href="wenamun_annotator.html">Open the annotation tool <span class="arrow">&rarr;</span></a></p>
+      </div>
+
+      <h2><span class="pb-num">02</span> How it works</h2>
+      <ol class="pb-steps">
+        <li>Enter your name once, at the top &mdash; it's attached to everything you submit.</li>
+        <li>Pick a line with Prev / Next or the jump-to menu.</li>
+        <li>For each word: click &ldquo;Draw box&rdquo;, drag a box around it on the photo, then fill in its fields. Use &ldquo;Skip word&rdquo; for anything you can't make out.</li>
+        <li>Click &ldquo;Submit this line&rdquo; &mdash; it saves to the sheet and moves on automatically. &ldquo;Copy JSON&rdquo; is a backup if a submission doesn't seem to land.</li>
+      </ol>
+      <p class="wide">Once there's enough for a project, more texts will show up here alongside Wenamun.</p>
 
   </section>
 </div>
