@@ -106,7 +106,10 @@ h1 em{
 
 /* ---------- tabs ---------- */
 nav.tabs{
-  display:flex; justify-content:center; gap:6px;
+  display:grid;
+  grid-template-columns:repeat(3,auto);
+  justify-content:center;
+  gap:10px 6px;
   margin:26px 0 0;
 }
 nav.tabs button{
@@ -694,12 +697,15 @@ nav.tabs a::before{
       <div><b>4,973</b>headwords</div>
       <div><b>277</b>gardiner signs</div>
     </div>
-        <nav class="tabs">
+                <nav class="tabs">
       <a data-glyph="𓊪" href="index.html">Home</a>
       <a data-glyph="𓏞" href="dictionary.html">Dictionary</a>
       <a data-glyph="𓊃" href="sign-list.html">Sign List</a>
       <a class="active" data-glyph="𓊛" href="wenamun.html">Wenamun</a>
       <a data-glyph="𓅃𓅆𓁣𓅆" href="horus-and-seth.html">Horus and Seth</a>
+      <a data-glyph="𓏛" href="playbook.html">Playbook</a>
+      <a data-glyph="𓅝" href="training-data.html">Project Thoth</a>
+      <a data-glyph="𓁩" href="amun.html">Project Amun</a>
     </nav>
   </header>
 
@@ -717,7 +723,7 @@ nav.tabs a::before{
       <p class="al-sub">Paste a GitHub personal access token with write access to this repo, and new lines you load into the page will be committed straight to GitHub automatically — no more manual download-and-upload. The token is kept only in this browser (in localStorage); it is never written into the page itself or into what gets committed.</p>
       <div class="al-grid" style="grid-template-columns:1fr 1fr 90px;">
         <div class="al-field"><label>Repo owner</label><input type="text" id="ghOwner" placeholder="rennefer"></div>
-        <div class="al-field"><label>Repo name</label><input type="text" id="ghRepo" placeholder="horus-and-seth-"></div>
+        <div class="al-field"><label>Repo name</label><input type="text" id="ghRepo" placeholder="H-Sv4"></div>
         <div class="al-field"><label>Branch</label><input type="text" id="ghBranch" placeholder="main"></div>
       </div>
       <div class="al-field" style="margin-bottom:16px; max-width:420px;">
@@ -981,7 +987,11 @@ async function ghApi(cfg, path, options){
   if(!res.ok){
     let detail = '';
     try{ const j = await res.json(); detail = j.message || ''; }catch(e){}
-    throw new Error(`GitHub API ${res.status}${detail ? ' — ' + detail : ''}`);
+    let hint = '';
+    if(res.status === 404){
+      hint = ' — check the repo owner/name/branch are exactly right and the token has access to this repo (classic token: "repo" scope; fine-grained token: this repo\u2019s Contents set to Read and write). GitHub returns 404 (not 403) for a repo your token can\u2019t see, same as a truly missing repo.';
+    }
+    throw new Error(`GitHub API ${res.status}${detail ? ' — ' + detail : ''}${hint}`);
   }
   return res.json();
 }
@@ -998,13 +1008,29 @@ async function ghCommitWenamun(cfg, htmlString, message){
   const parentSha = refData.object.sha;
   const parentCommit = await ghApi(cfg, `/repos/${owner}/${repo}/git/commits/${parentSha}`);
   const baseTreeSha = parentCommit.tree.sha;
+  // Bump the shared build stamp, both in version.json and baked into the
+  // page being committed, so this file lines up with the freshness marker
+  // it's about to publish (see site-update-check.js).
+  const newBuild = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  const stampedHtml = htmlString.replace(
+    /window\.__BUILD__\s*=\s*"[^"]*"/,
+    `window.__BUILD__ = "${newBuild}"`
+  );
   const blob = await ghApi(cfg, `/repos/${owner}/${repo}/git/blobs`, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({content: htmlString, encoding:'utf-8'})
+    body: JSON.stringify({content: stampedHtml, encoding:'utf-8'})
+  });
+  const versionJson = JSON.stringify({build: newBuild});
+  const versionBlob = await ghApi(cfg, `/repos/${owner}/${repo}/git/blobs`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({content: versionJson, encoding:'utf-8'})
   });
   const tree = await ghApi(cfg, `/repos/${owner}/${repo}/git/trees`, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({base_tree: baseTreeSha, tree:[{path:'wenamun.html', mode:'100644', type:'blob', sha:blob.sha}]})
+    body: JSON.stringify({base_tree: baseTreeSha, tree:[
+      {path:'wenamun.html', mode:'100644', type:'blob', sha:blob.sha},
+      {path:'version.json', mode:'100644', type:'blob', sha:versionBlob.sha}
+    ]})
   });
   const commit = await ghApi(cfg, `/repos/${owner}/${repo}/git/commits`, {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -1047,9 +1073,9 @@ const wenamunGithub = (function(){
     panel.classList.toggle('open');
   });
 
-  saveBtn.addEventListener('click', ()=>{
+  saveBtn.addEventListener('click', async ()=>{
     const owner = ownerInput.value.trim() || 'rennefer';
-    const repo = repoInput.value.trim() || 'horus-and-seth-';
+    const repo = repoInput.value.trim() || 'H-Sv4';
     const branch = branchInput.value.trim() || 'main';
     const token = tokenInput.value.trim();
     if(!token){
@@ -1057,10 +1083,29 @@ const wenamunGithub = (function(){
       msg.textContent = 'Paste a personal access token first.';
       return;
     }
-    ghSaveConfig({owner, repo, branch, token});
-    refreshStatus();
-    msg.style.color = 'var(--malachite)';
-    msg.textContent = `Connected to ${owner}/${repo} (${branch}).`;
+    saveBtn.disabled = true;
+    msg.style.color = 'var(--ink-soft)';
+    msg.textContent = `Checking access to ${owner}/${repo}\u2026`;
+    try{
+      // Verify the repo is reachable with this token *before* saving, and
+      // confirm the branch actually exists -- this is the same check
+      // ghCommitWenamun relies on later, surfaced here where a wrong repo
+      // name, wrong branch, or bad/under-scoped token is easy to fix.
+      const repoData = await ghApi({token}, `/repos/${owner}/${repo}`);
+      await ghApi({token}, `/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`);
+      ghSaveConfig({owner, repo, branch, token});
+      refreshStatus();
+      msg.style.color = 'var(--malachite)';
+      msg.textContent = `Connected to ${owner}/${repo} (${branch}).`;
+    }catch(err){
+      msg.style.color = 'var(--rubric-deep)';
+      if(/404/.test(err.message)){
+        msg.textContent = `Could not find ${owner}/${repo} on branch "${branch}" with this token \u2014 check the repo name is exactly right (it's "H-Sv4", not "horus-and-seth-"), the branch exists, and the token has access to this repo (classic token: "repo" scope; fine-grained token: this repo's Contents set to Read and write).`;
+      } else {
+        msg.textContent = `Could not connect: ${err.message}`;
+      }
+    }
+    saveBtn.disabled = false;
   });
 
   forgetBtn.addEventListener('click', ()=>{

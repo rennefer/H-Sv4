@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Horus and Seth — Playbook</title>
+<title>Horus and Seth — Project Amun</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=EB+Garamond:ital,wght@0,500;1,500;1,600&family=Inter:wght@400;500;600;700&family=Noto+Sans+Egyptian+Hieroglyphs&display=swap" rel="stylesheet">
@@ -281,213 +281,29 @@ code.pb-code{
       <div><b>4,973</b>headwords</div>
       <div><b>277</b>gardiner signs</div>
     </div>
-            <nav class="tabs">
+                    <nav class="tabs">
       <a data-glyph="𓊪" href="index.html">Home</a>
       <a data-glyph="𓏞" href="dictionary.html">Dictionary</a>
       <a data-glyph="𓊃" href="sign-list.html">Sign List</a>
       <a data-glyph="𓊛" href="wenamun.html">Wenamun</a>
       <a data-glyph="𓅃𓅆𓁣𓅆" href="horus-and-seth.html">Horus and Seth</a>
-      <a class="active" data-glyph="𓏛" href="playbook.html">Playbook</a>
+      <a data-glyph="𓏛" href="playbook.html">Playbook</a>
       <a data-glyph="𓅝" href="training-data.html">Project Thoth</a>
-      <a data-glyph="𓁩" href="amun.html">Project Amun</a>
+      <a class="active" data-glyph="𓁩" href="amun.html">Project Amun</a>
     </nav>
   </header>
 
-  <section class="panel active" id="panel-playbook">
+  <section class="panel active" id="panel-amun">
     <main class="pb-body">
 
-      <p class="pb-lede"> this is an Ai report on its own work. dont trust it, and we are currently working on new metodes.
-        How we bootstrapped the sign-recognition trainer behind this site from almost no labeled data &mdash; and a step-by-step version of the method, so it can be repeated on any script with a growing digitized dictionary.</p>
+      <p class="pb-lede">A second project, still taking shape. Nothing is loaded here yet &mdash; check back soon, or ask Katrine what's planned for Project Amun.</p>
       <div class="pb-facts">
-        <span><b>Trained signs</b> 56 &rarr; 76</span>
-        <span><b>Training crops</b> 2,846 &rarr; 4,023</span>
-        <span><b>Validated on</b> 14 held-out lines, 957 signs</span>
+        <span><b>Status</b> Not started</span>
       </div>
 
-      <h2><span class="pb-num">01</span> The problem</h2>
-      <p>This dictionary has thousands of hieratic word entries, each with a scanned image and a Gardiner sign-code transcription &mdash; the standard reference list of hieroglyphic sign shapes. Behind the scenes, a matching tool tries to automatically localize and read each individual sign in a scanned line of running text, which is useful for working through a page of hieratic without already knowing every sign by sight.</p>
-      <p>The obvious approach is template matching: for each candidate sign, slide known examples of that sign across the line image and see where it matches best. The catch is that this needs <em>examples</em> of each sign already cropped out and labeled &mdash; and almost none of the dictionary comes that way. Most entries are whole words, three, four, five signs run together with no boundaries marked. Hand-boxing enough crops of all 277 sign types one at a time was never going to happen.</p>
-      <p class="wide">Everything below is the answer we landed on: get a small number of true ground-truth boxes from a person, then use the structure of the dictionary itself &mdash; the fact that many words repeat, sign-for-sign, dozens or hundreds of times &mdash; to multiply each ground-truth box into many training crops automatically.</p>
+      <h2><span class="pb-num">01</span> Coming soon</h2>
+      <p class="wide">This tab is a placeholder for Project Amun. Once there's real content &mdash; a tool, a dataset, a write-up &mdash; it'll replace this page.</p>
 
-      <h2><span class="pb-num">02</span> The core method</h2>
-      <p>Once a sign has training crops, matching it into a target word image works like this: crop every training example down to its ink using an Otsu threshold; resize that crop across thirteen scales, 25% to 100% of the target image's height, and run normalized cross-correlation against the target at each scale; keep the best-scoring position across every training example and every scale; then check ink density inside the winning box, since a high correlation score over a nearly blank region is usually a false positive.</p>
-      <div class="pb-table-wrap">
-        <table class="pb-table">
-          <caption>confidence flag, from score and ink density</caption>
-          <thead><tr><th>Condition</th><th>Flag</th></tr></thead>
-          <tbody>
-            <tr><td>no training crops exist for this sign</td><td>no_training_data</td></tr>
-            <tr><td>score &lt; 0.55</td><td>low_score</td></tr>
-            <tr><td>ink density inside the box &lt; 0.06</td><td>low_ink_density</td></tr>
-            <tr><td>score &lt; 0.65</td><td>borderline</td></tr>
-            <tr><td>otherwise</td><td>confident</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="wide">For full lines rather than single words, the same per-sign matcher runs inside a dynamic-programming pass that first splits the line into word-sized chunks by column ink-density gaps, then aligns the expected sign sequence against those chunks. A sign with zero training data doesn't break the pass &mdash; it just scores 0.0 and the alignment works around it, which matters for a dictionary where coverage is still being built.</p>
-
-      <h2><span class="pb-num">03</span> The trick: layout transfer</h2>
-      <p>The dictionary contains many entries that are literally the same fixed word, scanned dozens or hundreds of times from different manuscript pages &mdash; a common particle, a title, a stock phrase. That repetition is the entire trick.</p>
-      <div class="pb-frame pb-frame-rubric">
-        <span class="pb-frame-label">Ground truth, once</span>
-        <p>A person draws one bounding box per sign on <em>one</em> occurrence of the word, as a percentage of that image's width and height. For a two-sign word this is one annotation; for a five-sign word it's five boxes on one image.</p>
-      </div>
-      <div class="pb-frame pb-frame-malachite">
-        <span class="pb-frame-label">Transferred, automatically</span>
-        <p>Every <em>other</em> dictionary entry with that exact sign sequence gets the same percentage boxes applied to its own image dimensions and cropped out. One annotation on a word that repeats 155 times yields up to 154 new training crops per sign in it &mdash; for free.</p>
-      </div>
-      <p>The best single round this project ran picked one four-sign word that occurs 155 times in the dictionary and turned four ground-truth boxes into 462 new training entries in one pass.</p>
-
-      <h2><span class="pb-num">04</span> Choosing a technique</h2>
-      <p>Layout transfer assumes every occurrence of a word is laid out the same way, which is true often enough to be useful but false often enough to matter. Before trusting it, we check how much the ground-truth boxes for adjacent signs overlap (their IoU) and look at the actual crops at high zoom before merging anything in. Which technique to use ends up depending on box overlap and on how many total occurrences of the word exist.</p>
-      <dl class="pb-decision">
-        <dt>Low overlap, many occurrences</dt>
-        <dd><strong>Plain layout transfer.</strong> The percentage boxes rarely clip a neighboring sign. This is the default and the cheapest option.</dd>
-        <dt>High overlap, many occurrences</dt>
-        <dd><strong>Blob separation instead.</strong> Threshold the image into connected ink components and assign each blob to whichever sign's marked center is closer, rather than using a rectangle at all. Occurrences where two signs are physically merged into one stroke get skipped rather than guessed at.</dd>
-        <dt>Very few total occurrences (roughly six or fewer)</dt>
-        <dd><strong>Layout transfer anyway, despite visible bleed.</strong> Blob separation on that little data yields too few clean samples; a slightly noisy crop still beats no crop.</dd>
-        <dt>Exactly one occurrence in the whole dictionary</dt>
-        <dd><strong>Direct crop</strong> from the ground-truth box on the target image itself, since there's no other occurrence to transfer to.</dd>
-        <dt>No repeating word of its own, but several single-occurrence contexts</dt>
-        <dd><strong>Cross-context aggregation.</strong> Direct-crop the sign from each different one-off word it happens to appear in &mdash; three unrelated words become a genuine three-sample training set.</dd>
-        <dt>A sign that appears twice within the same word</dt>
-        <dd><strong>Doubled slots.</strong> Two picker slots map to the one underlying sign code, and both get cropped and appended as separate training entries.</dd>
-      </dl>
-
-      <h2><span class="pb-num">05</span> The playbook</h2>
-      <p class="wide">The repeatable procedure, generalized past this specific project. It assumes a digitized dictionary or corpus where entries carry both an image and a transcription into discrete symbol codes &mdash; true for most historical script projects, not just this one.</p>
-      <ol class="pb-steps">
-        <li><strong class="pb-step-title">Bootstrap from single-symbol entries</strong><p>Filter the dictionary for entries whose transcription is exactly one symbol &mdash; the whole entry image already <em>is</em> a single crop, no annotation needed.</p></li>
-        <li><strong class="pb-step-title">Build the matcher and a confidence score</strong><p>Multi-scale normalized cross-correlation plus an ink-density check, as above. Get this working early, since every later step depends on being able to measure whether a training set actually helps.</p></li>
-        <li><strong class="pb-step-title">Find untrained symbols by word, not just by pair</strong><p>Search for candidate words at every length, not only two-symbol words &mdash; see the blind spot below.</p></li>
-        <li><strong class="pb-step-title">Build (or reuse) an annotator tool</strong><p>A single-page tool: load the target word image, draw one draggable box per symbol slot, export the boxes as percentage coordinates. Generalizes cleanly from two slots to N; a doubled symbol just gets two slots sharing one code.</p></li>
-        <li><strong class="pb-step-title">Get one ground-truth annotation per word</strong><p>A person boxes each symbol once, on the clearest available occurrence of that word.</p></li>
-        <li><strong class="pb-step-title">Check box overlap before trusting the boxes</strong><p>Compute pairwise IoU between every pair of symbol boxes in that one annotation &mdash; a five-second check that decides which derivation technique to use.</p></li>
-        <li><strong class="pb-step-title">Derive and zoom in to check</strong><p>Run the chosen technique across every other occurrence of the exact same sequence, then actually look at a sample of the resulting crops at high zoom. Moderate overlap (5&ndash;30% IoU) can look fine in the numbers and still bleed visibly.</p></li>
-        <li><strong class="pb-step-title">Merge into the training database</strong><p>Append the new crops, tag each with how it was derived, and keep the crop's own dictionary reference attached.</p></li>
-        <li><strong class="pb-step-title">Test held-out, not in-sample</strong><p>Exclude any training crop whose reference matches the word being tested, including a doubled symbol's own crops &mdash; otherwise a symbol always "recognizes itself."</p></li>
-        <li><strong class="pb-step-title">Re-run full-line validation periodically</strong><p>Single-symbol tests are fast, but whole-line accuracy on real scanned text, tested against the same fixed sample every time, is the number that actually matters.</p></li>
-      </ol>
-
-      <h2><span class="pb-num">06</span> The blind spot we found</h2>
-      <p>For most of this project, "find an untrained symbol worth training" meant searching for dictionary words of exactly one or exactly two symbols. That search felt exhaustive &mdash; it eventually turned up only symbols occurring once, with nothing higher-value left.</p>
-      <p class="wide">It wasn't exhaustive. It was scoped to the wrong thing. Widening the search to symbols appearing in words of <em>any</em> length surfaced <strong>177 untrained symbols with two or more total dictionary occurrences</strong> that the narrow search had never been able to see, because every one of their occurrences happened to sit inside a longer word. The top ten by frequency ranged from 55 to 198 total uses each.</p>
-      <div class="pb-frame pb-frame-rubric">
-        <span class="pb-frame-label">Takeaway</span>
-        <p>A coverage-discovery step should be scoped to the unit you actually care about (symbols), not to the shape of the search that's easiest to run (short words). Acting on this discovery &mdash; training the top ten by frequency, plus three more found along the way &mdash; added 20 symbols and 1,177 training crops across nine annotation rounds.</p>
-      </div>
-
-      <h2><span class="pb-num">07</span> Validating at scale</h2>
-      <p class="wide">Held-out testing on individual symbols is fast but can be misleading in aggregate. The real check is running the full line-matching pipeline against a fixed, randomly sampled set of real scanned lines and comparing localization and confidence rates before and after a training push &mdash; including the lines that got worse, not only the ones that improved.</p>
-
-      <h2><span class="pb-num">08</span> Results</h2>
-      <div class="pb-stat-strip">
-        <div class="pb-stat"><div class="pb-stat-label">Trained symbols</div><div class="pb-stat-value">56 <span class="pb-arrow">&rarr;</span><span class="pb-after">76</span></div></div>
-        <div class="pb-stat"><div class="pb-stat-label">Training crops</div><div class="pb-stat-value">2,846 <span class="pb-arrow">&rarr;</span><span class="pb-after">4,023</span></div></div>
-        <div class="pb-stat"><div class="pb-stat-label">Localized (957 signs)</div><div class="pb-stat-value">69.9% <span class="pb-arrow">&rarr;</span><span class="pb-after">82.0%</span></div></div>
-        <div class="pb-stat"><div class="pb-stat-label">Confident (957 signs)</div><div class="pb-stat-value">57.3% <span class="pb-arrow">&rarr;</span><span class="pb-after">66.9%</span></div></div>
-      </div>
-      <p>Line by line, on the identical 14-line, 957-symbol sample, before and after the training push:</p>
-      <div class="pb-table-wrap">
-        <table class="pb-table">
-          <caption>held-out full-line validation, seed-fixed sample</caption>
-          <thead><tr><th>Line</th><th class="num">Localized before</th><th class="num">after</th><th class="num">Confident before</th><th class="num">after</th></tr></thead>
-          <tbody>
-            <tr><td class="pb-ref">H&amp;S 02,02</td><td class="num">66%</td><td class="num pb-up">90%</td><td class="num">63%</td><td class="num pb-up">77%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 06,04</td><td class="num">55%</td><td class="num pb-down">49%</td><td class="num">62%</td><td class="num pb-up">67%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 02,11</td><td class="num">52%</td><td class="num pb-up">86%</td><td class="num">62%</td><td class="num pb-up">68%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 16,07</td><td class="num">60%</td><td class="num pb-up">80%</td><td class="num">23%</td><td class="num pb-up">30%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 08,13</td><td class="num">77%</td><td class="num pb-down">68%</td><td class="num">63%</td><td class="num pb-up">78%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 03,03</td><td class="num">71%</td><td class="num pb-up">87%</td><td class="num">71%</td><td class="num pb-up">81%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 01,10</td><td class="num">84%</td><td class="num pb-up">88%</td><td class="num">75%</td><td class="num pb-up">82%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 08,06</td><td class="num">68%</td><td class="num pb-up">82%</td><td class="num">46%</td><td class="num pb-up">68%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 11,09</td><td class="num">78%</td><td class="num pb-up">89%</td><td class="num">38%</td><td class="num pb-up">52%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 12,03</td><td class="num">73%</td><td class="num pb-up">90%</td><td class="num">45%</td><td class="num pb-flat">45%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 07,07</td><td class="num">67%</td><td class="num pb-up">84%</td><td class="num">73%</td><td class="num pb-up">84%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 07,09</td><td class="num">73%</td><td class="num pb-up">83%</td><td class="num">67%</td><td class="num pb-up">70%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 04,03</td><td class="num">79%</td><td class="num pb-up">92%</td><td class="num">66%</td><td class="num pb-up">75%</td></tr>
-            <tr><td class="pb-ref">H&amp;S 03,10</td><td class="num">78%</td><td class="num pb-up">80%</td><td class="num">60%</td><td class="num pb-up">69%</td></tr>
-            <tr class="pb-totals"><td>Overall (957 signs)</td><td class="num">69.9%</td><td class="num pb-up">82.0%</td><td class="num">57.3%</td><td class="num pb-up">66.9%</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p>12 of 14 lines improved on localization and 13 of 14 improved on confidence; the two lines that dipped on localization gained on confidence instead, and only one line was exactly flat on confidence.</p>
-
-      <h2><span class="pb-num">09</span> Lessons &amp; pitfalls</h2>
-      <h3>IoU is a screening tool, not a guarantee</h3>
-      <p>Boxes with 5&ndash;30% overlap can still bleed visibly into a neighbor's crop even though the number looks tolerable. Zoomed visual review of a sample of the derived crops is not optional.</p>
-      <h3>Automated checks need to re-measure, not cache, unstable state</h3>
-      <p>A browser-automation check of a multi-box annotation tool intermittently reported a box in the wrong place &mdash; not because the tool was wrong, but because the test cached the page's layout once and reused it across several drags, after the layout had shifted slightly. Re-measuring immediately before each interaction fixed it.</p>
-      <h3>A weak result is information, not a failure to hide</h3>
-      <p>One training round scored far below the others in held-out testing. Printing the raw scores showed an already well-established symbol <em>also</em> failing on the exact same lines, which ruled out "bad new data" and pointed instead at real scan-to-scan layout drift for that particular word.</p>
-      <h3>Scope your discovery search to the unit that matters</h3>
-      <p>Worth repeating as the single highest-leverage lesson from this project: a search that only looks at short words will only ever find symbols confined to short words.</p>
-
-      <h2><span class="pb-num">10</span> Adapting this to your script</h2>
-      <p class="wide">Nothing above is specific to hieratic. It needs three things from a corpus: a digitized image for each entry, a transcription into a sequence of discrete symbol codes, and enough repetition that some exact sequences occur more than once. Cuneiform sign lists, manuscript abbreviation corpora, historical shorthand, and consistently-formatted handwritten forms all tend to satisfy this.</p>
-      <p class="wide">Where repetition is thinner than this project's (word repeat counts here ranged from 4 to over 400), lean harder on cross-context aggregation and accept smaller per-symbol training sets rather than skipping low-frequency symbols entirely.</p>
-      <div class="pb-frame pb-frame-malachite">
-        <span class="pb-frame-label">Minimum viable version</span>
-        <p>You don't need the full tooling to start. A spreadsheet of symbol&ndash;to&ndash;box-percentage pairs, one ground-truth annotation per repeating word, and a plain template-matching loop is enough to prove the approach out before investing in an annotator tool or a confidence-scoring pipeline.</p>
-      </div>
-
-      <div class="pb-entry-divider"><span>A separate entry</span></div>
-
-      <div class="pb-entry-title">Building the Word-Level Annotations</div>
-      <p class="pb-lede">The entry above covers the sign-recognition trainer. This one is the layer underneath it: how each word on the Horus &amp; Seth page got its own clickable box and cropped image in the first place, built from the dictionary and a folder of individual word-image files rather than typed in by hand.</p>
-      <div class="pb-facts">
-        <span><b>215</b> page/line pairs matched</span>
-        <span><b>54</b> flagged for a file&ndash;dictionary count mismatch</span>
-        <span><b>198</b> lines re-matched against clean line photos</span>
-      </div>
-
-      <h2><span class="pb-num">01</span> The problem</h2>
-      <p>Three things existed before any of this ran: a folder of pre-cropped word-image files for every line, one small image per word, sorted into page/line subfolders; the dictionary itself, where every entry carries a reference like &ldquo;H&amp;S 02,10,07&rdquo; identifying its exact page, line, and word position; and photographs of the manuscript &mdash; full-page scans at first, later replaced by cleaner per-line photos pulled from a line-by-line transliteration document.</p>
-      <p class="wide">None of this pipeline reads hieratic. It only ever aligns things that already exist &mdash; which file belongs to which dictionary row, and where that file's contents actually sit on a photo of the line &mdash; so the page can show the right crop in the right place and let a click jump straight to the matching dictionary entry.</p>
-
-      <h2><span class="pb-num">02</span> Matching files to dictionary entries</h2>
-      <p>For every line, the dictionary entries were sorted by word number and the image files sitting in that line's folder were sorted by creation time, then the two lists were zipped together position by position: word 1 with the first file, word 2 with the second, and so on. That only works cleanly when both lists are the same length. Whenever they weren't &mdash; a missing dictionary entry, a stray or duplicated file &mdash; the mismatch was logged, and the pairing for that line became unreliable from that point on. Across the project, 54 of 215 page/line pairs were flagged this way.</p>
-      <div class="pb-table-wrap">
-        <table class="pb-table">
-          <caption>largest file&ndash;dictionary count gaps caught at this step</caption>
-          <thead><tr><th>Line</th><th class="num">Dictionary words</th><th class="num">Image files</th></tr></thead>
-          <tbody>
-            <tr><td class="pb-ref">H&amp;S 02,02</td><td class="num">19</td><td class="num">23</td></tr>
-            <tr><td class="pb-ref">H&amp;S 12,05</td><td class="num">24</td><td class="num">27</td></tr>
-            <tr><td class="pb-ref">H&amp;S 16,12</td><td class="num">28</td><td class="num">31</td></tr>
-            <tr><td class="pb-ref">H&amp;S 01,09</td><td class="num">10</td><td class="num">12</td></tr>
-            <tr><td class="pb-ref">H&amp;S 02,10</td><td class="num">15</td><td class="num">17</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p>Page 2, line 10 &mdash; 15 dictionary words against 17 files &mdash; is on this list. It's the same line whose word 4, 7, 15, and 16 annotations needed a manual repair pass later; that repair fixed what this step could only flag.</p>
-
-      <h2><span class="pb-num">03</span> Locating each word on the page</h2>
-      <p>With a file assigned to each word, however reliably, the next question was purely visual: where does that small crop actually appear on a photo of the full page? Each word's crop was searched for inside the page photograph with template matching &mdash; a coarse pass at low resolution to find roughly the right neighborhood, then a refined pass at full resolution to lock in an exact pixel position and a confidence score. Two later pages (16 and 17) used their own dedicated per-line photos in place of a full-page scan, since those existed separately. Matches scoring below a threshold were flagged as low-confidence for a later pass.</p>
-
-      <h2><span class="pb-num">04</span> From pixel positions to on-page boxes</h2>
-      <p>Working from every word's pixel position, a bounding box was drawn around all the words on a line, padded slightly, and that strip was cropped out of the full page photo &mdash; producing the compact per-line photo the page actually shows, rather than the whole scanned page. Each word's pixel box was then re-expressed as a percentage of that new, smaller photo's width and height, since percentages are what let the page draw a box responsively at any zoom level, and the results were written directly into the page's own embedded data.</p>
-
-      <h2><span class="pb-num">05</span> A cleaner source: photos from the transliteration document</h2>
-      <p>Full-page scans were coarse enough that some lines' word positions stayed unreliable. A better source existed: the line-by-line transliteration document, where each &ldquo;Page X, Line Y&rdquo; heading is followed by a clean, isolated photo of just that line. The pipeline pulled every embedded line photo out of that document and re-ran matching and locating against these sharper images across all 198 lines, trying the match in both directions (crop-inside-photo and photo-inside-crop) and at a range of sizes, since scale wasn't always consistent between the two sources. Cases that still fell outside the photo's bounds got one more pass: aligning the site's existing crop image onto the new document photo by matching distinctive feature points between the two, which tolerates rotation and scale differences plain template matching can't, then re-searching within that aligned region.</p>
-
-      <h2><span class="pb-num">06</span> Fixing the file-matching problem properly</h2>
-      <p>Step 02's position-by-position zip was always the weak point, and a later pass went back and solved it properly instead of trusting the original order.</p>
-      <div class="pb-frame pb-frame-rubric">
-        <span class="pb-frame-label">What step 02 did</span>
-        <p>Paired dictionary word N with whichever file happened to be Nth in creation order &mdash; correct only as long as the two lists stayed the same length all the way through.</p>
-      </div>
-      <div class="pb-frame pb-frame-malachite">
-        <span class="pb-frame-label">The fix</span>
-        <p>For every line, built each word's expected label from the dictionary &mdash; its transliteration, normalized, with an occurrence number if the same word appears twice, and a lookup table smoothing over names written more than one way (Seth as &ldquo;stx&rdquo; or &ldquo;seth,&rdquo; Horus as &ldquo;hr,&rdquo; Thoth as &ldquo;dhwty&rdquo;) &mdash; then scored every label against every filename actually present and solved for the single best assignment across the whole line at once, rather than pairing them off in whatever order they happened to sit in.</p>
-      </div>
-      <p>Even the best possible assignment can't place extra files anywhere correct when there's no dictionary word for them to belong to. Page 2, line 10's two-file surplus is exactly that case &mdash; which is why word 4's box still copied word 2's, word 15 still shared word 13's image and position, word 16 still never carried onto the page, and word 7 still had no file to assign, until a person's eyes closed the gap by hand.</p>
-
-      <h2><span class="pb-num">07</span> Final polish and merge into the site</h2>
-      <p class="wide">A handful of later passes cleaned up the results before they went live: several rounds targeting outlier boxes (sized or positioned oddly against their neighbors) with a fresh, more targeted search; a pass re-running low-confidence matches with the surrounding clutter masked out, so a template wasn't accidentally locking onto a neighboring word's ink; and a repackaging pass that trimmed every line photo down to a tight, padded crop around just that line's words and resized it for the web. A composite-page renderer drew every located box onto full assembled pages so the whole set could be spot-checked visually, line by line, before anything was finalized. The very last step, each time, was a direct merge: the finished line photos and percentage boxes were substituted into the page's own embedded data &mdash; the same two blocks of JSON the page still reads today to know what photo to show for a line and where to draw each word's box &mdash; working from a saved backup copy so a bad run could always be undone.</p>
-
-    </main>
   </section>
 </div>
 
