@@ -563,18 +563,18 @@ footer{
 }
 .glyph-slider .gs-handle::before{
   content:"";
-  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  position:absolute; top:calc(100% - 20px); left:50%; transform:translate(-50%,-50%);
   width:30px; height:30px; border-radius:50%;
   background:var(--rubric);
   box-shadow:0 2px 6px var(--shadow);
 }
 .glyph-slider .gs-handle::after{
   content:"\2194";
-  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  position:absolute; top:calc(100% - 20px); left:50%; transform:translate(-50%,-50%);
   color:#f4ecd6; font-size:14px; line-height:1;
 }
 .glyph-slider .gs-caption{
-  position:absolute; bottom:8px; left:8px;
+  position:absolute; top:8px; left:8px;
   font-family:'Inter',sans-serif; font-size:9.5px; letter-spacing:.05em; text-transform:uppercase;
   background:rgba(244,236,214,.88); padding:2px 8px; border-radius:10px; color:var(--ink-soft);
   pointer-events:none;
@@ -764,7 +764,7 @@ nav.tabs a::before{
       </div>
       <div class="al-actions">
         <button class="load-more" id="alSubmit" style="margin:0;">Load into page</button>
-        <span class="al-msg" id="alMsg" style="color: var(--malachite);">Line 1.60 added and saved to GitHub (093687a). GitHub Pages will update in a minute or two.</span>
+        <span class="al-msg" id="alMsg" style="color: var(--ink-soft);">Saving to GitHub…</span>
       </div>
     </div>
 
@@ -1014,7 +1014,7 @@ async function ghCommitWenamun(cfg, htmlString, message){
   const newBuild = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
   const stampedHtml = htmlString.replace(
     /window\.__BUILD__\s*=\s*"[^"]*"/,
-    `window.__BUILD__ = "2026-08-30T15:44:45Z"`
+    `window.__BUILD__ = "${newBuild}"`
   );
   const blob = await ghApi(cfg, `/repos/${owner}/${repo}/git/blobs`, {
     method:'POST', headers:{'Content-Type':'application/json'},

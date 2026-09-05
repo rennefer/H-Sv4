@@ -1,0 +1,1728 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Depth Walk</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+Egyptian+Hieroglyphs&display=swap">
+<style>
+  html, body { margin:0; height:100%; overflow:hidden; background:#e9e4d8; }
+  canvas { display:block; touch-action:none; }
+
+  #editor {
+    position:fixed; top:0; right:0; width:440px; height:100%; box-sizing:border-box;
+    background:#fdf8ec; border-left:1px solid rgba(40,30,20,0.25);
+    font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    color:#2a1f14; padding:18px; overflow-y:auto;
+  }
+  #editor[hidden] { display:none; }
+  #editor h2 { font-size:17px; margin:0 0 6px; }
+  #editor .hint { font-size:12px; color:#6b5a45; margin:0 0 14px; }
+  #editor label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#6b5a45; margin:14px 0 5px; }
+  #palette {
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(34px, 1fr)); gap:4px;
+    max-height:44vh; overflow-y:auto; border:1px solid rgba(40,30,20,0.2);
+    padding:5px; background:#fff;
+  }
+  .palette-btn {
+    font-family: "Noto Sans Egyptian Hieroglyphs"; font-size:22px;
+    width:100%; aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+    background:#fdf8ec; border:1px solid rgba(40,30,20,0.15); border-radius:3px; cursor:pointer;
+  }
+  .palette-btn:hover { background:#f0e7d2; }
+  .palette-btn.active { background:#e3b98c; border-color:#a06a2e; }
+  #scaleRow { display:flex; align-items:center; gap:8px; }
+  #scaleRow input[type=range] { flex:1; }
+  #scaleValue { font-variant-numeric: tabular-nums; min-width:2.6em; text-align:right; }
+  .row { display:flex; align-items:center; gap:6px; margin-top:8px; }
+  #editor button {
+    font: inherit; padding:6px 10px; border:1px solid #a06a2e; background:#e3b98c;
+    color:#2a1f14; border-radius:4px; cursor:pointer; margin-top:8px; margin-right:6px;
+  }
+  #editor button:hover { background:#d9ab74; }
+  #editor button:disabled { opacity:0.55; cursor:default; }
+  #editor textarea {
+    width:100%; box-sizing:border-box; height:90px; margin-top:6px; font:11px/1.3 monospace;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="editor" hidden>
+  <h2>Level Editor</h2>
+  <p class="hint">Press E to close. Click the map to place the selected sign, click a placed sign to select it, then drag it to move it. Del removes the selection.</p>
+  <label>Sign palette</label>
+  <div id="palette"></div>
+  <label>Size</label>
+  <div id="scaleRow">
+    <input type="range" id="scaleSlider" min="0.3" max="3" step="0.05" value="1">
+    <span id="scaleValue">1.00x</span>
+  </div>
+  <div class="row">
+    <input type="checkbox" id="pickupCheck">
+    <label style="margin:0; text-transform:none; letter-spacing:0; font-size:13px;" for="pickupCheck">Pickupable</label>
+  </div>
+  <div class="row">
+    <input type="checkbox" id="mirrorCheck">
+    <label style="margin:0; text-transform:none; letter-spacing:0; font-size:13px;" for="mirrorCheck">Mirrored (face right)</label>
+  </div>
+  <div class="row">
+    <input type="checkbox" id="noHitboxCheck">
+    <label style="margin:0; text-transform:none; letter-spacing:0; font-size:13px;" for="noHitboxCheck">No hitbox (walk through)</label>
+  </div>
+  <div>
+    <button id="deleteBtn">Delete selected</button>
+  </div>
+  <label>Map</label>
+  <div>
+    <button id="map1Btn">Lvl 1</button>
+    <button id="mapNeg1Btn">Lvl -1</button>
+  </div>
+  <div class="row">
+    <input type="checkbox" id="debugCheck">
+    <label style="margin:0; text-transform:none; letter-spacing:0; font-size:13px;" for="debugCheck">Show hitboxes</label>
+  </div>
+  <label>Level data</label>
+  <div>
+    <button id="exportBtn">Export</button>
+    <button id="importBtn">Import</button>
+  </div>
+  <textarea id="levelJson" placeholder="Exported JSON appears here — paste JSON here and click Import to load it."></textarea>
+</div>
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   DEPTH WALK — motion only, no scenery.
+   Arrow keys / WASD move the player, which alternates between
+   Gardiner A1 and A2 while moving, and rests on A1 when still.
+   Moving up shrinks it toward the background; moving down
+   grows it toward the foreground. Three fixed depth anchors
+   shape the scale curve.
+   ============================================================ */
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const HIERO_FONT = '"Noto Sans Egyptian Hieroglyphs"';
+const A1 = String.fromCodePoint(0x13000); // seated man — idle / walk frame 1
+const A2 = String.fromCodePoint(0x13001); // man with hand to mouth — walk frame 2
+const A26 = String.fromCodePoint(0x1301E); // NPC, resting pose
+const E3 = String.fromCodePoint(0x130D4); // cow
+const A9 = String.fromCodePoint(0x1300B); // player, while carrying the cow
+const P1 = String.fromCodePoint(0x1329B); // boat — carried on the player's head under the cow
+const A28 = String.fromCodePoint(0x13020); // NPC delivery-celebration sequence
+const A29 = String.fromCodePoint(0x13021);
+const A31 = String.fromCodePoint(0x13023);
+const A32 = String.fromCodePoint(0x13024);
+const I3 = String.fromCodePoint(0x1318A); // Nile crocodile — the river hazard
+const G40 = String.fromCodePoint(0x1316E); // duck flying — wingbeat frame 1
+const G41 = String.fromCodePoint(0x1316F); // duck flying (alighting pose) — wingbeat frame 2
+const N6 = String.fromCodePoint(0x131F4); // sun disk — the lady's reward, rendered in gold
+
+let W = 0, H = 0, DPR = 1;
+let fontsReady = false;
+Promise.all([
+  document.fonts.load('100px '+HIERO_FONT),
+]).then(()=>{ fontsReady = true; }).catch(()=>{ fontsReady = true; });
+
+/* ---------- background: papyrus texture ----------
+   A real papyrus photo, tiled across the map instead of a flat fill. */
+const PAPYRUS_DATA_URL = 'data:image/jpeg;base64,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';
+let papyrusPattern = null;
+const papyrusImg = new Image();
+papyrusImg.onload = () => { papyrusPattern = ctx.createPattern(papyrusImg, 'repeat'); };
+papyrusImg.src = PAPYRUS_DATA_URL;
+
+/* ---------- depth anchors ----------
+   y is a fraction of canvas height (0 = top/far, 1 = bottom/near).
+   Scale is interpolated linearly between the two anchors the
+   player currently sits between. */
+const DEPTH_ANCHORS = [
+  [0.10, 0.35],   // background
+  [0.40, 0.58],   // background -> midground seam
+  [0.72, 0.88],   // midground -> foreground seam
+  [0.96, 1.35],   // foreground
+];
+function scaleForY(y){
+  for(let i=0; i<DEPTH_ANCHORS.length-1; i++){
+    const [y0,s0] = DEPTH_ANCHORS[i], [y1,s1] = DEPTH_ANCHORS[i+1];
+    if(y>=y0 && y<=y1){
+      const t = (y-y0)/(y1-y0);
+      return s0 + (s1-s0)*t;
+    }
+  }
+  return y < DEPTH_ANCHORS[0][0] ? DEPTH_ANCHORS[0][1] : DEPTH_ANCHORS[DEPTH_ANCHORS.length-1][1];
+}
+
+const BOUNDS = { xMin:0.035, xMax:0.965, yMin:DEPTH_ANCHORS[0][0], yMax:DEPTH_ANCHORS[DEPTH_ANCHORS.length-1][0] };
+
+/* ---------- the river ----------
+   A closed polygon (traced from the reference map) marking the water.
+   Wading in it without a boat is slow and draws a crocodile; a boat
+   parked in it can be boarded and is confined to it until it beaches. */
+const WATER_POLY = [[0.0046,0.0491],[0.0083,0.0369],[0.0495,0.0442],[0.1001,0.0971],[0.1264,0.14],[0.1863,0.1929],[0.2926,0.1904],[0.5243,0.2162],[0.6956,0.2113],[0.7621,0.2002],[0.8586,0.2027],[0.9025,0.1843],[0.9917,0.1916],[0.9943,0.2912],[0.9799,0.3108],[0.9205,0.2961],[0.8829,0.301],[0.8555,0.3219],[0.7967,0.3194],[0.7028,0.3354],[0.6806,0.3501],[0.6228,0.3428],[0.5294,0.3649],[0.4603,0.335],[0.2786,0.335],[0.1223,0.3219],[0.1146,0.301],[0.0743,0.2801],[0.0057,0.2727]];
+function pointInPolygon(x, y, poly){
+  let inside = false;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const xi=poly[i][0], yi=poly[i][1], xj=poly[j][0], yj=poly[j][1];
+    const intersect = ((yi>y) !== (yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+    if(intersect) inside = !inside;
+  }
+  return inside;
+}
+function isInWater(x, y){ return currentMap === 1 && pointInPolygon(x, y, WATER_POLY); } // no river outside the main map
+const BOAT_WATER_SNAP = 0.14; // fraction of min(W,H) — how close a boat drop needs to be to the river to snap into it
+// Finds the closest point in (or on the edge of) the river to (x,y) —
+// used to snap a dropped boat into the water even if it lands a bit short,
+// since the river band is thin enough that hitting it exactly (especially
+// approaching from the south) is fiddly.
+function nearestWaterPoint(x, y){
+  if(isInWater(x, y)) return [x, y];
+  let best = null, bestDist = Infinity;
+  for(let i=0, j=WATER_POLY.length-1; i<WATER_POLY.length; j=i++){
+    const ax=WATER_POLY[j][0], ay=WATER_POLY[j][1], bx=WATER_POLY[i][0], by=WATER_POLY[i][1];
+    const dx=bx-ax, dy=by-ay;
+    const lenSq = dx*dx+dy*dy;
+    let t = lenSq>0 ? ((x-ax)*dx+(y-ay)*dy)/lenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    const nx = ax+t*dx, ny = ay+t*dy;
+    const d = Math.hypot(nx-x, ny-y);
+    if(d < bestDist){ bestDist = d; best = [nx, ny]; }
+  }
+  // step a hair past the bank, into the water's own interior, so it reads
+  // as floating rather than balanced right on the edge
+  const dx = best[0]-x, dy = best[1]-y;
+  const len = Math.hypot(dx,dy) || 1;
+  const nudged = [best[0] + (dx/len)*0.01, best[1] + (dy/len)*0.01];
+  return isInWater(nudged[0], nudged[1]) ? nudged : best;
+}
+// The plain box-based crop used for anything floating/submerged (the boat,
+// the crocodile): shows the top `frac` of the glyph's nominal size box.
+function clipToTopFraction(cx, cy, size, frac){
+  ctx.beginPath();
+  ctx.rect(cx-size, cy-size*0.5, size*2, size*frac);
+  ctx.clip();
+}
+// Same idea for the player wading, but pinned so the head can never be cut
+// off: hieroglyph glyphs don't sit centered in their nominal box the way
+// Latin letters do, so a plain box crop was chopping heads off some of
+// them. This measures the glyph's actual drawn ink and, if it turns out to
+// reach higher than the box assumed, extends the window up to cover it —
+// the crop window only ever grows upward from the box default, never
+// shrinks, so it can't introduce the opposite problem (over-cropping).
+function clipHeadSafe(cx, cy, glyph, size, frac){
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  const m = ctx.measureText(glyph);
+  const boxTop = cy - size*0.5;
+  const inkTop = cy - m.actualBoundingBoxAscent;
+  const top = Math.min(boxTop, inkTop);
+  ctx.beginPath();
+  ctx.rect(cx-size, top, size*2, size*frac);
+  ctx.clip();
+}
+
+const player = { x:0.5, y:0.62 };
+let facing = 1; // 1 = default glyph orientation (faces left), -1 = mirrored (faces right)
+let cowDelivered = false; // true forever once the cow has been dropped off with the npc
+let boatRewarded = false; // true once the boat prize has been handed out — only ever happens once
+
+/* ---------- scoring ---------- */
+let score = 0;
+const BODY_ID = 48;       // the corpse (A054) resting at the pyramid — removing it is a penalty
+const PILLAR_IDS = [32, 33]; // the pair of obelisks (O025) flanking the pyramid
+const PILLAR_RANGE = 0.20;   // fraction of min(W,H) — generous, so it locks in from anywhere nearby
+let bodyPenaltyGiven = false;
+let goldenScored = false;
+function pillarMidpoint(){
+  const a = levelObjects.find(o => o.id === PILLAR_IDS[0]);
+  const b = levelObjects.find(o => o.id === PILLAR_IDS[1]);
+  return (a && b) ? [(a.x+b.x)/2, (a.y+b.y)/2] : null;
+}
+function nearPillars(x, y){
+  const mid = pillarMidpoint();
+  return mid ? Math.hypot((x-mid[0])*W, (y-mid[1])*H) < Math.min(W,H)*PILLAR_RANGE : false;
+}
+// only one item at a time can be worn on the player's head, but any item can
+// be stacked onto any other once it's set down in the world:
+// { kind:'cow' } | { kind:'boat' } | { kind:'level', id, glyph, scale, mirror, noHitbox, pickup }
+let heldItem = null;
+const CAPTURE_RANGE = 0.09; // fraction of min(W,H) — how close counts as "standing next to it"
+
+const PLAYER_SIZE_MULT = 0.084; // 0.16 base, scaled down 25% then a further 30%
+const NPC_SIZE_MULT = PLAYER_SIZE_MULT * 1.2; // NPC reads 20% larger than the player
+const COW_SIZE_MULT = PLAYER_SIZE_MULT * 1.4; // cow reads 40% larger than the player
+const BOAT_SIZE_MULT = PLAYER_SIZE_MULT * 0.75; // matches the on-head boat's scale relative to the player
+const BOAT_DROP_SCALE = 3; // dropped boat is 200% larger — i.e. 3x its worn size
+let boatOnGround = null; // {x, y, items:[]} once the boat has been dropped into the world — items is whatever's stacked on top of it
+
+/* ---------- boarding / river hazard ---------- */
+const CROC_SPEED_MULT = 1.5; // the crocodile chases at 1.5x the player's own pace
+const SPAWN_DISTANCE_DIAMETERS = 2.5; // 50% closer than its original 5-diameter spawn distance
+let boarded = false; // true while riding a boat that's parked in the water
+let boardCooldown = 0; // brief grace period after disembarking, so you don't instantly re-board
+let wasInWater = false; // tracks entering/leaving the water, to know when to spawn the crocodile
+let croc = null; // { x, y } — the crocodile, only ever present while you're wading
+let gameOver = false;
+let currentMap = 1; // which map is active: -1 blank (west of the river), 1 the main map, 2 unbuilt (east)
+function setMap(mapId){
+  if(currentMap === mapId) return;
+  currentMap = mapId;
+  levelObjects = mapId === -1 ? MAP_NEG1_OBJECTS : MAP1_OBJECTS;
+  if(mapId === -1){
+    // land at the fixed lvl -1 spawn point — the boat (and anything
+    // stacked on it) rides in right along with you, wherever it was
+    player.x = MAP_NEG1_SPAWN.x;
+    player.y = MAP_NEG1_SPAWN.y;
+    if(boatOnGround){ boatOnGround.x = MAP_NEG1_SPAWN.x; boatOnGround.y = MAP_NEG1_SPAWN.y; }
+  }
+  updateMapButtons();
+}
+
+/* ============================================================
+   LEVEL EDITOR — freely-placed Gardiner signs, scaled per-instance,
+   optionally markable as pickupable (folding into the same
+   single-item carry rule as the cow/boat).
+   ============================================================ */
+let editMode = false;
+const MAP1_OBJECTS = [{"id":1,"glyph":"𓈖","x":0.38095238095238093,"y":0.3466424682395644,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":2,"glyph":"𓈖","x":0.4154761904761905,"y":0.3466424682395644,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":3,"glyph":"𓈖","x":0.4488095238095238,"y":0.3484573502722323,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":4,"glyph":"𓈘","x":0.48333333333333334,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":7,"glyph":"𓈖","x":0.37142857142857144,"y":0.18874773139745918,"scale":0.85,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":8,"glyph":"𓈖","x":0.39285714285714285,"y":0.18874773139745918,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":9,"glyph":"𓈖","x":0.42023809523809524,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":10,"glyph":"𓈖","x":0.44761904761904764,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":11,"glyph":"𓈖","x":0.46904761904761905,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":12,"glyph":"𓈖","x":0.49404761904761907,"y":0.1996370235934664,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":13,"glyph":"𓈖","x":0.5202380952380953,"y":0.20508166969147004,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":14,"glyph":"𓈖","x":0.5523809523809524,"y":0.20508166969147004,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":15,"glyph":"𓈖","x":0.5738095238095238,"y":0.2014519056261343,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":16,"glyph":"𓈖","x":0.6047619047619047,"y":0.2014519056261343,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":17,"glyph":"𓈖","x":0.6238095238095238,"y":0.20326678765880218,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":18,"glyph":"𓈖","x":0.6595238095238095,"y":0.20508166969147004,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":19,"glyph":"𓈖","x":0.6785714285714286,"y":0.1996370235934664,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":20,"glyph":"𓈖","x":0.7142857142857143,"y":0.2014519056261343,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":21,"glyph":"𓈖","x":0.7583333333333333,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":22,"glyph":"𓈖","x":0.7904761904761904,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":23,"glyph":"𓈖","x":0.7,"y":0.1996370235934664,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":24,"glyph":"𓈖","x":0.7333333333333333,"y":0.20508166969147004,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":26,"glyph":"𓈖","x":0.6428571428571429,"y":0.20326678765880218,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":27,"glyph":"𓈖","x":0.3476190476190476,"y":0.19056261343012704,"scale":1.25,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":28,"glyph":"𓊎","x":0.42023809523809524,"y":0.11796733212341198,"scale":2,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":29,"glyph":"𓊎","x":0.49642857142857144,"y":0.09074410163339383,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":30,"glyph":"𓊎","x":0.32976190476190476,"y":0.0925589836660617,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":32,"glyph":"𓉶","x":0.4392857142857143,"y":0.14337568058076225,"scale":0.75,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":33,"glyph":"𓉶","x":0.4166666666666667,"y":0.14337568058076225,"scale":0.7,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":34,"glyph":"𓉶","x":0.6642857142857143,"y":0.14337568058076225,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":35,"glyph":"𓉶","x":0.5285714285714286,"y":0.11433756805807622,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":37,"glyph":"𓇇","x":0.3476190476190476,"y":0.3430127041742287,"scale":1,"pickup":true,"mirror":false,"noHitbox":true,"items":[]},{"id":38,"glyph":"𓇇","x":0.5714285714285714,"y":0.33212341197822143,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":39,"glyph":"𓇇","x":0.7095238095238096,"y":0.22686025408348456,"scale":0.65,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":40,"glyph":"𓇇","x":0.46785714285714286,"y":0.21960072595281308,"scale":0.55,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":41,"glyph":"𓇇","x":0.2761904761904762,"y":0.2159709618874773,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":42,"glyph":"𓇇","x":0.19523809523809524,"y":0.19419237749546278,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":43,"glyph":"𓇇","x":0.3952380952380952,"y":0.22686025408348456,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":45,"glyph":"𓆸","x":0.5785714285714286,"y":0.2413793103448276,"scale":0.4,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":49,"glyph":"𓇳","x":0.25357142857142856,"y":0.02722323049001815,"scale":1.55,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":50,"glyph":"𓈖","x":0.6071428571428571,"y":0.3430127041742287,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":51,"glyph":"𓈖","x":0.6369047619047619,"y":0.3430127041742287,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":52,"glyph":"𓈖","x":0.7023809523809523,"y":0.3393829401088929,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":53,"glyph":"𓈖","x":0.7452380952380953,"y":0.3176043557168784,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":54,"glyph":"𓈖","x":0.8107142857142857,"y":0.3103448275862069,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":55,"glyph":"𓈖","x":0.8761904761904762,"y":0.30127041742286753,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":56,"glyph":"𓈖","x":0.9321428571428572,"y":0.294010889292196,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":57,"glyph":"𓈖","x":0.9607142857142857,"y":0.30490018148820325,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":58,"glyph":"𓈖","x":0.9880952380952381,"y":0.30671506352087113,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":59,"glyph":"𓈖","x":0.9071428571428571,"y":0.29219600725952816,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":60,"glyph":"𓈖","x":0.8428571428571429,"y":0.3030852994555354,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":61,"glyph":"𓈖","x":0.7738095238095238,"y":0.32123411978221417,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":62,"glyph":"𓈖","x":0.7238095238095238,"y":0.3339382940108893,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":63,"glyph":"𓈖","x":0.6702380952380952,"y":0.3430127041742287,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":64,"glyph":"𓈖","x":0.5773809523809523,"y":0.3484573502722323,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":65,"glyph":"𓈖","x":0.5226190476190476,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":66,"glyph":"𓈖","x":0.33095238095238094,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":67,"glyph":"𓈖","x":0.2857142857142857,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":68,"glyph":"𓈖","x":0.24523809523809523,"y":0.3411978221415608,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":69,"glyph":"𓈖","x":0.19642857142857142,"y":0.33212341197822143,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":70,"glyph":"𓈖","x":0.16428571428571428,"y":0.32304900181488205,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":71,"glyph":"𓈖","x":0.11547619047619048,"y":0.3139745916515426,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":72,"glyph":"𓈖","x":0.09523809523809523,"y":0.29219600725952816,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":73,"glyph":"𓈖","x":0.060714285714285714,"y":0.2813067150635209,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":74,"glyph":"𓈖","x":0.04285714285714286,"y":0.27404718693284935,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":75,"glyph":"𓈖","x":0.023809523809523808,"y":0.27041742286751363,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":76,"glyph":"𓈖","x":0.319047619047619,"y":0.1851179673321234,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":77,"glyph":"𓈖","x":0.2845238095238095,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":78,"glyph":"𓈖","x":0.26904761904761904,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":79,"glyph":"𓈖","x":0.23809523809523808,"y":0.19056261343012704,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":80,"glyph":"𓈖","x":0.2226190476190476,"y":0.18330308529945555,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":81,"glyph":"𓈖","x":0.16666666666666666,"y":0.15970961887477314,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":82,"glyph":"𓈖","x":0.13214285714285715,"y":0.15063520871143377,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":83,"glyph":"𓈖","x":0.11904761904761904,"y":0.12522686025408347,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":84,"glyph":"𓈖","x":0.08928571428571429,"y":0.06715063520871144,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":85,"glyph":"𓈖","x":0.07380952380952381,"y":0.05989110707803993,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":86,"glyph":"𓈖","x":0.034523809523809526,"y":0.034482758620689655,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":87,"glyph":"𓈖","x":0.008333333333333333,"y":0.032667876588021776,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":88,"glyph":"𓈖","x":0.05,"y":0.04900181488203267,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":89,"glyph":"𓈖","x":0.09047619047619047,"y":0.08711433756805807,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":90,"glyph":"𓈖","x":0.10357142857142858,"y":0.10526315789473684,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":91,"glyph":"𓈖","x":0.15,"y":0.15245009074410162,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":92,"glyph":"𓈖","x":0.18214285714285713,"y":0.17785843920145192,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":93,"glyph":"𓈖","x":0.2,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":94,"glyph":"𓈖","x":0.034523809523809526,"y":0.17604355716878403,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":95,"glyph":"𓈖","x":0.2011904761904762,"y":0.22686025408348456,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":96,"glyph":"𓈖","x":0.3404761904761905,"y":0.27041742286751363,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":97,"glyph":"𓈖","x":0.18452380952380953,"y":0.2813067150635209,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":98,"glyph":"𓈖","x":0.10476190476190476,"y":0.23774954627949182,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":99,"glyph":"𓈖","x":0.02142857142857143,"y":0.11796733212341198,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":100,"glyph":"𓈖","x":0.5,"y":0.2776769509981851,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":101,"glyph":"𓈖","x":0.6761904761904762,"y":0.2631578947368421,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":102,"glyph":"𓈖","x":0.8154761904761905,"y":0.25226860254083483,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":103,"glyph":"𓈖","x":0.9607142857142857,"y":0.23411978221415608,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":104,"glyph":"𓈖","x":0.8130952380952381,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":105,"glyph":"𓈖","x":0.8380952380952381,"y":0.19237749546279492,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":106,"glyph":"𓈖","x":0.8714285714285714,"y":0.1851179673321234,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":107,"glyph":"𓈖","x":0.9261904761904762,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":108,"glyph":"𓈖","x":0.9809523809523809,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":109,"glyph":"𓈖","x":0.9523809523809523,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":110,"glyph":"𓈖","x":0.9011904761904762,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":111,"glyph":"𓈖","x":0.9964285714285714,"y":0.18148820326678766,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":48,"glyph":"𓀿","x":0.4094683697063998,"y":0.12090215819063892,"scale":0.85,"pickup":true,"mirror":false,"noHitbox":true,"items":[]},{"id":46,"glyph":"𓆸","x":0.5439500856158501,"y":0.35361390882252347,"scale":0.85,"pickup":true,"mirror":false,"noHitbox":true,"items":[]},{"id":44,"glyph":"𓇇","x":0.5618135844178571,"y":0.34472626698568565,"scale":1.25,"pickup":true,"mirror":false,"noHitbox":true,"items":[]},{"id":6,"glyph":"𓅣","x":0.28936679177917535,"y":0.34827787164436286,"scale":0.7,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":115,"glyph":"𓁑","x":0.9238095238095239,"y":0.5825771324863884,"scale":0.95,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":119,"glyph":"𓅭","x":0.6035714285714285,"y":0.4047186932849365,"scale":0.8,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":121,"glyph":"𓇭","x":0.7666666666666667,"y":0.7731397459165155,"scale":0.7,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":123,"glyph":"𓉲","x":0.969047619047619,"y":0.5462794918330308,"scale":1.35,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":125,"glyph":"𓏢","x":0.9142857142857143,"y":0.5934664246823956,"scale":0.85,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":128,"glyph":"𓉹","x":0.6761904761904762,"y":0.7822141560798548,"scale":1.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":129,"glyph":"𓇭","x":0.7642857142857142,"y":0.8203266787658802,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":132,"glyph":"𓇗","x":0.7321428571428571,"y":0.24863883847549909,"scale":0.85,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":133,"glyph":"𓆰","x":0.3392857142857143,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":134,"glyph":"𓆰","x":0.7035714285714286,"y":0.23049001814882034,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":135,"glyph":"𓇣","x":0.39285714285714285,"y":0.5662431941923775,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":136,"glyph":"𓇣","x":0.15476190476190477,"y":0.4301270417422868,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":137,"glyph":"𓇣","x":0.06666666666666667,"y":0.4863883847549909,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":138,"glyph":"𓇣","x":0.08928571428571429,"y":0.7967332123411979,"scale":1.35,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":139,"glyph":"𓇣","x":0.9154761904761904,"y":0.9092558983666061,"scale":1.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":140,"glyph":"𓇣","x":0.7273809523809524,"y":0.7241379310344828,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":141,"glyph":"𓇣","x":0.030952380952380953,"y":0.9201451905626135,"scale":1.35,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":142,"glyph":"𓇣","x":0.8559523809523809,"y":0.3720508166969147,"scale":0.9,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":143,"glyph":"𓇣","x":0.8666666666666667,"y":0.38294010889292196,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":145,"glyph":"𓎆","x":0.7309523809523809,"y":0.26497277676951,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":146,"glyph":"𓎆","x":0.8928571428571429,"y":0.23593466424682397,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":147,"glyph":"𓎆","x":0.736904761904762,"y":0.2613430127041742,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":148,"glyph":"𓎆","x":0.7416666666666667,"y":0.26860254083484575,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":149,"glyph":"𓎆","x":0.7035714285714286,"y":0.24863883847549909,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":150,"glyph":"𓎆","x":0.75,"y":0.23049001814882034,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":151,"glyph":"𓎆","x":0.9166666666666666,"y":0.4627949183303085,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":152,"glyph":"𓅞","x":0.6428571428571429,"y":0.7096188747731398,"scale":0.65,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":155,"glyph":"𓅃","x":0.06666666666666667,"y":0.44464609800362975,"scale":0.4,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":157,"glyph":"𓅐","x":0.46904761904761905,"y":0.0998185117967332,"scale":0.45,"pickup":true,"mirror":true,"noHitbox":false,"items":[]},{"id":158,"glyph":"𓅙","x":0.8809523809523809,"y":0.3684210526315789,"scale":0.7,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":161,"glyph":"𓆰","x":0.8523809523809524,"y":0.38838475499092556,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":162,"glyph":"𓆰","x":0.8607142857142858,"y":0.38656987295825773,"scale":0.45,"pickup":false,"mirror":true,"noHitbox":false,"items":[]},{"id":163,"glyph":"𓆰","x":0.8595238095238096,"y":0.3938294010889292,"scale":0.55,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":164,"glyph":"𓆰","x":0.8761904761904762,"y":0.39019963702359345,"scale":0.7,"pickup":false,"mirror":true,"noHitbox":false,"items":[]}]; // baked-in starting layout for "lvl 1"
+const MAP_NEG1_OBJECTS = []; // lvl -1: blank canvas beyond the river's far west edge — just the character, no placed objects
+const MAP_NEG1_SPAWN = { x: 0.9562, y: 0.3676 }; // where the character (and the boat, if you sailed in) lands in lvl -1
+let levelObjects = MAP1_OBJECTS; // active object list for whichever map is currently loaded
+let nextObjId = 165;
+let selectedObjId = null;
+let placeGlyph = A1;   // currently chosen palette sign, for the next placement
+let placeScale = 1;    // currently chosen size, for the next placement
+let placePickup = false;
+let placeMirror = false;
+let placeNoHitbox = false;
+const EDITOR_WIDTH = 440; // must match #editor's CSS width
+const LEVEL_OBJ_BASE_MULT = PLAYER_SIZE_MULT; // scale 1 reads roughly player-sized at the same depth
+
+/* ---------- the duck (level object id 119) ----------
+   A resting G039 sitting duck that spooks and flies off — up and off to
+   whichever side the player isn't approaching from — once you get close,
+   flapping between G040/G041 the whole way until it's off the map. */
+const DUCK_ID = 119;
+const DUCK_APPROACH_RANGE = 0.22; // fraction of min(W,H) — how close startles it
+const DUCK_FLAP_INTERVAL = 0.12;  // seconds per wingbeat
+const DUCK_FLY_SPEED = 0.16;      // fraction of canvas per second
+let duckObj = levelObjects.find(o => o.id === DUCK_ID) || null;
+let duckFlying = false;
+let duckVX = 0, duckVY = 0;
+let duckAnimT = 0, duckAnimFrame = 0;
+
+function updateDuck(dt){
+  if(!duckObj) return; // never existed, or already flew off for good
+
+  if(!duckFlying){
+    const dist = Math.hypot((player.x-duckObj.x)*W, (player.y-duckObj.y)*H);
+    if(dist < Math.min(W,H)*DUCK_APPROACH_RANGE){
+      duckFlying = true;
+      const sideDir = (player.x <= duckObj.x) ? 1 : -1; // away from the approaching player
+      duckVX = DUCK_FLY_SPEED * 0.55 * sideDir;
+      duckVY = -DUCK_FLY_SPEED; // up — scaleForY shrinks it as it climbs, like receding into the distance
+      duckAnimT = 0; duckAnimFrame = 0;
+    }
+    return;
+  }
+
+  duckObj.x += duckVX * dt;
+  duckObj.y += duckVY * dt;
+
+  duckAnimT += dt;
+  if(duckAnimT >= DUCK_FLAP_INTERVAL){
+    duckAnimT = 0;
+    duckAnimFrame = duckAnimFrame === 0 ? 1 : 0;
+  }
+
+  // gone for good once it's flown off the map
+  if(duckObj.x < -0.08 || duckObj.x > 1.08 || duckObj.y < -0.08){
+    const idx = levelObjects.indexOf(duckObj);
+    if(idx !== -1) levelObjects.splice(idx, 1);
+    duckObj = null;
+    duckFlying = false;
+  }
+}
+
+/* ---------- the lady (level object id 115) ----------
+   Sits between the harp and the archway. Bring her 5 of the pickup birds
+   already scattered around the level (each a different sign) and she
+   hands back a golden N6. */
+const LADY_ID = 115;
+const BIRD_IDS = [6, 152, 155, 157, 158]; // the level's 5 pickup-bird signs
+const LADY_TALK_RANGE = 0.24; // fraction of min(W,H) — matches the main npc's
+const LADY_QUEST_LINE = '𓅠𓅓𓏛𓏤5𓄿𓊪𓂧𓅯';
+let birdsDelivered = 0;
+let birdQuestDone = false;
+const ladyObj = levelObjects.find(o => o.id === LADY_ID) || null;
+
+// called from tryDropHeldItem() — handing her one of the birds while close
+// enough consumes it instead of just setting it down; returns true if so
+function tryGiveBirdToLady(item){
+  if(currentMap !== 1 || birdQuestDone || !ladyObj || item.kind !== 'level' || !BIRD_IDS.includes(item.id)) return false;
+  const dist = Math.hypot((player.x-ladyObj.x)*W, (player.y-ladyObj.y)*H);
+  if(dist >= Math.min(W,H)*LADY_TALK_RANGE) return false;
+
+  birdsDelivered++;
+  if(birdsDelivered >= BIRD_IDS.length){
+    birdQuestDone = true;
+    // straight onto the player's head, worn like the boat — not left on the ground
+    heldItem = { kind:'level', id: nextObjId++, glyph: N6, scale: 1, mirror: false, noHitbox: true, pickup: true, golden: true };
+  }
+  return true;
+}
+
+/* ============================================================
+   NPC — with a speech bubble that only shows once the player is
+   close enough to "hear" him.
+   ============================================================ */
+const npc = {
+  x:0.60, y:0.85, // foreground
+  line:'𓅠𓅓𓏛𓏏𓄿𓇋𓎛𓏏𓃒𓏤', // "the cow is in the field, go find it and bring it to me"
+  lineWithCow:'𓅯𓄿𓇋𓏏𓂋𓏲𓈗𓂻𓂋𓅯𓄿𓊖𓏏𓏤' // shown instead, once he sees you're bringing the cow
+};
+
+/* ---------- cow ----------
+   Rests at its base spot. Once the player gets close it drifts slowly
+   two of its own widths to the left, stops, then drifts back — mirroring
+   the moment it turns to head back to the right. */
+const cow = {
+  x:0.16, y:0.52, baseX:0.16, baseY:0.52, // midground, off to the left
+  state:'idle', pauseT:0, facing:1, carried:false, placed:false, settleCooldown:0
+};
+const COW_APPROACH_RANGE = 0.30; // fraction of min(W,H) — how close triggers the drift
+const COW_MOVE_SPEED = 0.045;    // fraction of canvas width per second — slow
+const COW_PAUSE = 0.7;           // seconds paused at the far-left point
+
+function onSpacePress(){
+  if(editMode) return; // editing has its own click-based controls
+  if(boarded) return; // hands are busy steering — can't pick up or drop while aboard
+  if(heldItem){ tryDropHeldItem(); return; }
+  tryPickup();
+}
+
+// the boat's pick-from/drop-onto reach — used by both nearestBase() and the
+// debug overlay, so the two can never drift apart the way earlier hitboxes did.
+// Sized directly off a reference screenshot where the boat's own size was
+// measured against a hand-drawn circle showing exactly how far out picking
+// things out of the ship should reach: about 1.45x the boat's size to
+// either side, 0.5x above it (already clears the masthead) and a full 1.2x
+// below it — reaching well past the hull into where you'd actually be
+// standing on the bank or wading up to it. All as fractions of boatSize
+// (not flat pixels), so it scales correctly at any depth/window size, with
+// a small flat floor under each just so a boat far enough away to be
+// nearly a dot doesn't shrink its own reach away to nothing.
+function boatCatchZone(){
+  const s = scaleForY(boatOnGround.y);
+  const boatSize = Math.min(W,H) * BOAT_SIZE_MULT * s * BOAT_DROP_SCALE;
+  const bx = boatOnGround.x*W, by = boatOnGround.y*H;
+  const floor = Math.min(W,H) * 0.05;
+  const halfW = Math.max(boatSize*1.45, floor);
+  const topY = by - Math.max(boatSize*0.5, floor);
+  const botY = by + Math.max(boatSize*1.2, floor*1.2);
+  return { bx, by, halfW, topY, botY };
+}
+
+// the nearest thing in the world that can be stacked onto, or lifted from —
+// the boat (once it's on the ground) and every placed sign
+function nearestBase(){
+  let best = null, bestKind = null, bestDist = Infinity;
+  if(boatOnGround){
+    const { bx, by, halfW, topY, botY } = boatCatchZone();
+    const px = player.x*W, py = player.y*H;
+    if(px > bx-halfW && px < bx+halfW && py > topY && py < botY){
+      const d = Math.hypot(px-bx, py-by);
+      if(d < bestDist){ best = boatOnGround; bestKind = 'boat'; bestDist = d; }
+    }
+  }
+  for(const obj of levelObjects){
+    const d = Math.hypot((player.x-obj.x)*W, (player.y-obj.y)*H);
+    if(d < Math.min(W,H)*CAPTURE_RANGE && d < bestDist){ best = obj; bestKind = 'level'; bestDist = d; }
+  }
+  return best ? { base:best, kind:bestKind } : null;
+}
+
+function tryPickup(){
+  const nb = nearestBase();
+  if(nb){
+    const { base, kind } = nb;
+    if(base.items && base.items.length){
+      // a stack always gives up whatever was placed on it last
+      pickUpItem(base.items.pop());
+      return;
+    }
+    if(kind === 'boat'){
+      // picking up the WHOLE boat — not just unstacking its cargo — needs
+      // you genuinely close to it. boatCatchZone() above is deliberately
+      // wide so cargo can be loaded/unloaded from a comfortable distance;
+      // reusing that same wide reach here meant an empty boat could get
+      // swept onto your head by a stray pickup press from well outside
+      // boarding range, leaving nothing there to walk into anymore —
+      // exactly what made "connecting to the boat" seem to randomly break
+      // once you were holding it (unknowingly holding the boat itself).
+      const dist = Math.hypot((player.x-base.x)*W, (player.y-base.y)*H);
+      if(dist < Math.min(W,H)*CAPTURE_RANGE*1.5){
+        boatOnGround = null;
+        heldItem = { kind:'boat' };
+      }
+      return;
+    }
+    if(kind === 'level' && base.pickup){
+      levelObjects.splice(levelObjects.indexOf(base), 1);
+      if(selectedObjId === base.id) selectedObjId = null;
+      if(base.id === BODY_ID && !bodyPenaltyGiven){
+        score -= 30; // disturbing the body in the pyramid costs you
+        bodyPenaltyGiven = true;
+      }
+      heldItem = { kind:'level', id:base.id, glyph:base.glyph, scale:base.scale, mirror:base.mirror, noHitbox:base.noHitbox, pickup:base.pickup, golden:base.golden };
+      return;
+    }
+    // the base itself can't be lifted and has nothing left on it — fall through
+  }
+  // the free-roaming cow, if it isn't already tucked away in a stack somewhere
+  if(!cow.placed){
+    const dist = Math.hypot((player.x-cow.x)*W, (player.y-cow.y)*H);
+    if(dist < Math.min(W,H)*CAPTURE_RANGE) pickUpItem({ kind:'cow' });
+  }
+}
+
+function pickUpItem(item){
+  heldItem = item;
+  if(item.kind === 'cow'){ cow.carried = true; cow.placed = false; cow.state = 'carried'; }
+}
+
+function tryDropHeldItem(){
+  const item = heldItem;
+  heldItem = null;
+
+  // handing one of the sacred birds to the lady while close enough feeds
+  // her quest instead of just setting it down
+  if(tryGiveBirdToLady(item)) return;
+
+  // the boat only ever sits as its own base in the world — everything else
+  // (the cow, any pickupable sign) is happy to stack onto whatever's nearby.
+  // Two exceptions always go in loose, never stacked: the cow dropped into
+  // the river (a boat-riding cow can't be hunted by the crocodile — that'd
+  // defeat the whole point of the drop), and the golden reward set down
+  // between the pillars (otherwise it just stacks onto the nearest obelisk
+  // and the score for placing it never fires).
+  const cowIntoWater = item.kind === 'cow' && isInWater(player.x, player.y);
+  const goldenAtPillars = item.golden && nearPillars(player.x, player.y);
+  if(item.kind !== 'boat' && !cowIntoWater && !goldenAtPillars){
+    const nb = nearestBase();
+    if(nb){
+      nb.base.items = nb.base.items || [];
+      nb.base.items.push(item);
+      settleDroppedItem(item, true);
+      return;
+    }
+  }
+  settleDroppedItem(item, false);
+}
+
+// applies whatever's special about each kind once it comes to rest, whether
+// it landed inside a stack or standalone on the ground
+function settleDroppedItem(item, stacked){
+  if(item.kind === 'cow'){
+    cow.carried = false;
+    if(stacked){
+      cow.placed = true; // inert cargo now — no flee AI while it's tucked away on something
+    } else {
+      cow.placed = false;
+      cow.x = player.x; cow.y = player.y;
+      cow.baseX = player.x; cow.baseY = player.y; // its new "home" spot to flee from/return to
+      cow.state = 'idle'; cow.pauseT = 0;
+      cow.settleCooldown = 0.8; // a beat before it's willing to flee again
+    }
+    const distNpc = Math.hypot((player.x-npc.x)*W, (player.y-npc.y)*H);
+    if(distNpc < Math.min(W,H)*NPC_TALK_RANGE){
+      startNpcCelebration(); // he dances every time you bring it to him, wherever it lands
+      if(!cowDelivered) score += 5; // saving the cow only pays out the first time
+      cowDelivered = true; // the original "go find it" line is retired for good from the first delivery on
+    }
+  } else if(item.kind === 'boat' && !stacked){
+    // a proper prize once it's off his head: 200% larger than the size he wore it at.
+    // dropping it near the river snaps it the rest of the way in, so lining
+    // it up exactly (especially approaching from the south bank) isn't fiddly.
+    // Guarded by !stacked for the same reason as the level branch below: a
+    // spare boat auto-dropped while boarding an already-placed one (tryAutoBoard
+    // stacks whatever you're holding onto that boat's cargo) must NOT replace
+    // boatOnGround here — that would swap out the boat you're standing in for
+    // a brand new empty one and silently throw away everything on it.
+    let bx = player.x, by = player.y;
+    if(!isInWater(bx, by)){
+      const [nx, ny] = nearestWaterPoint(bx, by);
+      if(Math.hypot(nx-bx, ny-by) < BOAT_WATER_SNAP){ bx = nx; by = ny; }
+    }
+    boatOnGround = { x: bx, y: by, items: [] };
+  } else if(item.kind === 'level' && !stacked){
+    let dropX = player.x, dropY = player.y;
+    if(item.golden && nearPillars(player.x, player.y)){
+      const mid = pillarMidpoint();
+      if(mid){ dropX = mid[0]; dropY = mid[1]; } // locks neatly between the two obelisks
+      if(!goldenScored){ score += 5; goldenScored = true; }
+    }
+    levelObjects.push({
+      id: item.id != null ? item.id : nextObjId++,
+      glyph: item.glyph, x: dropX, y: dropY, scale: item.scale,
+      pickup: item.pickup, mirror: item.mirror, noHitbox: item.noHitbox, items: [],
+      golden: item.golden || false
+    });
+  }
+}
+
+function updateCow(dt){
+  if(cow.carried || cow.placed) return; // riding on the player, or tucked away in a stack — no state of its own
+
+  const cowSizePx = Math.min(W,H) * COW_SIZE_MULT * scaleForY(cow.y);
+  const fleeDist = 2 * (cowSizePx / W); // "2 character distances"
+  const leftX = cow.baseX - fleeDist;
+
+  if(cow.state === 'idle'){
+    if(cow.settleCooldown > 0){
+      cow.settleCooldown -= dt;
+    } else {
+      const dist = Math.hypot((player.x-cow.x)*W, (player.y-cow.y)*H);
+      if(dist < Math.min(W,H)*COW_APPROACH_RANGE) cow.state = 'fleeing';
+    }
+  } else if(cow.state === 'fleeing'){
+    cow.facing = 1; // moving left — the sign's default orientation, no mirror
+    cow.x = Math.max(leftX, cow.x - COW_MOVE_SPEED*dt);
+    if(cow.x <= leftX){ cow.state = 'paused'; cow.pauseT = 0; }
+  } else if(cow.state === 'paused'){
+    cow.pauseT += dt;
+    if(cow.pauseT >= COW_PAUSE) cow.state = 'returning';
+  } else if(cow.state === 'returning'){
+    cow.facing = -1; // moving right — mirror the sign
+    cow.x = Math.min(cow.baseX, cow.x + COW_MOVE_SPEED*dt);
+    if(cow.x >= cow.baseX) cow.state = 'idle';
+  }
+}
+
+const NPC_TALK_RANGE = 0.24; // fraction of min(W,H) — how close before the bubble shows
+
+/* ---------- NPC delivery celebration ----------
+   Drop the cow next to him and he plays a little sequence — A28, A32,
+   A31, A32, A29 — then slowly flips left/right five times before
+   settling back on his resting sign, A26. */
+const NPC_CELEBRATE_SEQUENCE = [A28, A32, A31, A32, A29];
+const NPC_STEP_TIME = 0.35;   // seconds per pose in the sequence
+const NPC_MIRROR_TIME = 0.45; // seconds per flip — "slowly"
+const npcAnim = { phase:'idle', t:0, step:0, mirrors:0, facing:1 };
+
+function startNpcCelebration(){
+  npcAnim.phase = 'sequence';
+  npcAnim.t = 0;
+  npcAnim.step = 0;
+  npcAnim.mirrors = 0;
+  npcAnim.facing = 1;
+}
+
+function updateNpcAnim(dt){
+  if(npcAnim.phase === 'idle') return;
+  npcAnim.t += dt;
+
+  if(npcAnim.phase === 'sequence'){
+    if(npcAnim.t >= NPC_STEP_TIME){
+      npcAnim.t = 0;
+      npcAnim.step++;
+      if(npcAnim.step >= NPC_CELEBRATE_SEQUENCE.length){
+        npcAnim.phase = 'mirroring';
+      }
+    }
+  } else if(npcAnim.phase === 'mirroring'){
+    if(npcAnim.t >= NPC_MIRROR_TIME){
+      npcAnim.t = 0;
+      npcAnim.facing *= -1;
+      npcAnim.mirrors++;
+      if(npcAnim.mirrors >= 5){
+        npcAnim.phase = 'idle';
+        npcAnim.facing = 1;
+        if(!boatRewarded){
+          boatRewarded = true; // the reward for delivering the cow, once he's done celebrating — only granted the first time
+          if(!heldItem) heldItem = { kind:'boat' }; // hands free — wear it
+          else boatOnGround = { x: player.x, y: player.y, items: [] }; // hands full — it waits for you on the ground instead
+        }
+      }
+    }
+  }
+}
+
+function npcGlyph(){
+  if(npcAnim.phase === 'sequence') return NPC_CELEBRATE_SEQUENCE[npcAnim.step];
+  if(npcAnim.phase === 'mirroring') return A29; // mirror A29 itself, not the whole sequence
+  return A26;
+}
+
+function wrapText(context, text, maxWidth){
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  words.forEach(word=>{
+    const test = line ? line+' '+word : word;
+    if(context.measureText(test).width > maxWidth && line){
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  });
+  if(line) lines.push(line);
+  return lines;
+}
+
+function drawSpeechBubble(cx, bottomY, text, fontSize){
+  ctx.save();
+  ctx.font = fontSize.toFixed(0)+'px '+HIERO_FONT;
+  const lines = wrapText(ctx, text, 170);
+  const lineH = fontSize*1.35;
+  const padX = 12, padY = 10;
+  let textW = 0;
+  lines.forEach(l=>{ textW = Math.max(textW, ctx.measureText(l).width); });
+  const w = textW+padX*2, h = lines.length*lineH+padY*2;
+  const x = cx-w/2, y = bottomY-h;
+  const r = 8;
+
+  ctx.fillStyle = '#fdf8ec';
+  ctx.strokeStyle = 'rgba(40,30,20,0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  // tail pointing down at the speaker
+  ctx.beginPath();
+  ctx.moveTo(cx-7,y+h); ctx.lineTo(cx+7,y+h); ctx.lineTo(cx,y+h+8);
+  ctx.closePath();
+  ctx.fillStyle = '#fdf8ec';
+  ctx.fill();
+
+  ctx.fillStyle = '#2a1f14';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  lines.forEach((l,i)=> ctx.fillText(l, cx, y+padY+fontSize*0.85+i*lineH));
+  ctx.restore();
+}
+
+function drawNpc(showBubble){
+  const s = scaleForY(npc.y);
+  const size = Math.min(W,H) * NPC_SIZE_MULT * s;
+  const sx = npc.x*W, sy = npc.y*H;
+
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.scale(npcAnim.facing, 1);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(npcGlyph(), 0, 0);
+  ctx.restore();
+
+  if(showBubble){
+    let bubbleText = null;
+    if(cowDelivered){
+      // the second line only shows once his celebration animation has fully played out
+      if(npcAnim.phase === 'idle') bubbleText = npc.lineWithCow;
+    } else if(!(heldItem && heldItem.kind === 'cow')){
+      bubbleText = npc.line; // while carrying the cow but not yet delivered, no bubble at all — no early flash of the second line
+    }
+    if(bubbleText) drawSpeechBubble(sx, sy-size*0.75, bubbleText, 22);
+  }
+}
+
+function drawCow(){
+  const s = scaleForY(cow.y);
+  const size = Math.min(W,H) * COW_SIZE_MULT * s;
+  const sx = cow.x*W, sy = cow.y*H;
+
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.scale(cow.facing, 1); // mirror when heading back right
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(E3, 0, 0);
+  ctx.restore();
+}
+
+function drawCroc(){
+  const s = scaleForY(croc.y);
+  const size = Math.min(W,H) * COW_SIZE_MULT * s;
+  const sx = croc.x*W, sy = croc.y*H;
+  const dir = (player.x < croc.x) ? 1 : -1; // faces the player — default orientation faces left
+
+  ctx.save();
+  clipToTopFraction(sx, sy, size, 0.70); // always riding low in the water — bottom 30% cropped away
+  ctx.translate(sx, sy);
+  ctx.scale(dir, 1);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(I3, 0, 0);
+  ctx.restore();
+}
+
+function drawGameOver(){
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#e9e4d8';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = (Math.min(W,H)*0.16).toFixed(1)+"px "+HIERO_FONT;
+  ctx.fillText('𓂝𓈖𓂽', W/2, H/2);
+  ctx.restore();
+}
+
+/* ---------- walk-cycle state ----------
+   A1/A2 alternate on a fixed interval while moving; stopping
+   always lands back on A1. */
+const WALK_INTERVAL = 0.15 * 1.3; // 30% slower
+const anim = { t:0, frame:0 };
+
+function updateAnim(dt, moving){
+  if(!moving){
+    anim.t = 0;
+    anim.frame = 0;
+    return;
+  }
+  anim.t += dt;
+  if(anim.t >= WALK_INTERVAL){
+    anim.t = 0;
+    anim.frame = anim.frame === 0 ? 1 : 0;
+  }
+}
+
+function currentGlyph(){
+  if(heldItem) return A9; // holding anything overrides the normal walk cycle
+  return anim.frame === 0 ? A1 : A2;
+}
+
+/* ============================================================
+   PLAYER — the current walk-cycle sign, sized off scaleForY(player.y).
+   ============================================================ */
+function drawPlayer(){
+  const sx = player.x*W, sy = player.y*H;
+  const s = scaleForY(player.y);
+  const size = Math.min(W,H) * PLAYER_SIZE_MULT * s;
+  const wading = !boarded && isInWater(player.x, player.y); // wading shows only the top 34% — chest-deep in the river, head always fully visible
+
+  ctx.save();
+  if(wading) clipHeadSafe(sx, sy, currentGlyph(), size, 0.34);
+  ctx.translate(sx, sy);
+  ctx.scale(facing, 1); // mirror when walking left so the sign faces the way it's moving
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(currentGlyph(), 0, 0);
+  ctx.restore();
+
+  if(heldItem){
+    if(heldItem.kind === 'cow') drawCarriedCow(sx, sy, size);
+    else if(heldItem.kind === 'boat') drawBoatOnHead(sx, sy, size);
+    else if(heldItem.kind === 'level') drawHeldLevelObject(sx, sy, size);
+  }
+}
+
+function drawHeldLevelObject(px, py, playerSize){
+  const size = playerSize * heldItem.scale;
+  const oy = py - playerSize*0.62;
+  ctx.save();
+  ctx.translate(px, oy);
+  ctx.scale(heldItem.mirror ? -1 : 1, 1);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = heldItem.golden ? '#b8860b' : '#2a1f14';
+  ctx.fillText(heldItem.glyph, 0, 0);
+  ctx.restore();
+}
+
+function drawCarriedCow(px, py, playerSize){
+  // the cow riding upside-down on the player's head (no boat yet — that only appears after delivery)
+  const cowSize = playerSize * 0.85;
+  const cowY = py - playerSize*1.03; // midpoint between the original 1.15 offset and the touching-the-head 0.92 offset
+  ctx.save();
+  ctx.translate(px, cowY);
+  ctx.scale(1, -1); // upside down
+  ctx.font = cowSize.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(E3, 0, 0);
+  ctx.restore();
+}
+
+function drawBoatOnHead(px, py, playerSize){
+  // the reward: a boat balanced on the player's head once the cow is delivered and the npc's celebration is done.
+  // (nothing is ever stacked on a worn item — cargo always comes off before the base itself can be lifted.)
+  const boatSize = playerSize * 0.75;
+  const boatY = py - playerSize*0.78; // raised further so it clears the top of the a9 pose's head entirely
+  ctx.save();
+  ctx.translate(px, boatY);
+  ctx.font = boatSize.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(P1, 0, 0);
+  ctx.restore();
+}
+
+function drawGroundBoat(){
+  // the boat once dropped — sitting in the world at 200% larger than the size it was worn at
+  if(!boatOnGround) return;
+  const s = scaleForY(boatOnGround.y);
+  const size = Math.min(W,H) * BOAT_SIZE_MULT * s * BOAT_DROP_SCALE;
+  const sx = boatOnGround.x*W, sy = boatOnGround.y*H;
+  const floating = isInWater(boatOnGround.x, boatOnGround.y); // sitting in the river shows only the top 70% — the hull rides low in the water
+
+  ctx.save();
+  if(floating) clipToTopFraction(sx, sy, size, 0.70);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(P1, sx, sy);
+  ctx.restore();
+
+  drawStackedItems(boatOnGround.items, sx, sy, size);
+}
+
+// renders whatever's piled on top of a base (the boat, or a placed sign) —
+// the cow rides upside-down (an old visual joke), any other sign sits
+// right-side up, honoring its own mirror flag
+function drawStackedItems(items, bx, by, baseSize){
+  if(!items || !items.length) return;
+  let y = by - baseSize*0.08;
+  for(const it of items){
+    if(it.kind === 'cow'){
+      const s = baseSize * 0.55;
+      ctx.save();
+      ctx.translate(bx, y);
+      ctx.scale(1, -1);
+      ctx.font = s.toFixed(1)+'px '+HIERO_FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#2a1f14';
+      ctx.fillText(E3, 0, 0);
+      ctx.restore();
+      y -= s*0.5;
+    } else if(it.kind === 'level'){
+      const s = baseSize * 0.55 * it.scale;
+      ctx.save();
+      ctx.translate(bx, y);
+      ctx.scale(it.mirror ? -1 : 1, 1);
+      ctx.font = s.toFixed(1)+'px '+HIERO_FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#2a1f14';
+      ctx.fillText(it.glyph, 0, 0);
+      ctx.restore();
+      y -= s*0.5;
+    }
+  }
+}
+
+/* ---------- level-editor placed objects ---------- */
+function drawLevelObject(obj, glyphOverride, mirrorOverride){
+  const s = scaleForY(obj.y);
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * s * obj.scale;
+  const sx = obj.x*W, sy = obj.y*H;
+  const glyph = glyphOverride || obj.glyph;
+  const mirror = mirrorOverride != null ? mirrorOverride : obj.mirror;
+
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.scale(mirror ? -1 : 1, 1);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = obj.golden ? '#b8860b' : '#2a1f14'; // the lady's reward reads as gold, not ink
+  ctx.fillText(glyph, 0, 0);
+  ctx.restore();
+
+  drawStackedItems(obj.items, sx, sy, size);
+
+  if(!editMode) return;
+  if(obj.id === selectedObjId){
+    ctx.save();
+    ctx.strokeStyle = '#b3392c';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4,4]);
+    ctx.beginPath();
+    ctx.arc(sx, sy, size*0.65, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  if(obj.pickup){
+    ctx.save();
+    ctx.fillStyle = '#2f7a3d';
+    ctx.beginPath();
+    ctx.arc(sx+size*0.32, sy-size*0.42, 4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+  if(obj.noHitbox){
+    ctx.save();
+    ctx.fillStyle = '#2b6ca3';
+    ctx.beginPath();
+    ctx.arc(sx-size*0.32, sy-size*0.42, 4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* ============================================================
+   INPUT / UPDATE
+   ============================================================ */
+const keys = {};
+let spaceHeld = false;
+window.addEventListener('keydown', e=>{
+  const typing = document.activeElement && ['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
+  if(typing) return; // let normal typing/editing happen in the panel's fields
+
+  if(gameOver){
+    // needs a deliberate, fresh press of Enter — not whatever arrow/space
+    // key was still being held down at the moment you died (that was
+    // instantly restarting the game via the browser's own key-repeat)
+    if(e.key === 'Enter' && !e.repeat) location.reload();
+    return;
+  }
+
+  keys[e.key.toLowerCase()] = true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
+  if(e.key === ' ' && !spaceHeld){
+    spaceHeld = true;
+    onSpacePress();
+  }
+  if(e.key.toLowerCase() === 'e'){ setEditMode(!editMode); }
+  if(editMode && (e.key === 'Delete' || e.key === 'Backspace') && selectedObjId !== null){
+    e.preventDefault();
+    deleteSelectedObject();
+  }
+}, {passive:false});
+window.addEventListener('keyup', e=>{
+  keys[e.key.toLowerCase()] = false;
+  if(e.key === ' ') spaceHeld = false;
+});
+canvas.addEventListener('mousedown', ()=>{ if(gameOver) location.reload(); }); // "pressing" the game-over screen also restarts
+
+/* ============================================================
+   LEVEL EDITOR — DOM wiring. Movement/space are frozen while
+   editMode is on; the canvas instead takes plain mouse clicks to
+   place or select signs, and the side panel controls their size
+   and pickupable flag.
+   ============================================================ */
+const editorPanel = document.getElementById('editor');
+const paletteEl = document.getElementById('palette');
+const scaleSlider = document.getElementById('scaleSlider');
+const scaleValueEl = document.getElementById('scaleValue');
+const pickupCheck = document.getElementById('pickupCheck');
+const mirrorCheck = document.getElementById('mirrorCheck');
+const noHitboxCheck = document.getElementById('noHitboxCheck');
+const levelJsonEl = document.getElementById('levelJson');
+const map1Btn = document.getElementById('map1Btn');
+const mapNeg1Btn = document.getElementById('mapNeg1Btn');
+function updateMapButtons(){
+  map1Btn.disabled = currentMap === 1;
+  mapNeg1Btn.disabled = currentMap === -1;
+}
+let showDebug = false;
+const debugCheck = document.getElementById('debugCheck');
+debugCheck.addEventListener('change', ()=>{ showDebug = debugCheck.checked; });
+
+function setEditMode(on){
+  editMode = on;
+  editorPanel.hidden = !on;
+  resize(); // the map's visible width changes to make room for the panel
+}
+
+// populate the palette with every sign in the Egyptian Hieroglyphs block
+(function buildPalette(){
+  for(let cp = 0x13000; cp <= 0x1342E; cp++){
+    const glyph = String.fromCodePoint(cp);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'palette-btn';
+    btn.textContent = glyph;
+    btn.title = 'U+' + cp.toString(16).toUpperCase();
+    if(glyph === placeGlyph) btn.classList.add('active');
+    btn.addEventListener('click', ()=>{
+      placeGlyph = glyph;
+      paletteEl.querySelectorAll('.palette-btn.active').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+    paletteEl.appendChild(btn);
+  }
+})();
+
+function refreshScaleLabel(v){ scaleValueEl.textContent = Number(v).toFixed(2)+'x'; }
+refreshScaleLabel(scaleSlider.value);
+
+scaleSlider.addEventListener('input', ()=>{
+  const v = parseFloat(scaleSlider.value);
+  refreshScaleLabel(v);
+  const obj = levelObjects.find(o=>o.id===selectedObjId);
+  if(obj) obj.scale = v; else placeScale = v;
+});
+
+pickupCheck.addEventListener('change', ()=>{
+  const obj = levelObjects.find(o=>o.id===selectedObjId);
+  if(obj) obj.pickup = pickupCheck.checked; else placePickup = pickupCheck.checked;
+});
+
+mirrorCheck.addEventListener('change', ()=>{
+  const obj = levelObjects.find(o=>o.id===selectedObjId);
+  if(obj) obj.mirror = mirrorCheck.checked; else placeMirror = mirrorCheck.checked;
+});
+
+noHitboxCheck.addEventListener('change', ()=>{
+  const obj = levelObjects.find(o=>o.id===selectedObjId);
+  if(obj) obj.noHitbox = noHitboxCheck.checked; else placeNoHitbox = noHitboxCheck.checked;
+});
+
+function selectObject(obj){
+  selectedObjId = obj ? obj.id : null;
+  if(obj){
+    scaleSlider.value = obj.scale;
+    refreshScaleLabel(obj.scale);
+    pickupCheck.checked = obj.pickup;
+    mirrorCheck.checked = !!obj.mirror;
+    noHitboxCheck.checked = !!obj.noHitbox;
+  }
+}
+
+function deleteSelectedObject(){
+  const idx = levelObjects.findIndex(o=>o.id===selectedObjId);
+  if(idx !== -1) levelObjects.splice(idx, 1);
+  selectedObjId = null;
+}
+document.getElementById('deleteBtn').addEventListener('click', deleteSelectedObject);
+map1Btn.addEventListener('click', ()=> setMap(1));
+mapNeg1Btn.addEventListener('click', ()=> setMap(-1));
+updateMapButtons();
+
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  levelJsonEl.value = JSON.stringify(levelObjects, null, 2);
+});
+function sanitizeStackItem(it){
+  if(!it || typeof it !== 'object') return null;
+  if(it.kind === 'cow') return { kind:'cow' };
+  if(it.kind === 'level' && typeof it.glyph === 'string'){
+    return { kind:'level', glyph:it.glyph, scale:it.scale||1, mirror:!!it.mirror, noHitbox:!!it.noHitbox, pickup:!!it.pickup };
+  }
+  return null;
+}
+
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  try{
+    const data = JSON.parse(levelJsonEl.value);
+    if(!Array.isArray(data)) throw new Error('expected an array');
+    levelObjects.length = 0;
+    let maxId = 0;
+    data.forEach(o=>{
+      if(typeof o.glyph !== 'string' || typeof o.x !== 'number' || typeof o.y !== 'number') return;
+      const id = typeof o.id === 'number' ? o.id : nextObjId++;
+      maxId = Math.max(maxId, id);
+      const items = Array.isArray(o.items) ? o.items.map(sanitizeStackItem).filter(Boolean) : [];
+      levelObjects.push({ id, glyph:o.glyph, x:o.x, y:o.y, scale:o.scale||1, pickup:!!o.pickup, mirror:!!o.mirror, noHitbox:!!o.noHitbox, items });
+    });
+    nextObjId = Math.max(nextObjId, maxId+1);
+    selectedObjId = null;
+  }catch(err){
+    alert('Could not import: '+err.message);
+  }
+});
+
+let draggingObj = null;
+
+function hitTestObject(cx, cy){
+  let hit = null, hitDist = Infinity;
+  for(const obj of levelObjects){
+    const s = scaleForY(obj.y);
+    const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * s * obj.scale;
+    const d = Math.hypot(cx-obj.x*W, cy-obj.y*H);
+    if(d < size*0.65 && d < hitDist){ hit = obj; hitDist = d; }
+  }
+  return hit;
+}
+
+canvas.addEventListener('mousedown', e=>{
+  if(!editMode) return;
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const fx = cx/W, fy = cy/H;
+
+  // hit-test existing objects first — closest one within its own radius wins
+  const hit = hitTestObject(cx, cy);
+
+  if(hit){
+    selectObject(hit);
+    draggingObj = hit; // held while the mouse is down — see the window-level listeners below
+  } else {
+    const obj = { id: nextObjId++, glyph: placeGlyph, x: fx, y: fy, scale: placeScale, pickup: placePickup, mirror: placeMirror, noHitbox: placeNoHitbox, items: [] };
+    levelObjects.push(obj);
+    selectObject(obj);
+  }
+});
+
+window.addEventListener('mousemove', e=>{
+  if(!editMode || !draggingObj) return;
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  draggingObj.x = Math.max(0, Math.min(1, cx/W));
+  draggingObj.y = Math.max(0, Math.min(1, cy/H));
+});
+window.addEventListener('mouseup', ()=>{ draggingObj = null; });
+
+/* ---------- collision ----------
+   Nothing fancy: every solid is a circle in pixel space, sized off the
+   same scaleForY() curve used to draw it, so "how big it looks" and
+   "how big it blocks" always agree.
+
+   For the walking figures (player/NPC/cow), the hitbox only covers the
+   bottom 20% of the glyph — roughly its feet — instead of the whole
+   sign. That's what lets a figure visually overlap something above its
+   feet (an outstretched hand, another figure's head) while still only
+   physically blocking when they're actually standing on the same spot. */
+function feetHitbox(sx, sy, size, r){
+  return { x:sx, y:sy+size*0.40, r };
+}
+
+function obstacleCircles(){
+  const npcSize = Math.min(W,H) * NPC_SIZE_MULT * scaleForY(npc.y);
+  const list = [
+    feetHitbox(npc.x*W, npc.y*H, npcSize, npcSize*0.16),
+  ];
+  // skip the cow's hitbox while carried, and for a beat after being set
+  // down (otherwise it'd trap the player who's standing right on it)
+  if(!cow.carried && !cow.placed && cow.settleCooldown<=0){
+    const cowSize = Math.min(W,H) * COW_SIZE_MULT * scaleForY(cow.y);
+    list.push(feetHitbox(cow.x*W, cow.y*H, cowSize, cowSize*0.20));
+  }
+  // level-editor objects block movement by default — mark one "no hitbox" to let the player walk through it
+  for(const obj of levelObjects){
+    if(obj.noHitbox) continue;
+    const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale;
+    list.push({ x: obj.x*W, y: obj.y*H, r: size*0.35 });
+  }
+  return list;
+}
+function collidesAt(fx, fy){
+  const size = Math.min(W,H) * PLAYER_SIZE_MULT * scaleForY(fy);
+  const foot = feetHitbox(fx*W, fy*H, size, size*0.16);
+  return obstacleCircles().some(o => Math.hypot(foot.x-o.x, foot.y-o.y) < (o.r+foot.r));
+}
+
+/* ---------- river hazard: the crocodile ---------- */
+// Drops a crocodile roughly SPAWN_DISTANCE_DIAMETERS player-widths from the
+// player, somewhere inside the water. Tries a handful of compass directions
+// first (cheap, and keeps it from spawning behind an obviously dry bank);
+// if none of those land in the water, it falls back to whichever point on
+// the river's own outline sits closest to the target distance.
+function trySpawnCroc(){
+  const size = Math.min(W,H) * PLAYER_SIZE_MULT * scaleForY(player.y);
+  const distFrac = (size * 2 * SPAWN_DISTANCE_DIAMETERS) / Math.min(W,H);
+  const angles = [0, Math.PI, 0.35, -0.35, Math.PI-0.35, Math.PI+0.35, Math.PI/2, -Math.PI/2];
+  for(const a of angles){
+    const cx = player.x + Math.cos(a)*distFrac;
+    const cy = player.y + Math.sin(a)*distFrac;
+    if(isInWater(cx, cy)){ croc = { x: cx, y: cy }; return; }
+  }
+  let best = null, bestDiff = Infinity;
+  for(const p of WATER_POLY){
+    const diff = Math.abs(Math.hypot(p[0]-player.x, p[1]-player.y) - distFrac);
+    if(diff < bestDiff){ bestDiff = diff; best = p; }
+  }
+  if(best) croc = { x: best[0], y: best[1] };
+}
+
+function updateCroc(dt){
+  if(!croc) return;
+
+  // it'll go after whichever's in the water — the player on foot, or a
+  // loose cow that got dropped in there — and loses interest once neither is
+  const playerInWater = !boarded && isInWater(player.x, player.y);
+  const cowInWater = !cow.carried && !cow.placed && isInWater(cow.x, cow.y);
+  if(!playerInWater && !cowInWater){ croc = null; return; }
+
+  let tx, ty, huntingCow;
+  if(playerInWater && cowInWater){
+    const dPlayer = Math.hypot(player.x-croc.x, player.y-croc.y);
+    const dCow = Math.hypot(cow.x-croc.x, cow.y-croc.y);
+    huntingCow = dCow < dPlayer;
+  } else {
+    huntingCow = cowInWater;
+  }
+  tx = huntingCow ? cow.x : player.x;
+  ty = huntingCow ? cow.y : player.y;
+
+  const depthFactor = scaleForY(croc.y);
+  const speed = 0.30 * depthFactor * CROC_SPEED_MULT * dt;
+  const dx = tx - croc.x, dy = ty - croc.y;
+  const dist = Math.hypot(dx, dy);
+  if(dist > 0.0001){
+    croc.x += (dx/dist) * speed;
+    croc.y += (dy/dist) * speed;
+  }
+
+  const size = Math.min(W,H) * COW_SIZE_MULT * depthFactor;
+  const caughtDist = size * 0.5;
+  const caught = Math.hypot((tx-croc.x)*W, (ty-croc.y)*H) < caughtDist;
+  if(caught){
+    // caught the cow or caught you — either way, it's game over
+    gameOver = true;
+  }
+}
+
+/* ---------- boat boarding ---------- */
+// Walking into a parked boat's box while it's sitting in the water climbs
+// aboard: from then on the boat itself is what moves, and the player (plus
+// anything stacked on the boat) just rides along with it. The box itself
+// only covers the boat's lower 15% — its hull, not the whole sail-height
+// footprint — so you have to actually walk into the hull to trigger it.
+// Carrying something in when you board doesn't block it: whatever's in
+// heldItem is auto-dropped onto the boat's stack first, same as a manual drop.
+function tryAutoBoard(){
+  if(boarded || !boatOnGround || boardCooldown > 0) return;
+  if(!isInWater(boatOnGround.x, boatOnGround.y)) return; // only a boat actually parked in the river can be boarded
+  const s = scaleForY(boatOnGround.y);
+  const boatSize = Math.min(W,H) * BOAT_SIZE_MULT * s * BOAT_DROP_SCALE;
+  // the boat's actual collision line is the waterline along its bottom
+  // edge — a thin strip spanning its width, not a circle over the hull.
+  // The floating boat only shows its top 70% (drawGroundBoat clips it —
+  // the hull rides low in the water), so that edge sits at +0.20*size.
+  const hullY = boatOnGround.y*H + boatSize*0.20;
+  const hullHalfWidth = boatSize*0.5;
+  // the ship's own hull band is the entire hitbox — the character contributes
+  // no radius of its own here, so this matches the debug overlay's magenta
+  // box exactly rather than a padded-out version of it. This band is
+  // deliberately much thicker than boatHitsObstacle's — walking down onto
+  // the boat from the north means crossing this band vertically rather
+  // than sliding along it, so it needs real depth to actually catch that
+  // approach instead of being a hair-thin line you can step over in one
+  // frame (that's what broke boarding from the north — the sailing band
+  // it used to share with boatHitsObstacle is only 0.08, too thin to walk
+  // into on purpose without a lot of luck).
+  const boardBandHeight = boatSize*0.30;
+  const dx = Math.abs(player.x*W - boatOnGround.x*W);
+  const dy = Math.abs(player.y*H - hullY);
+  if(dx < hullHalfWidth && dy < boardBandHeight){
+    if(heldItem){
+      const item = heldItem;
+      heldItem = null;
+      boatOnGround.items = boatOnGround.items || [];
+      boatOnGround.items.push(item);
+      settleDroppedItem(item, true);
+    }
+    boarded = true;
+    // the player's safe aboard, but a crocodile already hunting a loose cow
+    // left behind in the water keeps right on going
+    wasInWater = false;
+    player.x = boatOnGround.x;
+    player.y = boatOnGround.y;
+  }
+}
+
+// A few level objects with real hitboxes sit right in the river (reeds,
+// stonework). The boat treats them like any other obstacle — hit one and
+// it's run aground exactly as if it had hit the bank.
+// There is no circular hitbox around the boat/rider — the sail, the oar,
+// the character sitting up in it never register a hit. Only the hull band
+// (the same waterline strip tryAutoBoard uses to board) can ever touch
+// something, so an obstacle has to actually reach that thin strip along
+// the boat's bottom edge, not just get close to the boat's visual size.
+function boatHitsObstacle(x, y){
+  const s = scaleForY(y);
+  const boatSize = Math.min(W,H) * BOAT_SIZE_MULT * s * BOAT_DROP_SCALE;
+  const hullY = y*H + boatSize*0.20;
+  const hullHalfWidth = boatSize*0.5;
+  const hullBandHeight = boatSize*0.08;
+  const hullX = x*W;
+  for(const obj of levelObjects){
+    if(obj.noHitbox || !isInWater(obj.x, obj.y)) continue;
+    const objR = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale * 0.35;
+    const ox = obj.x*W, oy = obj.y*H;
+    // closest point on the hull band rectangle to the object's center
+    const cx = Math.max(hullX-hullHalfWidth, Math.min(ox, hullX+hullHalfWidth));
+    const cy = Math.max(hullY-hullBandHeight, Math.min(oy, hullY+hullBandHeight));
+    if(Math.hypot(ox-cx, oy-cy) < objR) return true;
+  }
+  return false;
+}
+
+// Attempts to move the boat to (tx,ty); returns true and applies the move
+// (or the map transition) if it's allowed, false if it isn't. Kept separate
+// from updateBoardedMovement so that function can retry along a single axis
+// instead of the whole diagonal step.
+function tryMoveBoatTo(tx, ty){
+  // sailing off the river's far west edge crosses into lvl -1, which has its
+  // own real spawn point clear across that map — setMap(-1) already places
+  // the boat there. Only pin it to the world edge on frames where you're
+  // ALREADY in lvl -1 pushing further west (holding it like a wall); on the
+  // very frame you first cross over, clobbering x back to BOUNDS.xMin right
+  // after setMap moved it to MAP_NEG1_SPAWN would just undo that spawn.
+  // The east edge (map 2) has no map or spawn built yet, so it still just
+  // tracks/shows which "map" you're in and holds the boat at that edge.
+  if(tx <= BOUNDS.xMin){
+    const alreadyThere = currentMap === -1;
+    setMap(-1);
+    if(alreadyThere) boatOnGround.x = BOUNDS.xMin;
+    return true;
+  } else if(tx >= BOUNDS.xMax){
+    setMap(2);
+    boatOnGround.x = BOUNDS.xMax;
+    return true;
+  } else if(isInWater(tx, ty) && !boatHitsObstacle(tx, ty)){
+    setMap(1);
+    boatOnGround.x = tx;
+    boatOnGround.y = ty;
+    return true;
+  }
+  return false;
+}
+
+function updateBoardedMovement(dt){
+  const depthFactor = scaleForY(boatOnGround.y);
+  const speed = 0.30 * depthFactor * dt;
+  let dx=0, dy=0;
+  if(keys['arrowleft']||keys['a']) dx -= 1;
+  if(keys['arrowright']||keys['d']) dx += 1;
+  if(keys['arrowup']||keys['w']) dy -= 1;
+  if(keys['arrowdown']||keys['s']) dy += 1;
+  const moving = dx!==0 || dy!==0;
+  if(dx > 0) facing = -1; else if(dx < 0) facing = 1;
+  if(dx && dy){ dx *= 0.7071; dy *= 0.7071; }
+
+  const targetX = boatOnGround.x + dx*speed;
+  const targetY = boatOnGround.y + dy*speed;
+
+  // axis-separated, same as the on-foot movement below: a diagonal step
+  // that's blocked (river bank, obstacle) first falls back to sliding along
+  // whichever single axis is still clear, so cutting a corner along the
+  // bank doesn't run the boat aground. The axis-only fallbacks only make
+  // sense — and are only tried — when the input is actually diagonal
+  // (dx && dy): for a straight approach there's no "other axis" to slide
+  // along, and re-checking the boat's own unchanged position (targetY ===
+  // boatOnGround.y when dy is 0, or the x equivalent) would trivially
+  // "succeed" against water it's already sitting in, silently swallowing
+  // every straight run at the bank instead of ever beaching the boat.
+  let moved = tryMoveBoatTo(targetX, targetY);
+  if(!moved && dx && dy){
+    moved = tryMoveBoatTo(targetX, boatOnGround.y) || tryMoveBoatTo(boatOnGround.x, targetY);
+  }
+  if(!moved && moving){
+    // the river is the rest of the world while aboard; running past its
+    // north or south edge (or into an obstacle sitting in the water), with
+    // no clear axis to slide along either, means the boat's run aground, so
+    // it's time to disembark
+    boarded = false;
+    boardCooldown = 0.6;
+  }
+  player.x = boatOnGround.x;
+  player.y = boatOnGround.y;
+  updateAnim(dt, moving);
+}
+
+function update(dt){
+  if(gameOver) return;
+  if(boardCooldown > 0) boardCooldown = Math.max(0, boardCooldown - dt);
+
+  if(boarded){
+    updateBoardedMovement(dt);
+    updateCroc(dt);
+    return;
+  }
+
+  // the further back (deeper into the background) the player is, the
+  // slower it covers ground — same depth curve used for the sprite scale.
+  // wading through the river on foot (no boat) slows that further, to half pace.
+  const depthFactor = scaleForY(player.y);
+  const waterMult = isInWater(player.x, player.y) ? 0.5 : 1;
+  const speed = 0.30 * depthFactor * waterMult * dt;
+
+  let dx=0, dy=0;
+  if(keys['arrowleft']||keys['a']) dx -= 1;
+  if(keys['arrowright']||keys['d']) dx += 1;
+  if(keys['arrowup']||keys['w']) dy -= 1;
+  if(keys['arrowdown']||keys['s']) dy += 1;
+  const moving = dx!==0 || dy!==0;
+
+  // the sign's default orientation faces left, so only rightward
+  // travel needs a mirror; leftward and purely-vertical movement keep
+  // whatever facing was already set.
+  if(dx > 0) facing = -1;
+  else if(dx < 0) facing = 1;
+
+  if(dx && dy){ dx *= 0.7071; dy *= 0.7071; } // even speed on the diagonal
+
+  const targetX = Math.max(BOUNDS.xMin, Math.min(BOUNDS.xMax, player.x + dx*speed));
+  const targetY = Math.max(BOUNDS.yMin, Math.min(BOUNDS.yMax, player.y + dy*speed));
+
+  // axis-separated so the player slides along a solid instead of
+  // just stopping dead when approaching it at an angle.
+  if(!collidesAt(targetX, targetY)){
+    player.x = targetX; player.y = targetY;
+  } else if(!collidesAt(targetX, player.y)){
+    player.x = targetX;
+  } else if(!collidesAt(player.x, targetY)){
+    player.y = targetY;
+  }
+
+  // the crocodile shows up the moment you wade in on foot; updateCroc()
+  // itself handles losing interest once neither you nor a loose cow is
+  // still in the water
+  const nowWading = isInWater(player.x, player.y);
+  if(nowWading && !wasInWater) trySpawnCroc();
+  wasInWater = nowWading;
+  updateCroc(dt);
+
+  tryAutoBoard();
+
+  updateAnim(dt, moving);
+}
+
+/* ============================================================
+   RESIZE / RENDER LOOP
+   ============================================================ */
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = window.innerWidth - (editMode ? EDITOR_WIDTH : 0);
+  H = window.innerHeight;
+  canvas.style.width = W+'px';
+  canvas.style.height = H+'px';
+  canvas.width = W*DPR;
+  canvas.height = H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ============================================================
+   DEBUG OVERLAY — toggled from the Level Editor panel ("Show
+   hitboxes"). Draws exactly the numbers the collision code itself
+   uses, so hitboxes can be checked by eye instead of by guesswork:
+     cyan outline   — WATER_POLY (what isInWater() treats as river)
+     orange circle  — an obstacle's hit radius (objR) for a sign
+                       that's both !noHitbox AND currently in water
+                       (a boat obstacle, per boatHitsObstacle)
+     gray circle    — a !noHitbox sign that's NOT in water (still
+                       blocks the player on foot, never the boat)
+     magenta box    — tryAutoBoard's boarding/auto-drop band. Thick on
+                       purpose — you walk INTO this one vertically.
+     violet dashed box — boatHitsObstacle's sailing-collision band, along
+                       the same waterline but hair-thin, so the boat still
+                       slides past reeds/stonework instead of clipping them.
+                       No circle around the boat or rider ever hits anything —
+                       only these two bands can.
+     aqua dashed box — nearestBase()'s reach for the boat's cargo stack:
+                       E picks up/drops anywhere inside this (the boat's
+                       full visible silhouette plus a bit of slop)
+     green cross    — MAP_NEG1_SPAWN, the lvl -1 landing point
+   ============================================================ */
+function drawDebugOverlay(){
+  if(!showDebug) return;
+  ctx.save();
+
+  // WATER_POLY and MAP1_OBJECTS are lvl 1's own fixed layout — they exist
+  // whichever map is active, but only actually govern collision when
+  // currentMap === 1 (see isInWater/boatHitsObstacle/obstacleCircles).
+  // Drawing them on lvl -1 would show hitboxes for a river and reeds that
+  // aren't there — lvl -1 is meant to be a blank map — so skip both.
+  if(currentMap === 1){
+    // water polygon
+    ctx.beginPath();
+    WATER_POLY.forEach((p,i)=>{
+      const px = p[0]*W, py = p[1]*H;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    });
+    ctx.closePath();
+    ctx.strokeStyle = 'cyan';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // every !noHitbox sign in the main map — orange if it currently
+    // counts as a boat obstacle, gray if it's a foot-only obstacle
+    for(const obj of MAP1_OBJECTS){
+      if(obj.noHitbox) continue;
+      const objR = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale * 0.35;
+      const inWater = pointInPolygon(obj.x, obj.y, WATER_POLY);
+      ctx.beginPath();
+      ctx.arc(obj.x*W, obj.y*H, objR, 0, Math.PI*2);
+      ctx.strokeStyle = inWater ? 'orange' : 'rgba(120,120,120,0.8)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  if(boatOnGround){
+    const s = scaleForY(boatOnGround.y);
+    const boatSize = Math.min(W,H) * BOAT_SIZE_MULT * s * BOAT_DROP_SCALE;
+    const bx = boatOnGround.x*W, by = boatOnGround.y*H;
+
+    // no circle around the sail/oar/rider ever registers a hit — only these
+    // two hull-band rectangles can. They're deliberately different
+    // thicknesses: boarding (magenta) needs real depth since you walk INTO
+    // it vertically, especially coming down from the north; the sailing
+    // obstacle band (violet, dashed) stays hair-thin so the boat still
+    // slides past reeds/stonework easily instead of clipping on them.
+    const hullY = by + boatSize*0.20;
+    const hullHalfWidth = boatSize*0.5;
+    const boardBandHeight = boatSize*0.30;
+    const sailBandHeight = boatSize*0.08;
+    ctx.strokeStyle = 'magenta';
+    ctx.setLineDash([]);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bx-hullHalfWidth, hullY-boardBandHeight, hullHalfWidth*2, boardBandHeight*2);
+    ctx.strokeStyle = 'violet';
+    ctx.setLineDash([4,3]);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(bx-hullHalfWidth, hullY-sailBandHeight, hullHalfWidth*2, sailBandHeight*2);
+    ctx.setLineDash([]);
+
+    // nearestBase()'s pick-from/drop-onto reach for the boat — same
+    // boatCatchZone() it actually uses, so this can't drift out of sync
+    const zone = boatCatchZone();
+    ctx.strokeStyle = 'aqua';
+    ctx.setLineDash([6,4]);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(zone.bx-zone.halfW, zone.topY, zone.halfW*2, zone.botY-zone.topY);
+    ctx.setLineDash([]);
+  }
+
+  // lvl -1 landing point, always shown for reference
+  const sx = MAP_NEG1_SPAWN.x*W, sy = MAP_NEG1_SPAWN.y*H;
+  ctx.strokeStyle = 'lime';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(sx-12, sy); ctx.lineTo(sx+12, sy);
+  ctx.moveTo(sx, sy-12); ctx.lineTo(sx, sy+12);
+  ctx.stroke();
+
+  // the player's own on-foot hitbox (feetHitbox, used by collidesAt) —
+  // drawn in red ONLY when it's actually live. update() returns before
+  // ever calling collidesAt while boarded, so this circle disappears the
+  // instant you climb aboard: while riding, only the yellow (boat) circle
+  // above can register a hit. The on-screen label makes that state explicit
+  // instead of asking you to take it on faith.
+  ctx.font = '600 14px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  if(!boarded){
+    const pSize = Math.min(W,H) * PLAYER_SIZE_MULT * scaleForY(player.y);
+    const pFoot = feetHitbox(player.x*W, player.y*H, pSize, pSize*0.16);
+    ctx.setLineDash([5,4]);
+    ctx.beginPath();
+    ctx.arc(pFoot.x, pFoot.y, pFoot.r, 0, Math.PI*2);
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'red';
+    ctx.fillText('player hitbox: ON (on foot)', 14, 34);
+  } else {
+    ctx.fillStyle = 'lime';
+    ctx.fillText('player hitbox: OFF (aboard — only the ship/yellow circle can hit)', 14, 34);
+  }
+
+  ctx.restore();
+}
+
+let t0 = performance.now();
+function render(time){
+  const dt = Math.min(0.05, (time-t0)/1000); t0 = time;
+  if(!editMode && !gameOver){
+    update(dt);
+    if(currentMap === 1){
+      updateCow(dt);
+      updateNpcAnim(dt);
+      updateDuck(dt);
+    }
+  }
+
+  // lvl -1 (and any other non-main map) is a blank page — flat background,
+  // no papyrus texture, no cow/npc/river/boat, just the character and
+  // whatever's in heldItem (that always carries over, untouched by setMap)
+  ctx.fillStyle = (currentMap === 1 && papyrusPattern) ? papyrusPattern : '#e9e4d8';
+  ctx.fillRect(0,0,W,H);
+
+  if(fontsReady){
+    const dist = Math.hypot((player.x-npc.x)*W, (player.y-npc.y)*H);
+    const nearNpc = dist < Math.min(W,H)*NPC_TALK_RANGE;
+
+    // NPC/cow/level-objects draw back-to-front by depth among themselves;
+    // the player always draws last, full opacity, on top of all of them —
+    // he should always be visible, never hidden and never see-through.
+    // A carried cow isn't part of that world anymore — it's drawn by
+    // drawPlayer() itself, riding upside-down above his head.
+    const drawList = [];
+    if(currentMap === 1){
+      drawList.push({ y: npc.y, draw: ()=>drawNpc(nearNpc) });
+      if(!cow.carried && !cow.placed) drawList.push({ y: cow.y, draw: drawCow });
+      if(croc) drawList.push({ y: croc.y, draw: drawCroc });
+    }
+    // the boat (and whatever's stacked on it) travels with you into lvl -1 —
+    // only the cow/npc/crocodile/river are exclusive to the main map
+    if(boatOnGround) drawList.push({ y: boatOnGround.y, draw: drawGroundBoat });
+    for(const obj of levelObjects){
+      if(obj === duckObj && duckFlying){
+        const flapGlyph = duckAnimFrame === 0 ? G40 : G41;
+        drawList.push({ y: obj.y, draw: ()=>drawLevelObject(obj, flapGlyph, true) });
+      } else {
+        drawList.push({ y: obj.y, draw: ()=>drawLevelObject(obj) });
+      }
+    }
+    if(currentMap === 1 && ladyObj && !birdQuestDone){
+      const distLady = Math.hypot((player.x-ladyObj.x)*W, (player.y-ladyObj.y)*H);
+      if(distLady < Math.min(W,H)*LADY_TALK_RANGE){
+        const ladySize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(ladyObj.y) * ladyObj.scale;
+        drawList.push({ y: ladyObj.y, draw: ()=>drawSpeechBubble(ladyObj.x*W, ladyObj.y*H-ladySize*0.75, LADY_QUEST_LINE, 22) });
+      }
+    }
+    drawList.sort((a,b)=> a.y-b.y);
+    drawList.forEach(e=>e.draw());
+    drawPlayer();
+    drawDebugOverlay();
+
+    ctx.save();
+    ctx.font = '600 16px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(42,31,20,0.8)';
+    ctx.fillText('score '+score, W-14, 14);
+    ctx.restore();
+
+    // small corner marker so it's visible which map you're in
+    if(currentMap !== 1){
+      ctx.save();
+      ctx.font = '600 16px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = 'rgba(42,31,20,0.8)';
+      ctx.fillText('lvl '+currentMap, 14, 14);
+      ctx.restore();
+    }
+
+    if(gameOver) drawGameOver();
+  }
+
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+})();
+</script>
+</body>
+</html>
