@@ -115,9 +115,13 @@ const A28 = String.fromCodePoint(0x13020); // NPC delivery-celebration sequence
 const A29 = String.fromCodePoint(0x13021);
 const A31 = String.fromCodePoint(0x13023);
 const A32 = String.fromCodePoint(0x13024);
-const I3 = String.fromCodePoint(0x1318A); // Nile crocodile — the river hazard
+const I3 = String.fromCodePoint(0x1318A); // Nile crocodile — the river hazard on lvl 1
+const E24 = String.fromCodePoint(0x130EF); // hippopotamus (attack pose) — the river hazard on lvl -1
+const E25 = String.fromCodePoint(0x130F0); // elephant — the stationary-until-woken land hazard on lvl -1
 const G40 = String.fromCodePoint(0x1316E); // duck flying — wingbeat frame 1
 const G41 = String.fromCodePoint(0x1316F); // duck flying (alighting pose) — wingbeat frame 2
+const G24 = String.fromCodePoint(0x1315B); // vulture-type bird — dive-bombs anyone who crosses the reed staircase without the stick
+const K3 = String.fromCodePoint(0x1319F); // tilapia — same fish glyph as the level's 3 pickups
 const N6 = String.fromCodePoint(0x131F4); // sun disk — the lady's reward, rendered in gold
 
 let W = 0, H = 0, DPR = 1;
@@ -162,6 +166,20 @@ const BOUNDS = { xMin:0.035, xMax:0.965, yMin:DEPTH_ANCHORS[0][0], yMax:DEPTH_AN
    Wading in it without a boat is slow and draws a crocodile; a boat
    parked in it can be boarded and is confined to it until it beaches. */
 const WATER_POLY = [[0.0046,0.0491],[0.0083,0.0369],[0.0495,0.0442],[0.1001,0.0971],[0.1264,0.14],[0.1863,0.1929],[0.2926,0.1904],[0.5243,0.2162],[0.6956,0.2113],[0.7621,0.2002],[0.8586,0.2027],[0.9025,0.1843],[0.9917,0.1916],[0.9943,0.2912],[0.9799,0.3108],[0.9205,0.2961],[0.8829,0.301],[0.8555,0.3219],[0.7967,0.3194],[0.7028,0.3354],[0.6806,0.3501],[0.6228,0.3428],[0.5294,0.3649],[0.4603,0.335],[0.2786,0.335],[0.1223,0.3219],[0.1146,0.301],[0.0743,0.2801],[0.0057,0.2727]];
+// lvl -1's own river/lake — traced from a screenshot the user marked up with
+// a red outline. The stair-step ramp built out of stacked 𓇿 signs crosses
+// through it, but every one of those objects is noHitbox, so it doesn't need
+// carving out here: a boat already passes underneath it exactly like it
+// passes over any other noHitbox sign in the water.
+const WATER_NEG1_POLY = [[0.291,0.3434],[0.3096,0.2993],[0.3389,0.2691],[0.3701,0.2575],[0.4088,0.2599],[0.4451,0.2575],[0.4839,0.2575],[0.5099,0.2564],[0.5233,0.2494],[0.5668,0.2471],[0.6014,0.2529],[0.647,0.2517],[0.6987,0.2413],[0.7505,0.2367],[0.8022,0.2401],[0.854,0.2471],[0.9058,0.2517],[0.9576,0.2552],[0.9979,0.261],[0.9979,0.464],[0.9576,0.4617],[0.9058,0.4548],[0.854,0.4525],[0.8022,0.4617],[0.7505,0.4501],[0.6987,0.427],[0.647,0.4084],[0.6014,0.4015],[0.5689,0.4003],[0.5233,0.3782],[0.4839,0.4003],[0.4451,0.4003],[0.4088,0.4003],[0.3701,0.4003],[0.3389,0.4003],[0.3096,0.4003]];
+// Which river polygon (if any) governs isInWater/boat-sailing for whichever
+// map is currently active — lvl 2 has none yet, so boats and wading both
+// stay grounded there until it's built out.
+function activeWaterPoly(){
+  if(currentMap === 1) return WATER_POLY;
+  if(currentMap === -1) return WATER_NEG1_POLY;
+  return null;
+}
 function pointInPolygon(x, y, poly){
   let inside = false;
   for(let i=0, j=poly.length-1; i<poly.length; j=i++){
@@ -171,17 +189,24 @@ function pointInPolygon(x, y, poly){
   }
   return inside;
 }
-function isInWater(x, y){ return currentMap === 1 && pointInPolygon(x, y, WATER_POLY); } // no river outside the main map
+function isInWater(x, y){
+  const poly = activeWaterPoly();
+  if(!poly) return false; // no river outside a map that has one
+  if(currentMap === -1 && isInLandPocket(x, y)) return false; // a raised bank the hand-traced river polygon still technically covers
+  return pointInPolygon(x, y, poly);
+}
 const BOAT_WATER_SNAP = 0.14; // fraction of min(W,H) — how close a boat drop needs to be to the river to snap into it
-// Finds the closest point in (or on the edge of) the river to (x,y) —
-// used to snap a dropped boat into the water even if it lands a bit short,
-// since the river band is thin enough that hitting it exactly (especially
-// approaching from the south) is fiddly.
+// Finds the closest point in (or on the edge of) the active map's river to
+// (x,y) — used to snap a dropped boat into the water even if it lands a bit
+// short, since the river band is thin enough that hitting it exactly
+// (especially approaching from the south) is fiddly.
 function nearestWaterPoint(x, y){
   if(isInWater(x, y)) return [x, y];
+  const poly = activeWaterPoly();
+  if(!poly) return [x, y];
   let best = null, bestDist = Infinity;
-  for(let i=0, j=WATER_POLY.length-1; i<WATER_POLY.length; j=i++){
-    const ax=WATER_POLY[j][0], ay=WATER_POLY[j][1], bx=WATER_POLY[i][0], by=WATER_POLY[i][1];
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const ax=poly[j][0], ay=poly[j][1], bx=poly[i][0], by=poly[i][1];
     const dx=bx-ax, dy=by-ay;
     const lenSq = dx*dx+dy*dy;
     let t = lenSq>0 ? ((x-ax)*dx+(y-ay)*dy)/lenSq : 0;
@@ -265,19 +290,284 @@ let boarded = false; // true while riding a boat that's parked in the water
 let boardCooldown = 0; // brief grace period after disembarking, so you don't instantly re-board
 let wasInWater = false; // tracks entering/leaving the water, to know when to spawn the crocodile
 let croc = null; // { x, y } — the crocodile, only ever present while you're wading
+const ELEPHANT_OBJ_ID = 277; // the big elephant sign placed in lvl -1's editor layout
+const ELEPHANT_WAKE_BODY_LENGTHS = 2.2; // wakes once you're within 2.2 of its own on-screen sizes
+const ELEPHANT_SPEED_MULT = 0.6; // charges at 0.6x the player's own base pace once awake (50% slower than its original 1.2x)
+let elephant = null; // { x, y, scale, awake } — lvl -1 only, built from its placed level-object
+// Once the fish-delivery quest (below) sends the man to run it off, the
+// elephant stays gone for the rest of THIS visit to lvl -1 — but the whole
+// thing (elephant, quest progress, and this flag) resets fresh every time
+// you arrive on lvl -1 again, same as everywhere else in setMap(-1).
+let elephantGoneForGood = false;
+// The elephant is confined to its own side of the map: a line running from
+// just past the reed staircase down to the bottom of the world. It can
+// still range freely up/down and to the west, but it'll never cross east
+// of this line into the staircase/temple side, no matter how far the
+// player runs that way.
+const NEG1_ELEPHANT_BOUNDARY = { x1: 0.478, y1: 0.401, x2: 0.526, y2: 0.989 };
+function elephantBoundaryX(y){
+  const { x1, y1, x2, y2 } = NEG1_ELEPHANT_BOUNDARY;
+  const t = (y - y1) / (y2 - y1);
+  return x1 + (x2 - x1) * t;
+}
+// The reed staircase down to the water (the 14 noHitbox 𓇿 objects) is a
+// raised bank, not river — the hand-traced WATER_NEG1_POLY still technically
+// covers that patch, so isInWater() carves it back out here. That single
+// fix covers everything that reads off isInWater(): the boat won't sail
+// onto it, wading doesn't slow down there, and the hippo can't hunt you
+// there either, so climbing it is always a guaranteed way to shake it off.
+const NEG1_LAND_POCKETS = [
+  { xMin: 0.50, xMax: 0.59, yMin: 0.20, yMax: 0.40 }, // the reed staircase
+];
+function isInLandPocket(x, y){
+  return NEG1_LAND_POCKETS.some(z => x >= z.xMin && x <= z.xMax && y >= z.yMin && y <= z.yMax);
+}
+// The lone 𓏱 pickup on lvl -1 (the only placed item besides the fish) reads
+// as a walking stick — carrying it is what keeps the bird guarding the reed
+// staircase from noticing you. Setting it down (or never having picked it
+// up) and stepping onto the staircase anyway wakes the bird.
+const STICK_OBJ_ID = 399;
+function hasStick(){
+  return !!(heldItem && heldItem.kind === 'level' && heldItem.id === STICK_OBJ_ID);
+}
+const BIRD_SCALE = 1.7; // reads 70% bigger than a normal level object at the same depth
+const BIRD_ATTACK_DURATION = 0.6; // seconds from the dive starting to the kick landing
+let birdAttack = null; // { t, fromX, fromY, toX, toY, landX, landY } — mid-dive cutscene, freezes normal control
+let wasInYellowZoneUnequipped = false; // edge-trigger, mirrors wasInWater's pattern — one dive per approach
+// nearestWaterPoint() finds the closest point on the water polygon's own
+// outline, but around the reed staircase that outline dips straight through
+// the carved-out land pocket (see isInLandPocket()) — so the closest edge
+// point can itself still read as land. A small radial search outward finds
+// an actual patch of water instead of trusting that one boundary point.
+function findKickLandingSpot(x, y){
+  for(let r = 0.02; r <= 0.6; r += 0.02){
+    for(let a = 0; a < Math.PI*2; a += Math.PI/8){
+      const px = x + Math.cos(a)*r, py = y + Math.sin(a)*r;
+      if(isInWater(px, py)) return [px, py];
+    }
+  }
+  return nearestWaterPoint(x, y); // fallback, should never be reached in practice
+}
+function triggerBirdAmbush(){
+  const [wx, wy] = findKickLandingSpot(player.x, player.y);
+  birdAttack = {
+    t: 0,
+    fromX: player.x - 0.38, fromY: player.y - 0.06, // sweeps in from off to the left, not straight down
+    toX: player.x, toY: player.y,
+    landX: wx, landY: wy,
+  };
+}
+function updateBirdAttack(dt){
+  birdAttack.t += dt;
+  if(birdAttack.t >= BIRD_ATTACK_DURATION){
+    // the kick lands — straight into the river
+    player.x = birdAttack.landX;
+    player.y = birdAttack.landY;
+    wasInWater = isInWater(player.x, player.y);
+    wasInYellowZoneUnequipped = false;
+    birdAttack = null;
+  }
+}
+function drawBirdAttack(){
+  if(!birdAttack) return;
+  const t = Math.min(1, birdAttack.t / BIRD_ATTACK_DURATION);
+  const eased = t*(2-t); // eases out — fast start, smooth deceleration into the landing
+  const bx = birdAttack.fromX + (birdAttack.toX - birdAttack.fromX) * eased;
+  const by = birdAttack.fromY + (birdAttack.toY - birdAttack.fromY) * eased;
+  const depthFactor = scaleForY(by);
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * depthFactor * BIRD_SCALE;
+  const dir = birdAttack.toX < birdAttack.fromX ? 1 : -1; // default orientation faces left, so flip while sweeping rightward
+  ctx.save();
+  ctx.translate(bx*W, by*H);
+  ctx.scale(dir, 1);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(G24, 0, 0);
+  ctx.restore();
+}
+
+/* ---------- lvl -1 ambient scene: the guardian bird catches a jumping fish ----------
+   Purely decorative — get close to the reed staircase and a fish leaps out
+   of the water trying to hop across it; the same bird that dive-bombs the
+   player for crossing without the stick preys on the wildlife too, and
+   snatches it clean out of the air partway through the jump, then flies off
+   with its catch. Never touches the player, held items, or quest state —
+   just replays every time you approach again (after a short cooldown). */
+const FISH_SPOT = { x: 0.545, y: 0.34 }; // roughly the middle of the staircase
+const FISH_SPOT_RANGE = 0.30; // fraction of min(W,H) — how close triggers it
+const FISH_JUMP_FROM = { x: 0.485, y: 0.365 }; // water at the near/south side of the staircase
+const FISH_JUMP_TO = { x: 0.615, y: 0.345 }; // water on the far side — it never actually gets there
+const FISH_JUMP_DIR = FISH_JUMP_TO.x < FISH_JUMP_FROM.x ? 1 : -1; // default glyph orientation faces left
+const FISH_ARC_HEIGHT = 0.13; // how high above that line the leap rises at its peak
+const FISH_SWIM_TIME = 0.9; // bobbing in the water before it commits to the jump
+const FISH_CATCH_FRACTION = 0.62; // how far across the jump it gets before the bird hits
+const FISH_JUMP_TIME = 0.85; // full hypothetical jump — it's only ever airborne for FISH_CATCH_FRACTION of this
+const BIRD_DIVE_TIME = 0.35; // the bird's stoop onto the fish, from off above
+const BIRD_CARRY_TIME = 0.55; // flying off with its catch afterward
+const FISH_JUMP_COOLDOWN = 3.5; // seconds after finishing before it can trigger again
+let fishJump = null; // { phase:'swim'|'jump'|'strike'|'carry', t, catchX, catchY, diveFromX, diveFromY, carryToX, carryToY }
+let wasNearFishSpot = false;
+let fishJumpCooldownT = 0;
+
+function fishArcPos(s){ // s: 0..1 fraction across the full hypothetical jump
+  const x = FISH_JUMP_FROM.x + (FISH_JUMP_TO.x - FISH_JUMP_FROM.x) * s;
+  const baseY = FISH_JUMP_FROM.y + (FISH_JUMP_TO.y - FISH_JUMP_FROM.y) * s;
+  const y = baseY - FISH_ARC_HEIGHT * 4 * s * (1 - s); // parabolic hump, zero at both ends
+  return { x, y };
+}
+
+function triggerFishJump(){
+  fishJump = { phase:'swim', t:0 };
+}
+
+function updateFishJump(dt){
+  if(fishJumpCooldownT > 0) fishJumpCooldownT = Math.max(0, fishJumpCooldownT - dt);
+  if(currentMap !== -1){ fishJump = null; return; }
+
+  if(!fishJump){
+    const dist = Math.hypot((player.x-FISH_SPOT.x)*W, (player.y-FISH_SPOT.y)*H);
+    const near = dist < Math.min(W,H)*FISH_SPOT_RANGE;
+    if(near && !wasNearFishSpot && fishJumpCooldownT <= 0) triggerFishJump();
+    wasNearFishSpot = near;
+    return;
+  }
+
+  fishJump.t += dt;
+  if(fishJump.phase === 'swim'){
+    if(fishJump.t >= FISH_SWIM_TIME){
+      fishJump.phase = 'jump';
+      fishJump.t = 0;
+    }
+  } else if(fishJump.phase === 'jump'){
+    const catchDuration = FISH_JUMP_TIME * FISH_CATCH_FRACTION;
+    if(fishJump.t >= catchDuration){
+      const { x, y } = fishArcPos(FISH_CATCH_FRACTION);
+      fishJump.catchX = x;
+      fishJump.catchY = y;
+      fishJump.diveFromX = x - 0.10; // the bird drops in from above
+      fishJump.diveFromY = y - 0.32;
+      fishJump.carryToX = x + 0.22; // then flies off and away with its catch
+      fishJump.carryToY = y - 0.30;
+      fishJump.phase = 'strike';
+      fishJump.t = 0;
+    }
+  } else if(fishJump.phase === 'strike'){
+    if(fishJump.t >= BIRD_DIVE_TIME){
+      fishJump.phase = 'carry';
+      fishJump.t = 0;
+    }
+  } else if(fishJump.phase === 'carry'){
+    if(fishJump.t >= BIRD_CARRY_TIME){
+      fishJump = null;
+      fishJumpCooldownT = FISH_JUMP_COOLDOWN;
+    }
+  }
+}
+
+function drawFishJump(){
+  if(!fishJump) return;
+  const s = fishJump.phase === 'swim' ? 0
+    : fishJump.phase === 'jump' ? FISH_CATCH_FRACTION * Math.min(1, fishJump.t / (FISH_JUMP_TIME * FISH_CATCH_FRACTION))
+    : null; // null once caught — the bird's own path takes over
+
+  if(s !== null){
+    // still just a fish, swimming in place or mid-leap on its own
+    const pos = fishJump.phase === 'swim'
+      ? { x: FISH_JUMP_FROM.x, y: FISH_JUMP_FROM.y + Math.sin(fishJump.t*6)*0.01 }
+      : fishArcPos(s);
+    const depthFactor = scaleForY(pos.y);
+    const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * depthFactor * 0.4;
+    ctx.save();
+    ctx.translate(pos.x*W, pos.y*H);
+    ctx.scale(FISH_JUMP_DIR, 1);
+    ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#2a1f14';
+    ctx.fillText(K3, 0, 0);
+    ctx.restore();
+    return;
+  }
+
+  // caught — the bird carries it from here, fish drawn just below/behind
+  let bx, by, dir;
+  if(fishJump.phase === 'strike'){
+    const t = Math.min(1, fishJump.t / BIRD_DIVE_TIME);
+    const eased = t*t; // accelerating stoop
+    bx = fishJump.diveFromX + (fishJump.catchX - fishJump.diveFromX) * eased;
+    by = fishJump.diveFromY + (fishJump.catchY - fishJump.diveFromY) * eased;
+    dir = fishJump.catchX < fishJump.diveFromX ? 1 : -1;
+  } else {
+    const t = Math.min(1, fishJump.t / BIRD_CARRY_TIME);
+    const eased = t*(2-t); // eases out
+    bx = fishJump.catchX + (fishJump.carryToX - fishJump.catchX) * eased;
+    by = fishJump.catchY + (fishJump.carryToY - fishJump.catchY) * eased;
+    dir = fishJump.carryToX < fishJump.catchX ? 1 : -1;
+  }
+  const depthFactor = scaleForY(by);
+  const fishSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * depthFactor * 0.4;
+  const birdSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * depthFactor * BIRD_SCALE;
+
+  ctx.save();
+  ctx.translate(bx*W, by*H + fishSize*0.35);
+  ctx.font = (fishSize*0.8).toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(K3, 0, 0);
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(bx*W, by*H);
+  ctx.scale(dir, 1);
+  ctx.font = birdSize.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(G24, 0, 0);
+  ctx.restore();
+}
+
 let gameOver = false;
 let currentMap = 1; // which map is active: -1 blank (west of the river), 1 the main map, 2 unbuilt (east)
 function setMap(mapId){
   if(currentMap === mapId) return;
   currentMap = mapId;
   levelObjects = mapId === -1 ? MAP_NEG1_OBJECTS : MAP1_OBJECTS;
+  // the fish-jump ambient scene is lvl -1 only and shouldn't linger mid-flight
+  // across a map change in either direction — it'll just replay naturally
+  // next time the player gets close again
+  fishJump = null;
+  wasNearFishSpot = false;
+  fishJumpCooldownT = 0;
   if(mapId === -1){
     // land at the fixed lvl -1 spawn point — the boat (and anything
-    // stacked on it) rides in right along with you, wherever it was
+    // stacked on it) rides in right along with you, wherever it was.
+    // lvl -1 is only ever reached by boat, and a death-respawn could
+    // otherwise drop you here on foot right next to its hazards, so a boat
+    // is always waiting at the spawn point, boarded, either way.
     player.x = MAP_NEG1_SPAWN.x;
     player.y = MAP_NEG1_SPAWN.y;
-    if(boatOnGround){ boatOnGround.x = MAP_NEG1_SPAWN.x; boatOnGround.y = MAP_NEG1_SPAWN.y; }
+    boatOnGround = { x: MAP_NEG1_SPAWN.x, y: MAP_NEG1_SPAWN.y, items: boatOnGround ? boatOnGround.items : [] };
+    boarded = true;
+    boardCooldown = 0;
+    // every fresh arrival resets the elephant to home and asleep, and
+    // starts the fish-delivery quest over too — whether that's a
+    // death-respawn or just sailing back in after having already run the
+    // elephant off, none of it carries over from a previous visit
+    elephantGoneForGood = false;
+    fishDelivered = 0;
+    manQuestDone = false;
+    manWalk = null;
+    snakesDelivered = 0;
+    womanQuestDone = false;
+    initElephant();
   }
+  // the sun's guardian mid-carry shouldn't linger across a map change either
+  // way — same idea as the fish-jump scene above
+  sunGuardian = null;
   updateMapButtons();
 }
 
@@ -288,10 +578,10 @@ function setMap(mapId){
    ============================================================ */
 let editMode = false;
 const MAP1_OBJECTS = [{"id":1,"glyph":"𓈖","x":0.38095238095238093,"y":0.3466424682395644,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":2,"glyph":"𓈖","x":0.4154761904761905,"y":0.3466424682395644,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":3,"glyph":"𓈖","x":0.4488095238095238,"y":0.3484573502722323,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":4,"glyph":"𓈘","x":0.48333333333333334,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":7,"glyph":"𓈖","x":0.37142857142857144,"y":0.18874773139745918,"scale":0.85,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":8,"glyph":"𓈖","x":0.39285714285714285,"y":0.18874773139745918,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":9,"glyph":"𓈖","x":0.42023809523809524,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":10,"glyph":"𓈖","x":0.44761904761904764,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":11,"glyph":"𓈖","x":0.46904761904761905,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":12,"glyph":"𓈖","x":0.49404761904761907,"y":0.1996370235934664,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":13,"glyph":"𓈖","x":0.5202380952380953,"y":0.20508166969147004,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":14,"glyph":"𓈖","x":0.5523809523809524,"y":0.20508166969147004,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":15,"glyph":"𓈖","x":0.5738095238095238,"y":0.2014519056261343,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":16,"glyph":"𓈖","x":0.6047619047619047,"y":0.2014519056261343,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":17,"glyph":"𓈖","x":0.6238095238095238,"y":0.20326678765880218,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":18,"glyph":"𓈖","x":0.6595238095238095,"y":0.20508166969147004,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":19,"glyph":"𓈖","x":0.6785714285714286,"y":0.1996370235934664,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":20,"glyph":"𓈖","x":0.7142857142857143,"y":0.2014519056261343,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":21,"glyph":"𓈖","x":0.7583333333333333,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":22,"glyph":"𓈖","x":0.7904761904761904,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":23,"glyph":"𓈖","x":0.7,"y":0.1996370235934664,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":24,"glyph":"𓈖","x":0.7333333333333333,"y":0.20508166969147004,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":26,"glyph":"𓈖","x":0.6428571428571429,"y":0.20326678765880218,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":27,"glyph":"𓈖","x":0.3476190476190476,"y":0.19056261343012704,"scale":1.25,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":28,"glyph":"𓊎","x":0.42023809523809524,"y":0.11796733212341198,"scale":2,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":29,"glyph":"𓊎","x":0.49642857142857144,"y":0.09074410163339383,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":30,"glyph":"𓊎","x":0.32976190476190476,"y":0.0925589836660617,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":32,"glyph":"𓉶","x":0.4392857142857143,"y":0.14337568058076225,"scale":0.75,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":33,"glyph":"𓉶","x":0.4166666666666667,"y":0.14337568058076225,"scale":0.7,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":34,"glyph":"𓉶","x":0.6642857142857143,"y":0.14337568058076225,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":35,"glyph":"𓉶","x":0.5285714285714286,"y":0.11433756805807622,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":37,"glyph":"𓇇","x":0.3476190476190476,"y":0.3430127041742287,"scale":1,"pickup":true,"mirror":false,"noHitbox":true,"items":[]},{"id":38,"glyph":"𓇇","x":0.5714285714285714,"y":0.33212341197822143,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":39,"glyph":"𓇇","x":0.7095238095238096,"y":0.22686025408348456,"scale":0.65,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":40,"glyph":"𓇇","x":0.46785714285714286,"y":0.21960072595281308,"scale":0.55,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":41,"glyph":"𓇇","x":0.2761904761904762,"y":0.2159709618874773,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":42,"glyph":"𓇇","x":0.19523809523809524,"y":0.19419237749546278,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":43,"glyph":"𓇇","x":0.3952380952380952,"y":0.22686025408348456,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":45,"glyph":"𓆸","x":0.5785714285714286,"y":0.2413793103448276,"scale":0.4,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":49,"glyph":"𓇳","x":0.25357142857142856,"y":0.02722323049001815,"scale":1.55,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":50,"glyph":"𓈖","x":0.6071428571428571,"y":0.3430127041742287,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":51,"glyph":"𓈖","x":0.6369047619047619,"y":0.3430127041742287,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":52,"glyph":"𓈖","x":0.7023809523809523,"y":0.3393829401088929,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":53,"glyph":"𓈖","x":0.7452380952380953,"y":0.3176043557168784,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":54,"glyph":"𓈖","x":0.8107142857142857,"y":0.3103448275862069,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":55,"glyph":"𓈖","x":0.8761904761904762,"y":0.30127041742286753,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":56,"glyph":"𓈖","x":0.9321428571428572,"y":0.294010889292196,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":57,"glyph":"𓈖","x":0.9607142857142857,"y":0.30490018148820325,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":58,"glyph":"𓈖","x":0.9880952380952381,"y":0.30671506352087113,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":59,"glyph":"𓈖","x":0.9071428571428571,"y":0.29219600725952816,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":60,"glyph":"𓈖","x":0.8428571428571429,"y":0.3030852994555354,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":61,"glyph":"𓈖","x":0.7738095238095238,"y":0.32123411978221417,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":62,"glyph":"𓈖","x":0.7238095238095238,"y":0.3339382940108893,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":63,"glyph":"𓈖","x":0.6702380952380952,"y":0.3430127041742287,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":64,"glyph":"𓈖","x":0.5773809523809523,"y":0.3484573502722323,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":65,"glyph":"𓈖","x":0.5226190476190476,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":66,"glyph":"𓈖","x":0.33095238095238094,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":67,"glyph":"𓈖","x":0.2857142857142857,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":68,"glyph":"𓈖","x":0.24523809523809523,"y":0.3411978221415608,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":69,"glyph":"𓈖","x":0.19642857142857142,"y":0.33212341197822143,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":70,"glyph":"𓈖","x":0.16428571428571428,"y":0.32304900181488205,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":71,"glyph":"𓈖","x":0.11547619047619048,"y":0.3139745916515426,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":72,"glyph":"𓈖","x":0.09523809523809523,"y":0.29219600725952816,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":73,"glyph":"𓈖","x":0.060714285714285714,"y":0.2813067150635209,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":74,"glyph":"𓈖","x":0.04285714285714286,"y":0.27404718693284935,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":75,"glyph":"𓈖","x":0.023809523809523808,"y":0.27041742286751363,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":76,"glyph":"𓈖","x":0.319047619047619,"y":0.1851179673321234,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":77,"glyph":"𓈖","x":0.2845238095238095,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":78,"glyph":"𓈖","x":0.26904761904761904,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":79,"glyph":"𓈖","x":0.23809523809523808,"y":0.19056261343012704,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":80,"glyph":"𓈖","x":0.2226190476190476,"y":0.18330308529945555,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":81,"glyph":"𓈖","x":0.16666666666666666,"y":0.15970961887477314,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":82,"glyph":"𓈖","x":0.13214285714285715,"y":0.15063520871143377,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":83,"glyph":"𓈖","x":0.11904761904761904,"y":0.12522686025408347,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":84,"glyph":"𓈖","x":0.08928571428571429,"y":0.06715063520871144,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":85,"glyph":"𓈖","x":0.07380952380952381,"y":0.05989110707803993,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":86,"glyph":"𓈖","x":0.034523809523809526,"y":0.034482758620689655,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":87,"glyph":"𓈖","x":0.008333333333333333,"y":0.032667876588021776,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":88,"glyph":"𓈖","x":0.05,"y":0.04900181488203267,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":89,"glyph":"𓈖","x":0.09047619047619047,"y":0.08711433756805807,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":90,"glyph":"𓈖","x":0.10357142857142858,"y":0.10526315789473684,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":91,"glyph":"𓈖","x":0.15,"y":0.15245009074410162,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":92,"glyph":"𓈖","x":0.18214285714285713,"y":0.17785843920145192,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":93,"glyph":"𓈖","x":0.2,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":94,"glyph":"𓈖","x":0.034523809523809526,"y":0.17604355716878403,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":95,"glyph":"𓈖","x":0.2011904761904762,"y":0.22686025408348456,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":96,"glyph":"𓈖","x":0.3404761904761905,"y":0.27041742286751363,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":97,"glyph":"𓈖","x":0.18452380952380953,"y":0.2813067150635209,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":98,"glyph":"𓈖","x":0.10476190476190476,"y":0.23774954627949182,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":99,"glyph":"𓈖","x":0.02142857142857143,"y":0.11796733212341198,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":100,"glyph":"𓈖","x":0.5,"y":0.2776769509981851,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":101,"glyph":"𓈖","x":0.6761904761904762,"y":0.2631578947368421,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":102,"glyph":"𓈖","x":0.8154761904761905,"y":0.25226860254083483,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":103,"glyph":"𓈖","x":0.9607142857142857,"y":0.23411978221415608,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":104,"glyph":"𓈖","x":0.8130952380952381,"y":0.19419237749546278,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":105,"glyph":"𓈖","x":0.8380952380952381,"y":0.19237749546279492,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":106,"glyph":"𓈖","x":0.8714285714285714,"y":0.1851179673321234,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":107,"glyph":"𓈖","x":0.9261904761904762,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":108,"glyph":"𓈖","x":0.9809523809523809,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":109,"glyph":"𓈖","x":0.9523809523809523,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":110,"glyph":"𓈖","x":0.9011904761904762,"y":0.17967332123411978,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":111,"glyph":"𓈖","x":0.9964285714285714,"y":0.18148820326678766,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":48,"glyph":"𓀿","x":0.4094683697063998,"y":0.12090215819063892,"scale":0.85,"pickup":true,"mirror":false,"noHitbox":true,"items":[]},{"id":46,"glyph":"𓆸","x":0.5439500856158501,"y":0.35361390882252347,"scale":0.85,"pickup":true,"mirror":false,"noHitbox":true,"items":[]},{"id":44,"glyph":"𓇇","x":0.5618135844178571,"y":0.34472626698568565,"scale":1.25,"pickup":true,"mirror":false,"noHitbox":true,"items":[]},{"id":6,"glyph":"𓅣","x":0.28936679177917535,"y":0.34827787164436286,"scale":0.7,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":115,"glyph":"𓁑","x":0.9238095238095239,"y":0.5825771324863884,"scale":0.95,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":119,"glyph":"𓅭","x":0.6035714285714285,"y":0.4047186932849365,"scale":0.8,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":121,"glyph":"𓇭","x":0.7666666666666667,"y":0.7731397459165155,"scale":0.7,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":123,"glyph":"𓉲","x":0.969047619047619,"y":0.5462794918330308,"scale":1.35,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":125,"glyph":"𓏢","x":0.9142857142857143,"y":0.5934664246823956,"scale":0.85,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":128,"glyph":"𓉹","x":0.6761904761904762,"y":0.7822141560798548,"scale":1.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":129,"glyph":"𓇭","x":0.7642857142857142,"y":0.8203266787658802,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":132,"glyph":"𓇗","x":0.7321428571428571,"y":0.24863883847549909,"scale":0.85,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":133,"glyph":"𓆰","x":0.3392857142857143,"y":0.3502722323049002,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":134,"glyph":"𓆰","x":0.7035714285714286,"y":0.23049001814882034,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":135,"glyph":"𓇣","x":0.39285714285714285,"y":0.5662431941923775,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":136,"glyph":"𓇣","x":0.15476190476190477,"y":0.4301270417422868,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":137,"glyph":"𓇣","x":0.06666666666666667,"y":0.4863883847549909,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":138,"glyph":"𓇣","x":0.08928571428571429,"y":0.7967332123411979,"scale":1.35,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":139,"glyph":"𓇣","x":0.9154761904761904,"y":0.9092558983666061,"scale":1.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":140,"glyph":"𓇣","x":0.7273809523809524,"y":0.7241379310344828,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":141,"glyph":"𓇣","x":0.030952380952380953,"y":0.9201451905626135,"scale":1.35,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":142,"glyph":"𓇣","x":0.8559523809523809,"y":0.3720508166969147,"scale":0.9,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":143,"glyph":"𓇣","x":0.8666666666666667,"y":0.38294010889292196,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":145,"glyph":"𓎆","x":0.7309523809523809,"y":0.26497277676951,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":146,"glyph":"𓎆","x":0.8928571428571429,"y":0.23593466424682397,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":147,"glyph":"𓎆","x":0.736904761904762,"y":0.2613430127041742,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":148,"glyph":"𓎆","x":0.7416666666666667,"y":0.26860254083484575,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":149,"glyph":"𓎆","x":0.7035714285714286,"y":0.24863883847549909,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":150,"glyph":"𓎆","x":0.75,"y":0.23049001814882034,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":151,"glyph":"𓎆","x":0.9166666666666666,"y":0.4627949183303085,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":152,"glyph":"𓅞","x":0.6428571428571429,"y":0.7096188747731398,"scale":0.65,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":155,"glyph":"𓅃","x":0.06666666666666667,"y":0.44464609800362975,"scale":0.4,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":157,"glyph":"𓅐","x":0.46904761904761905,"y":0.0998185117967332,"scale":0.45,"pickup":true,"mirror":true,"noHitbox":false,"items":[]},{"id":158,"glyph":"𓅙","x":0.8809523809523809,"y":0.3684210526315789,"scale":0.7,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":161,"glyph":"𓆰","x":0.8523809523809524,"y":0.38838475499092556,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":162,"glyph":"𓆰","x":0.8607142857142858,"y":0.38656987295825773,"scale":0.45,"pickup":false,"mirror":true,"noHitbox":false,"items":[]},{"id":163,"glyph":"𓆰","x":0.8595238095238096,"y":0.3938294010889292,"scale":0.55,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":164,"glyph":"𓆰","x":0.8761904761904762,"y":0.39019963702359345,"scale":0.7,"pickup":false,"mirror":true,"noHitbox":false,"items":[]}]; // baked-in starting layout for "lvl 1"
-const MAP_NEG1_OBJECTS = []; // lvl -1: blank canvas beyond the river's far west edge — just the character, no placed objects
+const MAP_NEG1_OBJECTS = [{"id":165,"glyph":"𓈖","x":0.9333333333333333,"y":0.4827586206896552,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":166,"glyph":"𓈖","x":0.9809523809523809,"y":0.47368421052631576,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":167,"glyph":"𓈖","x":0.9119047619047619,"y":0.47186932849364793,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":168,"glyph":"𓈖","x":0.8357142857142857,"y":0.4537205081669691,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":169,"glyph":"𓈖","x":0.7964285714285714,"y":0.426497277676951,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":170,"glyph":"𓈖","x":0.7488095238095238,"y":0.4192377495462795,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":171,"glyph":"𓈖","x":0.6964285714285714,"y":0.39019963702359345,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":172,"glyph":"𓈖","x":0.6273809523809524,"y":0.38294010889292196,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":173,"glyph":"𓈖","x":0.5547619047619048,"y":0.37568058076225047,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":174,"glyph":"𓈖","x":0.4452380952380952,"y":0.4010889292196007,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":175,"glyph":"𓈖","x":0.4976190476190476,"y":0.38656987295825773,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":176,"glyph":"𓈖","x":0.5833333333333334,"y":0.3938294010889292,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":178,"glyph":"𓈖","x":0.655952380952381,"y":0.4029038112522686,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":179,"glyph":"𓈖","x":0.9940476190476191,"y":0.23774954627949182,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":180,"glyph":"𓈖","x":0.9452380952380952,"y":0.23774954627949182,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":181,"glyph":"𓈖","x":0.9226190476190477,"y":0.23774954627949182,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":182,"glyph":"𓈖","x":0.888095238095238,"y":0.23774954627949182,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":183,"glyph":"𓈖","x":0.8452380952380952,"y":0.21960072595281308,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":184,"glyph":"𓈖","x":0.8071428571428572,"y":0.21960072595281308,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":185,"glyph":"𓈖","x":0.7702380952380953,"y":0.20871143375680581,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":186,"glyph":"𓈖","x":0.7333333333333333,"y":0.21234119782214156,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":187,"glyph":"𓈖","x":0.680952380952381,"y":0.2177858439201452,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":188,"glyph":"𓈖","x":0.6511904761904762,"y":0.2177858439201452,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":189,"glyph":"𓈖","x":0.6095238095238096,"y":0.21960072595281308,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":190,"glyph":"𓈖","x":0.5583333333333333,"y":0.2177858439201452,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":191,"glyph":"𓈖","x":0.5214285714285715,"y":0.2177858439201452,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":192,"glyph":"𓈖","x":0.46785714285714286,"y":0.22323049001814882,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":193,"glyph":"𓈖","x":0.4238095238095238,"y":0.22323049001814882,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":194,"glyph":"𓈖","x":0.40476190476190477,"y":0.22323049001814882,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":195,"glyph":"𓈖","x":0.37857142857142856,"y":0.23411978221415608,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":196,"glyph":"𓈖","x":0.33690476190476193,"y":0.22867513611615245,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":197,"glyph":"𓈖","x":0.29642857142857143,"y":0.21960072595281308,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":198,"glyph":"𓈖","x":0.45714285714285713,"y":0.38838475499092556,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":199,"glyph":"𓈖","x":0.4119047619047619,"y":0.40834845735027225,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":200,"glyph":"𓈖","x":0.38333333333333336,"y":0.40653357531760437,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":201,"glyph":"𓈖","x":0.32261904761904764,"y":0.4047186932849365,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":202,"glyph":"𓈖","x":0.2773809523809524,"y":0.40653357531760437,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":203,"glyph":"𓈖","x":0.23809523809523808,"y":0.41560798548094374,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":204,"glyph":"𓈖","x":0.20833333333333334,"y":0.41197822141560797,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":205,"glyph":"𓈘","x":0.8857142857142857,"y":0.4591651542649728,"scale":1.1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":206,"glyph":"𓇗","x":0.1380952380952381,"y":0.3938294010889292,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":207,"glyph":"𓇗","x":0.18214285714285713,"y":0.33575317604355714,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":208,"glyph":"𓇗","x":0.21785714285714286,"y":0.2813067150635209,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":209,"glyph":"𓇗","x":0.2619047619047619,"y":0.24682395644283123,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":210,"glyph":"𓇗","x":0.24642857142857144,"y":0.3121597096188748,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":211,"glyph":"𓇗","x":0.19285714285714287,"y":0.38294010889292196,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":212,"glyph":"𓇗","x":0.1488095238095238,"y":0.18330308529945555,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":213,"glyph":"𓇗","x":0.23809523809523808,"y":0.1705989110707804,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":214,"glyph":"𓇗","x":0.2154761904761905,"y":0.06352087114337568,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":215,"glyph":"𓇗","x":0.2154761904761905,"y":0.10163339382940109,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":216,"glyph":"𓇗","x":0.19285714285714287,"y":0.19237749546279492,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":217,"glyph":"𓇗","x":0.2642857142857143,"y":0.1869328493647913,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":218,"glyph":"𓇗","x":0.2571428571428571,"y":0.11252268602540835,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":219,"glyph":"𓇗","x":0.21904761904761905,"y":0.12522686025408347,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":220,"glyph":"𓇗","x":0.17976190476190476,"y":0.1161524500907441,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":221,"glyph":"𓇗","x":0.16071428571428573,"y":0.10163339382940109,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":222,"glyph":"𓇗","x":0.21666666666666667,"y":0.15063520871143377,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":223,"glyph":"𓇗","x":0.09761904761904762,"y":0.455535390199637,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":224,"glyph":"𓇗","x":0.11547619047619048,"y":0.5099818511796733,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":225,"glyph":"𓇗","x":0.35714285714285715,"y":0.4301270417422868,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":226,"glyph":"𓇗","x":0.4773809523809524,"y":0.4010889292196007,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":227,"glyph":"𓇗","x":0.36666666666666664,"y":0.20508166969147004,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":228,"glyph":"𓇗","x":0.34523809523809523,"y":0.2595281306715064,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":229,"glyph":"𓇗","x":0.32261904761904764,"y":0.2577132486388385,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":230,"glyph":"𓇗","x":0.29523809523809524,"y":0.26678765880217786,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":231,"glyph":"𓇗","x":0.1761904761904762,"y":0.4337568058076225,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":232,"glyph":"𓇗","x":0.041666666666666664,"y":0.5208711433756806,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":233,"glyph":"𓇗","x":0.13690476190476192,"y":0.27223230490018147,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":234,"glyph":"𓇗","x":0.2226190476190476,"y":0.23774954627949182,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":235,"glyph":"𓇖","x":0.21904761904761905,"y":0.33575317604355714,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":236,"glyph":"𓇖","x":0.18571428571428572,"y":0.2577132486388385,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":237,"glyph":"𓇖","x":0.2392857142857143,"y":0.20871143375680581,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":238,"glyph":"𓇚","x":0.20595238095238094,"y":0.4664246823956443,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":239,"glyph":"𓇚","x":0.14166666666666666,"y":0.426497277676951,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":240,"glyph":"𓇚","x":0.16904761904761906,"y":0.17785843920145192,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":241,"glyph":"𓇚","x":0.0880952380952381,"y":0.16333938294010888,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":242,"glyph":"𓇚","x":0.03214285714285714,"y":0.1161524500907441,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":243,"glyph":"𓇚","x":0.28095238095238095,"y":0.20871143375680581,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":244,"glyph":"𓇚","x":0.3,"y":0.4010889292196007,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":245,"glyph":"𓇚","x":0.2488095238095238,"y":0.38656987295825773,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":246,"glyph":"𓇚","x":0.9547619047619048,"y":0.4482758620689655,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":247,"glyph":"𓇏","x":0.36904761904761907,"y":0.23411978221415608,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":248,"glyph":"𓇏","x":0.3119047619047619,"y":0.21960072595281308,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":249,"glyph":"𓇏","x":0.24285714285714285,"y":0.44101633393829404,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":250,"glyph":"𓇏","x":0.19047619047619047,"y":0.2885662431941924,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":251,"glyph":"𓇑","x":0.40714285714285714,"y":0.40834845735027225,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":252,"glyph":"𓇑","x":0.8678571428571429,"y":0.24500907441016334,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":253,"glyph":"𓇑","x":0.975,"y":0.27404718693284935,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":254,"glyph":"𓇑","x":0.7095238095238096,"y":0.22867513611615245,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":255,"glyph":"𓈖","x":0.955952380952381,"y":0.3248638838475499,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":256,"glyph":"𓈖","x":0.8416666666666667,"y":0.39019963702359345,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":257,"glyph":"𓈖","x":0.6988095238095238,"y":0.32123411978221417,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":258,"glyph":"𓈖","x":0.48333333333333334,"y":0.2595281306715064,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":259,"glyph":"𓈖","x":0.8071428571428572,"y":0.3139745916515426,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":261,"glyph":"𓇿","x":0.5238095238095238,"y":0.37749546279491836,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":262,"glyph":"𓇿","x":0.5285714285714286,"y":0.35934664246823955,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":263,"glyph":"𓇿","x":0.530952380952381,"y":0.3466424682395644,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":264,"glyph":"𓇿","x":0.5333333333333333,"y":0.33575317604355714,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":265,"glyph":"𓇿","x":0.5380952380952381,"y":0.3248638838475499,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":266,"glyph":"𓇿","x":0.5428571428571428,"y":0.3157894736842105,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":267,"glyph":"𓇿","x":0.544047619047619,"y":0.3030852994555354,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":268,"glyph":"𓇿","x":0.5488095238095239,"y":0.2885662431941924,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":269,"glyph":"𓇿","x":0.5523809523809524,"y":0.2776769509981851,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":270,"glyph":"𓇿","x":0.5535714285714286,"y":0.26678765880217786,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":271,"glyph":"𓇿","x":0.5607142857142857,"y":0.2577132486388385,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":272,"glyph":"𓇿","x":0.5630952380952381,"y":0.24682395644283123,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":273,"glyph":"𓇿","x":0.5654761904761905,"y":0.23593466424682397,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":274,"glyph":"𓇿","x":0.5678571428571428,"y":0.22686025408348456,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":276,"glyph":"𓃯","x":0.2833333333333333,"y":0.3176043557168784,"scale":1,"pickup":false,"mirror":true,"noHitbox":false,"items":[]},{"id":277,"glyph":"𓃰","x":0.32142857142857145,"y":0.7168784029038112,"scale":1.95,"pickup":false,"mirror":true,"noHitbox":false,"items":[]},{"id":279,"glyph":"𓀙","x":0.5642857142857143,"y":0.46098003629764067,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":280,"glyph":"𓀙","x":0.5345238095238095,"y":0.1996370235934664,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":281,"glyph":"𓌃","x":0.5571428571428572,"y":0.3647912885662432,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":282,"glyph":"𓌃","x":0.5857142857142857,"y":0.24863883847549909,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":283,"glyph":"𓌃","x":0.569047619047619,"y":0.3103448275862069,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":285,"glyph":"𓆰","x":0.23809523809523808,"y":0.24500907441016334,"scale":1,"pickup":false,"mirror":true,"noHitbox":false,"items":[]},{"id":286,"glyph":"𓆰","x":0.21428571428571427,"y":0.41742286751361163,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":287,"glyph":"𓆰","x":0.4380952380952381,"y":0.23774954627949182,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":288,"glyph":"𓆰","x":0.780952380952381,"y":0.21960072595281308,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":289,"glyph":"𓆰","x":0.7202380952380952,"y":0.42286751361161523,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":290,"glyph":"𓆰","x":0.669047619047619,"y":0.41197822141560797,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":291,"glyph":"𓆰","x":0.9452380952380952,"y":0.47368421052631576,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":293,"glyph":"𓆭","x":0.10952380952380952,"y":0.3339382940108893,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":294,"glyph":"𓇣","x":0.06428571428571428,"y":0.37749546279491836,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":295,"glyph":"𓇣","x":0.060714285714285714,"y":0.2631578947368421,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":296,"glyph":"𓇣","x":0.09761904761904762,"y":0.18330308529945555,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":297,"glyph":"𓇣","x":0.1261904761904762,"y":0.11433756805807622,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":298,"glyph":"𓇣","x":0.06666666666666667,"y":0.07441016333938294,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":299,"glyph":"𓇣","x":0.10714285714285714,"y":0.07985480943738657,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":300,"glyph":"𓇣","x":0.08095238095238096,"y":0.12522686025408347,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":301,"glyph":"𓇣","x":0.02857142857142857,"y":0.15970961887477314,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":302,"glyph":"𓇣","x":0.06904761904761905,"y":0.23411978221415608,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":303,"glyph":"𓇣","x":0.10714285714285714,"y":0.23774954627949182,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":304,"glyph":"𓇣","x":0.1630952380952381,"y":0.22867513611615245,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":305,"glyph":"𓇣","x":0.15,"y":0.29945553539019965,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":306,"glyph":"𓇣","x":0.09285714285714286,"y":0.3992740471869328,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":307,"glyph":"𓇣","x":0.058333333333333334,"y":0.455535390199637,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":308,"glyph":"𓇣","x":0.017857142857142856,"y":0.4537205081669691,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":309,"glyph":"𓇣","x":0.016666666666666666,"y":0.38294010889292196,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":310,"glyph":"𓇣","x":0.0380952380952381,"y":0.32667876588021777,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":311,"glyph":"𓇣","x":0.1,"y":0.30490018148820325,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":312,"glyph":"𓇣","x":0.07857142857142857,"y":0.33212341197822143,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":313,"glyph":"𓇣","x":0.03214285714285714,"y":0.24682395644283123,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":314,"glyph":"𓇣","x":0.05714285714285714,"y":0.1869328493647913,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":315,"glyph":"𓇣","x":0.01904761904761905,"y":0.2014519056261343,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":316,"glyph":"𓇣","x":0.016666666666666666,"y":0.2958257713248639,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":317,"glyph":"𓇣","x":0.14166666666666666,"y":0.1306715063520871,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":318,"glyph":"𓇣","x":0.12380952380952381,"y":0.16515426497277677,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":319,"glyph":"𓇣","x":0.13333333333333333,"y":0.2159709618874773,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":320,"glyph":"𓇣","x":0.1357142857142857,"y":0.35753176043557167,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":321,"glyph":"𓇣","x":0.12380952380952381,"y":0.4519056261343013,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":322,"glyph":"𓇣","x":0.07023809523809524,"y":0.5136116152450091,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":323,"glyph":"𓇣","x":0.023809523809523808,"y":0.5807622504537205,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":324,"glyph":"𓇣","x":0.008333333333333333,"y":0.6569872958257713,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":325,"glyph":"𓇣","x":0.023809523809523808,"y":0.7313974591651543,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":326,"glyph":"𓇣","x":0.014285714285714285,"y":0.7822141560798548,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":327,"glyph":"𓇌","x":0.0380952380952381,"y":0.3956442831215971,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":328,"glyph":"𓇌","x":0.05952380952380952,"y":0.30490018148820325,"scale":0.65,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":329,"glyph":"𓇌","x":0.08333333333333333,"y":0.2558983666061706,"scale":0.5,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":330,"glyph":"𓇌","x":0.13095238095238096,"y":0.308529945553539,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":332,"glyph":"𓆑","x":0.9261904761904762,"y":0.1306715063520871,"scale":1,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":333,"glyph":"𓉵","x":0.594047619047619,"y":0.10344827586206896,"scale":3,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":334,"glyph":"𓉴","x":0.6285714285714286,"y":0.10344827586206896,"scale":1.9,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":335,"glyph":"𓉴","x":0.5619047619047619,"y":0.10344827586206896,"scale":1.9,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":336,"glyph":"𓉶","x":0.6166666666666667,"y":0.16333938294010888,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":337,"glyph":"𓉶","x":0.5476190476190477,"y":0.16152450090744103,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":338,"glyph":"𓉶","x":0.6476190476190476,"y":0.0998185117967332,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":339,"glyph":"𓉶","x":0.6595238095238095,"y":0.08166969147005444,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":340,"glyph":"𓉶","x":0.6714285714285714,"y":0.06352087114337568,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":341,"glyph":"𓉶","x":0.6869047619047619,"y":0.041742286751361164,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":342,"glyph":"𓉶","x":0.7,"y":0.025408348457350273,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":348,"glyph":"𓊪","x":0.594047619047619,"y":0.1161524500907441,"scale":1.7,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":350,"glyph":"𓍙","x":0.5452380952380952,"y":0.21960072595281308,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":352,"glyph":"𓊹","x":0.5583333333333333,"y":0.06715063520871144,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":353,"glyph":"𓊹","x":0.6261904761904762,"y":0.06715063520871144,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":355,"glyph":"𓉶","x":0.5988095238095238,"y":0.06533575317604355,"scale":0.7,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":356,"glyph":"𓉶","x":0.6142857142857143,"y":0.04900181488203267,"scale":0.75,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":357,"glyph":"𓉶","x":0.6285714285714286,"y":0.029038112522686024,"scale":0.65,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":358,"glyph":"𓉶","x":0.6428571428571429,"y":0.016333938294010888,"scale":0.65,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":359,"glyph":"𓉶","x":0.8904761904761904,"y":0.19600725952813067,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":363,"glyph":"𓈖","x":0.6654761904761904,"y":0.9528130671506352,"scale":0.55,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":364,"glyph":"𓈖","x":0.7488095238095238,"y":0.9401088929219601,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":365,"glyph":"𓈖","x":0.7166666666666667,"y":0.9600725952813067,"scale":0.4,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":366,"glyph":"𓈖","x":0.7988095238095239,"y":0.925589836660617,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":367,"glyph":"𓈖","x":0.6047619047619047,"y":0.9600725952813067,"scale":0.5,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":368,"glyph":"𓈖","x":0.6071428571428571,"y":0.7767695099818511,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":369,"glyph":"𓈖","x":0.5714285714285714,"y":0.8130671506352087,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":370,"glyph":"𓈖","x":0.6642857142857143,"y":0.7495462794918331,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":371,"glyph":"𓈖","x":0.7142857142857143,"y":0.7459165154264973,"scale":0.5,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":372,"glyph":"𓈖","x":0.7619047619047619,"y":0.7513611615245009,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":373,"glyph":"𓈖","x":0.8202380952380952,"y":0.7568058076225045,"scale":0.55,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":374,"glyph":"𓈖","x":0.844047619047619,"y":0.8039927404718693,"scale":0.5,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":375,"glyph":"𓈖","x":0.830952380952381,"y":0.8802177858439202,"scale":0.6,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":376,"glyph":"𓈖","x":0.8511904761904762,"y":0.8366606170598911,"scale":0.55,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":377,"glyph":"𓈖","x":0.5857142857142857,"y":0.9201451905626135,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":378,"glyph":"𓈖","x":0.5666666666666667,"y":0.8838475499092558,"scale":0.65,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":379,"glyph":"𓈖","x":0.5571428571428572,"y":0.8493647912885662,"scale":0.5,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":382,"glyph":"𓆟","x":0.6892857142857143,"y":0.8911070780399274,"scale":0.35,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":384,"glyph":"𓆟","x":0.6440476190476191,"y":0.8330308529945554,"scale":0.3,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":386,"glyph":"𓇒","x":0.6857142857142857,"y":0.7422867513611615,"scale":0.5,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":387,"glyph":"𓇒","x":0.7928571428571428,"y":0.764065335753176,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":388,"glyph":"𓇒","x":0.8,"y":0.9019963702359347,"scale":0.5,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":390,"glyph":"𓇖","x":0.625,"y":0.7604355716878403,"scale":0.5,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":391,"glyph":"𓇗","x":0.5904761904761905,"y":0.7967332123411979,"scale":0.65,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":392,"glyph":"𓇚","x":0.5583333333333333,"y":0.867513611615245,"scale":0.7,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":393,"glyph":"𓇚","x":0.6309523809523809,"y":0.956442831215971,"scale":0.7,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":394,"glyph":"𓇉","x":0.7357142857142858,"y":0.7459165154264973,"scale":0.4,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":383,"glyph":"𓆟","x":0.7278946591241784,"y":0.855132058934925,"scale":0.45,"pickup":true,"mirror":false,"noHitbox":false,"items":[],"golden":false},{"id":398,"glyph":"𓏴","x":0.1,"y":0.8021778584392014,"scale":0.45,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":399,"glyph":"𓏱","x":0.09761904761904762,"y":0.8003629764065335,"scale":0.7,"pickup":true,"mirror":true,"noHitbox":false,"items":[]},{"id":400,"glyph":"𓇳","x":0.9490022172949002,"y":0.08995502248875563,"scale":1.65,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":402,"glyph":"𓆗","x":0.401330376940133,"y":0.15142428785607195,"scale":0.85,"pickup":true,"mirror":true,"noHitbox":false,"items":[]},{"id":403,"glyph":"𓆙","x":0.05543237250554324,"y":0.6206896551724138,"scale":0.45,"pickup":true,"mirror":true,"noHitbox":false,"items":[]},{"id":406,"glyph":"𓆘","x":0.950110864745011,"y":0.5412293853073463,"scale":0.6,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":407,"glyph":"𓇭","x":0.991130820399113,"y":0.5577211394302849,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":408,"glyph":"𓇭","x":0.9789356984478935,"y":0.6086956521739131,"scale":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},{"id":409,"glyph":"𓆓","x":0.5443458980044346,"y":0.9505247376311844,"scale":0.4,"pickup":true,"mirror":false,"noHitbox":false,"items":[]},{"id":410,"glyph":"𓁕","x":0.9146341463414634,"y":0.6941529235382309,"scale":0.75,"pickup":false,"mirror":false,"noHitbox":false,"items":[]}]; // lvl -1 layout, built in the in-game level editor and exported
 const MAP_NEG1_SPAWN = { x: 0.9562, y: 0.3676 }; // where the character (and the boat, if you sailed in) lands in lvl -1
 let levelObjects = MAP1_OBJECTS; // active object list for whichever map is currently loaded
-let nextObjId = 165;
+let nextObjId = 411; // past the highest id already placed on lvl -1 (the sun/snakes/grapes/woman added at 400-410)
 let selectedObjId = null;
 let placeGlyph = A1;   // currently chosen palette sign, for the next placement
 let placeScale = 1;    // currently chosen size, for the next placement
@@ -445,6 +735,77 @@ function nearestBase(){
   return best ? { base:best, kind:bestKind } : null;
 }
 
+/* ---------- lvl -1: the sun disk is guarded ----------
+   Pick up the sun (object 400) and its guardian — C1, the falcon-headed sun
+   god — appears right beside you, takes it back out of your hands on the
+   spot, carries it back to where it belongs, and sets it back down. Costs
+   you 50 points once it's back in place — same idea as disturbing the body
+   in the pyramid. Happens every time you try, not just the first. */
+const SUN_OBJ_ID = 400;
+const C1 = String.fromCodePoint(0x1305A); // falcon-headed god wearing the sun disk
+const SUN_GUARDIAN_WALK_DURATION = 1.1; // seconds to carry it back home
+const SUN_GUARDIAN_SIZE_MULT = 1.3; // reads a bit larger than an ordinary sign
+const SUN_GUARDIAN_PENALTY = 50;
+let sunGuardian = null; // { t, fromX, fromY, home:{x,y,scale,mirror,noHitbox,glyph} }
+
+function triggerSunGuardian(home){
+  heldItem = null; // taken right out of your hands, on the spot
+  sunGuardian = {
+    t: 0,
+    fromX: player.x + (facing < 0 ? 0.05 : -0.05), fromY: player.y, // appears right beside you
+    home,
+  };
+}
+
+function updateSunGuardian(dt){
+  if(!sunGuardian) return;
+  sunGuardian.t += dt;
+  if(sunGuardian.t >= SUN_GUARDIAN_WALK_DURATION){
+    const { home } = sunGuardian;
+    levelObjects.push({ id: SUN_OBJ_ID, glyph: home.glyph, x: home.x, y: home.y, scale: home.scale, pickup: true, mirror: home.mirror, noHitbox: home.noHitbox, items: [] });
+    score -= SUN_GUARDIAN_PENALTY;
+    sunGuardian = null;
+  }
+}
+
+function sunGuardianPos(){
+  const t = Math.min(1, sunGuardian.t / SUN_GUARDIAN_WALK_DURATION);
+  const eased = t*(2-t); // eases out into the landing
+  return {
+    x: sunGuardian.fromX + (sunGuardian.home.x - sunGuardian.fromX) * eased,
+    y: sunGuardian.fromY + (sunGuardian.home.y - sunGuardian.fromY) * eased,
+  };
+}
+
+function drawSunGuardian(){
+  if(!sunGuardian) return;
+  const { x, y } = sunGuardianPos();
+  const depthFactor = scaleForY(y);
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * depthFactor * SUN_GUARDIAN_SIZE_MULT;
+  const dir = sunGuardian.home.x < x ? 1 : -1; // default orientation faces left, flip while walking rightward-to-left... (faces the way it's travelling)
+
+  ctx.save();
+  ctx.translate(x*W, y*H);
+  ctx.scale(dir, 1);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(C1, 0, 0);
+  ctx.restore();
+
+  // carries the sun along with it until it's set back down
+  const sunSize = size * 0.5;
+  ctx.save();
+  ctx.translate(x*W + size*0.3*dir, y*H - size*0.25);
+  ctx.font = sunSize.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#b8860b'; // reads gold, same as other prized reward items
+  ctx.fillText(sunGuardian.home.glyph, 0, 0);
+  ctx.restore();
+}
+
 function tryPickup(){
   const nb = nearestBase();
   if(nb){
@@ -471,6 +832,12 @@ function tryPickup(){
       return;
     }
     if(kind === 'level' && base.pickup){
+      // the sun's guardian only ever intervenes on the ORIGINAL sun object,
+      // never a golden reward or anything else that happens to reuse the
+      // glyph — so this has to be snapshotted before the object is spliced out
+      const sunHome = base.id === SUN_OBJ_ID
+        ? { x:base.x, y:base.y, scale:base.scale, mirror:base.mirror, noHitbox:base.noHitbox, glyph:base.glyph }
+        : null;
       levelObjects.splice(levelObjects.indexOf(base), 1);
       if(selectedObjId === base.id) selectedObjId = null;
       if(base.id === BODY_ID && !bodyPenaltyGiven){
@@ -478,6 +845,7 @@ function tryPickup(){
         bodyPenaltyGiven = true;
       }
       heldItem = { kind:'level', id:base.id, glyph:base.glyph, scale:base.scale, mirror:base.mirror, noHitbox:base.noHitbox, pickup:base.pickup, golden:base.golden };
+      if(sunHome) triggerSunGuardian(sunHome);
       return;
     }
     // the base itself can't be lifted and has nothing left on it — fall through
@@ -501,6 +869,12 @@ function tryDropHeldItem(){
   // handing one of the sacred birds to the lady while close enough feeds
   // her quest instead of just setting it down
   if(tryGiveBirdToLady(item)) return;
+  // same idea on lvl -1: hand the man two of the pickup fish and he goes
+  // and runs the elephant off instead of you just setting the fish down
+  if(tryGiveFishToMan(item)) return;
+  // and hand the woman 5 of the pickup snakes for a golden N5, same idea
+  // as the lady's bird quest on lvl 1
+  if(tryGiveSnakeToWoman(item)) return;
 
   // the boat only ever sits as its own base in the world — everything else
   // (the cow, any pickupable sign) is happy to stack onto whatever's nearby.
@@ -760,6 +1134,7 @@ function drawCroc(){
   const size = Math.min(W,H) * COW_SIZE_MULT * s;
   const sx = croc.x*W, sy = croc.y*H;
   const dir = (player.x < croc.x) ? 1 : -1; // faces the player — default orientation faces left
+  const glyph = currentMap === -1 ? E24 : I3; // hippo on lvl -1's river, crocodile on lvl 1's
 
   ctx.save();
   clipToTopFraction(sx, sy, size, 0.70); // always riding low in the water — bottom 30% cropped away
@@ -769,7 +1144,7 @@ function drawCroc(){
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#2a1f14';
-  ctx.fillText(I3, 0, 0);
+  ctx.fillText(glyph, 0, 0);
   ctx.restore();
 }
 
@@ -987,6 +1362,18 @@ function drawLevelObject(obj, glyphOverride, mirrorOverride){
 /* ============================================================
    INPUT / UPDATE
    ============================================================ */
+// A death restarts the whole run (score, items, quests — everything a page
+// reload would clear) exactly as it always has, but it should come back on
+// whichever level you died on rather than always dumping you back on lvl 1.
+// The current map is the only thing worth carrying across the reload itself,
+// so it rides through sessionStorage and gets consumed once, right after
+// startup (see the RESPAWN_MAP_KEY read near the bottom of this file).
+const RESPAWN_MAP_KEY = 'depthWalkRespawnMap';
+function respawnAfterDeath(){
+  try{ sessionStorage.setItem(RESPAWN_MAP_KEY, String(currentMap)); }catch(e){}
+  location.reload();
+}
+
 const keys = {};
 let spaceHeld = false;
 window.addEventListener('keydown', e=>{
@@ -997,7 +1384,7 @@ window.addEventListener('keydown', e=>{
     // needs a deliberate, fresh press of Enter — not whatever arrow/space
     // key was still being held down at the moment you died (that was
     // instantly restarting the game via the browser's own key-repeat)
-    if(e.key === 'Enter' && !e.repeat) location.reload();
+    if(e.key === 'Enter' && !e.repeat) respawnAfterDeath();
     return;
   }
 
@@ -1017,7 +1404,7 @@ window.addEventListener('keyup', e=>{
   keys[e.key.toLowerCase()] = false;
   if(e.key === ' ') spaceHeld = false;
 });
-canvas.addEventListener('mousedown', ()=>{ if(gameOver) location.reload(); }); // "pressing" the game-over screen also restarts
+canvas.addEventListener('mousedown', ()=>{ if(gameOver) respawnAfterDeath(); }); // "pressing" the game-over screen also restarts
 
 /* ============================================================
    LEVEL EDITOR — DOM wiring. Movement/space are frozen while
@@ -1214,7 +1601,7 @@ function obstacleCircles(){
   }
   // level-editor objects block movement by default — mark one "no hitbox" to let the player walk through it
   for(const obj of levelObjects){
-    if(obj.noHitbox) continue;
+    if(obj.noHitbox || obj.id === ELEPHANT_OBJ_ID) continue; // the elephant handles its own contact once it's awake and moving
     const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale;
     list.push({ x: obj.x*W, y: obj.y*H, r: size*0.35 });
   }
@@ -1226,13 +1613,16 @@ function collidesAt(fx, fy){
   return obstacleCircles().some(o => Math.hypot(foot.x-o.x, foot.y-o.y) < (o.r+foot.r));
 }
 
-/* ---------- river hazard: the crocodile ---------- */
-// Drops a crocodile roughly SPAWN_DISTANCE_DIAMETERS player-widths from the
-// player, somewhere inside the water. Tries a handful of compass directions
-// first (cheap, and keeps it from spawning behind an obviously dry bank);
-// if none of those land in the water, it falls back to whichever point on
-// the river's own outline sits closest to the target distance.
+/* ---------- river hazard: the crocodile (lvl 1) / hippo (lvl -1) ---------- */
+// Drops the hazard roughly SPAWN_DISTANCE_DIAMETERS player-widths from the
+// player, somewhere inside whichever river is active. Tries a handful of
+// compass directions first (cheap, and keeps it from spawning behind an
+// obviously dry bank); if none of those land in the water, it falls back to
+// whichever point on that river's own outline sits closest to the target
+// distance.
 function trySpawnCroc(){
+  const poly = activeWaterPoly();
+  if(!poly) return;
   const size = Math.min(W,H) * PLAYER_SIZE_MULT * scaleForY(player.y);
   const distFrac = (size * 2 * SPAWN_DISTANCE_DIAMETERS) / Math.min(W,H);
   const angles = [0, Math.PI, 0.35, -0.35, Math.PI-0.35, Math.PI+0.35, Math.PI/2, -Math.PI/2];
@@ -1242,7 +1632,7 @@ function trySpawnCroc(){
     if(isInWater(cx, cy)){ croc = { x: cx, y: cy }; return; }
   }
   let best = null, bestDiff = Infinity;
-  for(const p of WATER_POLY){
+  for(const p of poly){
     const diff = Math.abs(Math.hypot(p[0]-player.x, p[1]-player.y) - distFrac);
     if(diff < bestDiff){ bestDiff = diff; best = p; }
   }
@@ -1252,10 +1642,13 @@ function trySpawnCroc(){
 function updateCroc(dt){
   if(!croc) return;
 
-  // it'll go after whichever's in the water — the player on foot, or a
-  // loose cow that got dropped in there — and loses interest once neither is
+  // it'll go after whichever's in the water — the player on foot, or (on
+  // lvl 1 only — the cow never sets foot on lvl -1) a loose cow that got
+  // dropped in there — and loses interest once neither is. (The reed
+  // staircase reads as land — see isInWater() — so standing on it always
+  // shakes the hippo off.)
   const playerInWater = !boarded && isInWater(player.x, player.y);
-  const cowInWater = !cow.carried && !cow.placed && isInWater(cow.x, cow.y);
+  const cowInWater = currentMap === 1 && !cow.carried && !cow.placed && isInWater(cow.x, cow.y);
   if(!playerInWater && !cowInWater){ croc = null; return; }
 
   let tx, ty, huntingCow;
@@ -1285,6 +1678,271 @@ function updateCroc(dt){
     // caught the cow or caught you — either way, it's game over
     gameOver = true;
   }
+}
+
+/* ---------- lvl -1 hazard: the elephant ---------- */
+// The elephant sign placed in the level editor (id 277) sits there like any
+// other static level object until you wander within ELEPHANT_WAKE_BODY_LENGTHS
+// of its own on-screen size — then it wakes up and charges. From that point
+// on it's driven by updateElephant()/drawElephant() instead of the normal
+// static level-object pass (its object id is skipped there, see the drawList
+// loop in render()), the same way the crocodile/hippo takes over its own draw.
+function initElephant(){
+  if(elephantGoneForGood){ elephant = null; return; }
+  const obj = MAP_NEG1_OBJECTS.find(o => o.id === ELEPHANT_OBJ_ID);
+  elephant = obj ? { x: obj.x, y: obj.y, homeX: obj.x, homeY: obj.y, scale: obj.scale, awake: false } : null;
+}
+
+function drawElephant(){
+  if(!elephant) return;
+  const depthFactor = scaleForY(elephant.y);
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * depthFactor * elephant.scale;
+  const sx = elephant.x*W, sy = elephant.y*H;
+  const dir = (player.x < elephant.x) ? 1 : -1; // faces the player once it's awake and charging
+
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.scale(elephant.awake ? dir : -1, 1); // asleep, it keeps its placed (mirrored) orientation
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(E25, 0, 0);
+  ctx.restore();
+}
+
+function updateElephant(dt){
+  // land hazard, lvl -1 only, and it can't reach you out on the water
+  if(currentMap !== -1 || !elephant || boarded) return;
+
+  const depthFactor = scaleForY(elephant.y);
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * depthFactor * elephant.scale;
+  const pixelDist = Math.hypot((player.x-elephant.x)*W, (player.y-elephant.y)*H);
+
+  if(!elephant.awake){
+    if(pixelDist < size * ELEPHANT_WAKE_BODY_LENGTHS) elephant.awake = true;
+    else return;
+  }
+
+  // once you're past its own boundary line, it gives up the chase and
+  // heads back to where it started instead of just sitting there pinned
+  // to the line waiting for you to come back
+  const retreating = player.x > elephantBoundaryX(player.y);
+  const targetX = retreating ? elephant.homeX : player.x;
+  const targetY = retreating ? elephant.homeY : player.y;
+
+  const speed = 0.30 * depthFactor * ELEPHANT_SPEED_MULT * dt;
+  const dx = targetX - elephant.x, dy = targetY - elephant.y;
+  const dist = Math.hypot(dx, dy);
+  if(dist <= speed){
+    elephant.x = targetX; elephant.y = targetY;
+    if(retreating) elephant.awake = false; // safely home — back to sleep
+  } else {
+    elephant.x += (dx/dist) * speed;
+    elephant.y += (dy/dist) * speed;
+  }
+  // it'll press right up against its own boundary and track the player's
+  // depth along it, but it never actually crosses to the far side
+  const maxX = elephantBoundaryX(elephant.y);
+  if(elephant.x > maxX) elephant.x = maxX;
+
+  if(!retreating){
+    const caughtDist = size * 0.5;
+    const caught = Math.hypot((player.x-elephant.x)*W, (player.y-elephant.y)*H) < caughtDist;
+    if(caught) gameOver = true;
+  }
+}
+
+/* ---------- lvl -1 quest: the man south of the reed staircase ----------
+   Hand him 2 of the level's 3 pickup fish and he walks off to confront the
+   elephant himself — once he reaches it, it's gone for the rest of this
+   visit to lvl -1 (see elephantGoneForGood above), then he walks back home.
+   Leaving and coming back to lvl -1 (see setMap(-1)) starts the whole thing
+   over: the elephant, and the quest to send it away again. */
+const MAN_ID = 279; // the standing 𓀙 figure just south of the yellow zone
+const MAN_TALK_RANGE = 0.24; // fraction of min(W,H) — matches the lady's on lvl 1
+const MAN_QUEST_LINE = '𓏎𓇋𓆞2';
+const FISH_IDS = [382, 383, 384]; // the level's 3 pickup fish — any 2 satisfy him
+const FISH_QUEST_TARGET = 2;
+const MAN_WALK_DURATION = 1.4; // seconds, each leg of the walk out and back
+let fishDelivered = 0;
+let manQuestDone = false;
+let manWalk = null; // { phase:'out'|'back', t, fromX, fromY, toX, toY } — drives the cutscene
+const manObj = MAP_NEG1_OBJECTS.find(o => o.id === MAN_ID) || null;
+
+/* ---------- the pickup fish sway in place ----------
+   Purely cosmetic: each of the 3 collectible fish glyphs drifts back and
+   forth along its own patch of water while it's still sitting there
+   uncollected. Moves the object's actual x, not just how it's drawn, so
+   picking one up still just grabs whichever is currently in reach — once
+   it's picked up it leaves levelObjects for good and simply stops moving. */
+const FISH_SWIM_SPAN = 2.5; // total back-and-forth travel, in multiples of its own on-screen size
+const FISH_SWIM_PERIOD = 3.2; // seconds per full back-and-forth cycle
+let fishSwimT = 0;
+
+function updateFishSwim(dt){
+  if(currentMap !== -1) return;
+  fishSwimT += dt;
+  for(const obj of levelObjects){
+    if(!FISH_IDS.includes(obj.id)) continue;
+    if(obj._swimBaseX === undefined) obj._swimBaseX = obj.x; // remembers its resting spot the first time it's seen
+    const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale;
+    const amplitude = (size * FISH_SWIM_SPAN * 0.5) / W; // half the total span, in the same 0..1 fraction obj.x uses
+    const phase = obj.id % 7; // staggers the three so they don't all swim in lockstep
+    const theta = (fishSwimT + phase) * (Math.PI*2/FISH_SWIM_PERIOD);
+    obj.x = obj._swimBaseX + Math.sin(theta) * amplitude;
+    obj.mirror = Math.cos(theta) > 0; // faces whichever way it's currently swimming — default glyph faces left
+  }
+}
+
+/* ---------- the woman (level object id 410) ----------
+   Bring her 5 of the pickup snake signs scattered around lvl -1 and she
+   hands back a golden N5 — same idea as the lady's bird quest on lvl 1. */
+const WOMAN_ID = 410;
+const WOMAN_TALK_RANGE = 0.24; // fraction of min(W,H) — matches the lady's/man's
+const WOMAN_QUEST_LINE = '𓏎𓇋5𓎛𓆑𓄫𓅱𓆙';
+const SNAKE_IDS = [332, 402, 403, 406, 409]; // the level's 5 pickup snake signs
+const N5 = String.fromCodePoint(0x131F3); // sun disk (N5) — the woman's reward, rendered in gold
+let snakesDelivered = 0;
+let womanQuestDone = false;
+const womanObj = MAP_NEG1_OBJECTS.find(o => o.id === WOMAN_ID) || null;
+
+// called from tryDropHeldItem() — handing her one of the snakes while close
+// enough consumes it instead of just setting it down; returns true if so
+function tryGiveSnakeToWoman(item){
+  if(currentMap !== -1 || womanQuestDone || !womanObj || item.kind !== 'level' || !SNAKE_IDS.includes(item.id)) return false;
+  const dist = Math.hypot((player.x-womanObj.x)*W, (player.y-womanObj.y)*H);
+  if(dist >= Math.min(W,H)*WOMAN_TALK_RANGE) return false;
+
+  snakesDelivered++;
+  if(snakesDelivered >= SNAKE_IDS.length){
+    womanQuestDone = true;
+    // straight onto the player's head, worn like the boat — not left on the ground
+    heldItem = { kind:'level', id: nextObjId++, glyph: N5, scale: 1, mirror: false, noHitbox: true, pickup: true, golden: true };
+  }
+  return true;
+}
+
+// called from tryDropHeldItem() — handing him a fish while close enough
+// consumes it instead of just setting it down; returns true if so
+function tryGiveFishToMan(item){
+  if(currentMap !== -1 || manQuestDone || !manObj || item.kind !== 'level' || !FISH_IDS.includes(item.id)) return false;
+  const dist = Math.hypot((player.x-manObj.x)*W, (player.y-manObj.y)*H);
+  if(dist >= Math.min(W,H)*MAN_TALK_RANGE) return false;
+
+  fishDelivered++;
+  if(fishDelivered >= FISH_QUEST_TARGET){
+    manQuestDone = true;
+    startManCelebration(); // dance first — the walk-out only starts once that finishes
+  }
+  return true;
+}
+
+/* ---------- man delivery celebration ----------
+   Same beat as the npc's cow-delivery dance (NPC_CELEBRATE_SEQUENCE /
+   npcAnim above): play the sequence, then flip left/right five times,
+   then — instead of granting a reward — kick off the walk out to the
+   elephant. */
+const manAnim = { phase:'idle', t:0, step:0, mirrors:0, facing:1 };
+
+function startManCelebration(){
+  manAnim.phase = 'sequence';
+  manAnim.t = 0;
+  manAnim.step = 0;
+  manAnim.mirrors = 0;
+  manAnim.facing = 1;
+}
+
+function updateManAnim(dt){
+  if(manAnim.phase === 'idle') return;
+  manAnim.t += dt;
+
+  if(manAnim.phase === 'sequence'){
+    if(manAnim.t >= NPC_STEP_TIME){
+      manAnim.t = 0;
+      manAnim.step++;
+      if(manAnim.step >= NPC_CELEBRATE_SEQUENCE.length){
+        manAnim.phase = 'mirroring';
+      }
+    }
+  } else if(manAnim.phase === 'mirroring'){
+    if(manAnim.t >= NPC_MIRROR_TIME){
+      manAnim.t = 0;
+      manAnim.facing *= -1;
+      manAnim.mirrors++;
+      if(manAnim.mirrors >= 5){
+        manAnim.phase = 'idle';
+        manAnim.facing = 1;
+        // dance's done — now he actually sets off to confront the elephant,
+        // wherever it happens to be right now (asleep at home or mid-chase)
+        const targetX = elephant ? elephant.x : manObj.x;
+        const targetY = elephant ? elephant.y : manObj.y;
+        manWalk = { phase:'out', t:0, fromX: manObj.x, fromY: manObj.y, toX: targetX, toY: targetY };
+      }
+    }
+  }
+}
+
+function manGlyph(){
+  if(manAnim.phase === 'sequence') return NPC_CELEBRATE_SEQUENCE[manAnim.step];
+  if(manAnim.phase === 'mirroring') return A29; // mirror A29 itself, not the whole sequence
+  return manObj.glyph;
+}
+
+function drawManCelebrating(){
+  if(!manObj) return;
+  const depthFactor = scaleForY(manObj.y);
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * depthFactor * manObj.scale;
+
+  ctx.save();
+  ctx.translate(manObj.x*W, manObj.y*H);
+  ctx.scale(manAnim.facing, 1);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(manGlyph(), 0, 0);
+  ctx.restore();
+}
+
+function updateManWalk(dt){
+  if(!manWalk) return;
+  manWalk.t += dt;
+  if(manWalk.t >= MAN_WALK_DURATION){
+    if(manWalk.phase === 'out'){
+      elephant = null;
+      elephantGoneForGood = true; // only for the rest of this visit — see setMap(-1)
+      manWalk = { phase:'back', t:0, fromX: manWalk.toX, fromY: manWalk.toY, toX: manObj.x, toY: manObj.y };
+    } else {
+      manWalk = null; // home safe — back to being drawn as a normal static sign
+    }
+  }
+}
+
+function manWalkPos(){
+  const t = Math.min(1, manWalk.t / MAN_WALK_DURATION);
+  return {
+    x: manWalk.fromX + (manWalk.toX - manWalk.fromX) * t,
+    y: manWalk.fromY + (manWalk.toY - manWalk.fromY) * t,
+  };
+}
+
+function drawManWalking(){
+  if(!manWalk || !manObj) return;
+  const { x, y } = manWalkPos();
+  const depthFactor = scaleForY(y);
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * depthFactor * manObj.scale;
+  const dir = (manWalk.toX < x) ? 1 : -1; // faces whichever way this leg is walking
+
+  ctx.save();
+  ctx.translate(x*W, y*H);
+  ctx.scale(dir, 1);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(manObj.glyph, 0, 0);
+  ctx.restore();
 }
 
 /* ---------- boat boarding ---------- */
@@ -1368,25 +2026,29 @@ function boatHitsObstacle(x, y){
 // from updateBoardedMovement so that function can retry along a single axis
 // instead of the whole diagonal step.
 function tryMoveBoatTo(tx, ty){
-  // sailing off the river's far west edge crosses into lvl -1, which has its
-  // own real spawn point clear across that map — setMap(-1) already places
-  // the boat there. Only pin it to the world edge on frames where you're
-  // ALREADY in lvl -1 pushing further west (holding it like a wall); on the
-  // very frame you first cross over, clobbering x back to BOUNDS.xMin right
-  // after setMap moved it to MAP_NEG1_SPAWN would just undo that spawn.
-  // The east edge (map 2) has no map or spawn built yet, so it still just
-  // tracks/shows which "map" you're in and holds the boat at that edge.
+  // sailing off the main map's far west edge crosses into lvl -1, which has
+  // its own real spawn point clear across that map — setMap(-1) already
+  // places the boat there. Only pin it to the world edge on frames where
+  // you're ALREADY in lvl -1 pushing further west (holding it like a wall);
+  // on the very frame you first cross over, clobbering x back to
+  // BOUNDS.xMin right after setMap moved it to MAP_NEG1_SPAWN would just
+  // undo that spawn. The east edge mirrors this the other way: leaving lvl
+  // -1's own east edge sails back into the main map, while leaving the main
+  // map's east edge heads into lvl 2, which has no map or spawn built yet,
+  // so it still just tracks/shows which "map" you're in and holds the boat
+  // at that edge.
   if(tx <= BOUNDS.xMin){
     const alreadyThere = currentMap === -1;
     setMap(-1);
     if(alreadyThere) boatOnGround.x = BOUNDS.xMin;
     return true;
   } else if(tx >= BOUNDS.xMax){
-    setMap(2);
+    setMap(currentMap === -1 ? 1 : 2);
     boatOnGround.x = BOUNDS.xMax;
     return true;
   } else if(isInWater(tx, ty) && !boatHitsObstacle(tx, ty)){
-    setMap(1);
+    // just sailing within whichever map's river is already active — no map
+    // transition here, that's what the two edge branches above are for
     boatOnGround.x = tx;
     boatOnGround.y = ty;
     return true;
@@ -1438,11 +2100,18 @@ function updateBoardedMovement(dt){
 
 function update(dt){
   if(gameOver) return;
+  if(birdAttack){ updateBirdAttack(dt); return; } // frozen mid-dive until the kick lands
   if(boardCooldown > 0) boardCooldown = Math.max(0, boardCooldown - dt);
 
   if(boarded){
     updateBoardedMovement(dt);
     updateCroc(dt);
+    updateElephant(dt);
+    updateManAnim(dt);
+    updateManWalk(dt);
+    updateFishJump(dt);
+    updateFishSwim(dt);
+    updateSunGuardian(dt);
     return;
   }
 
@@ -1488,6 +2157,18 @@ function update(dt){
   if(nowWading && !wasInWater) trySpawnCroc();
   wasInWater = nowWading;
   updateCroc(dt);
+  updateElephant(dt);
+  updateManAnim(dt);
+  updateManWalk(dt);
+  updateFishJump(dt);
+  updateFishSwim(dt);
+  updateSunGuardian(dt);
+
+  // the reed staircase's guardian bird — stepping onto it without the stick
+  // triggers one dive per approach; already carrying the stick is safe
+  const inYellowZoneUnequipped = currentMap === -1 && !hasStick() && isInLandPocket(player.x, player.y);
+  if(inYellowZoneUnequipped && !wasInYellowZoneUnequipped) triggerBirdAmbush();
+  wasInYellowZoneUnequipped = inYellowZoneUnequipped;
 
   tryAutoBoard();
 
@@ -1514,7 +2195,7 @@ resize();
    DEBUG OVERLAY — toggled from the Level Editor panel ("Show
    hitboxes"). Draws exactly the numbers the collision code itself
    uses, so hitboxes can be checked by eye instead of by guesswork:
-     cyan outline   — WATER_POLY (what isInWater() treats as river)
+     cyan outline   — the active map's river polygon (what isInWater() treats as river)
      orange circle  — an obstacle's hit radius (objR) for a sign
                        that's both !noHitbox AND currently in water
                        (a boat obstacle, per boatHitsObstacle)
@@ -1536,15 +2217,13 @@ function drawDebugOverlay(){
   if(!showDebug) return;
   ctx.save();
 
-  // WATER_POLY and MAP1_OBJECTS are lvl 1's own fixed layout — they exist
-  // whichever map is active, but only actually govern collision when
-  // currentMap === 1 (see isInWater/boatHitsObstacle/obstacleCircles).
-  // Drawing them on lvl -1 would show hitboxes for a river and reeds that
-  // aren't there — lvl -1 is meant to be a blank map — so skip both.
-  if(currentMap === 1){
+  // whichever map is active, drawn with its own river polygon and its own
+  // object list — lvl 2 has neither yet, so both are skipped there.
+  const activePoly = activeWaterPoly();
+  if(activePoly){
     // water polygon
     ctx.beginPath();
-    WATER_POLY.forEach((p,i)=>{
+    activePoly.forEach((p,i)=>{
       const px = p[0]*W, py = p[1]*H;
       if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
     });
@@ -1553,12 +2232,12 @@ function drawDebugOverlay(){
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // every !noHitbox sign in the main map — orange if it currently
+    // every !noHitbox sign in the active map — orange if it currently
     // counts as a boat obstacle, gray if it's a foot-only obstacle
-    for(const obj of MAP1_OBJECTS){
+    for(const obj of levelObjects){
       if(obj.noHitbox) continue;
       const objR = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale * 0.35;
-      const inWater = pointInPolygon(obj.x, obj.y, WATER_POLY);
+      const inWater = pointInPolygon(obj.x, obj.y, activePoly);
       ctx.beginPath();
       ctx.arc(obj.x*W, obj.y*H, objR, 0, Math.PI*2);
       ctx.strokeStyle = inWater ? 'orange' : 'rgba(120,120,120,0.8)';
@@ -1652,10 +2331,11 @@ function render(time){
     }
   }
 
-  // lvl -1 (and any other non-main map) is a blank page — flat background,
-  // no papyrus texture, no cow/npc/river/boat, just the character and
-  // whatever's in heldItem (that always carries over, untouched by setMap)
-  ctx.fillStyle = (currentMap === 1 && papyrusPattern) ? papyrusPattern : '#e9e4d8';
+  // every map shares the same papyrus texture as its default background —
+  // lvl -1 (and any other non-main map) is still otherwise blank: no
+  // cow/npc/river/boat, just the character and whatever's in heldItem
+  // (that always carries over, untouched by setMap)
+  ctx.fillStyle = papyrusPattern || '#e9e4d8';
   ctx.fillRect(0,0,W,H);
 
   if(fontsReady){
@@ -1671,12 +2351,25 @@ function render(time){
     if(currentMap === 1){
       drawList.push({ y: npc.y, draw: ()=>drawNpc(nearNpc) });
       if(!cow.carried && !cow.placed) drawList.push({ y: cow.y, draw: drawCow });
-      if(croc) drawList.push({ y: croc.y, draw: drawCroc });
     }
+    // the crocodile/hippo hazard now follows whichever map has a river, so
+    // it draws outside the lvl-1-only block above
+    if(croc) drawList.push({ y: croc.y, draw: drawCroc });
+    // the elephant (lvl -1 only) is drawn dynamically from its own moving
+    // position once awake, or its placed one while still asleep — either
+    // way it's excluded from the static per-object loop just below
+    if(elephant && currentMap === -1) drawList.push({ y: elephant.y, draw: drawElephant });
+    // the man dances in place the moment the 2nd fish is delivered, then
+    // walks out to confront the elephant and back again — dynamically
+    // positioned/drawn throughout, same idea as the elephant above
+    if(manWalk) drawList.push({ y: manWalkPos().y, draw: drawManWalking });
+    else if(manAnim.phase !== 'idle') drawList.push({ y: manObj.y, draw: drawManCelebrating });
     // the boat (and whatever's stacked on it) travels with you into lvl -1 —
-    // only the cow/npc/crocodile/river are exclusive to the main map
+    // only the cow/npc are exclusive to the main map
     if(boatOnGround) drawList.push({ y: boatOnGround.y, draw: drawGroundBoat });
     for(const obj of levelObjects){
+      if(obj.id === ELEPHANT_OBJ_ID) continue; // drawn dynamically above instead
+      if(obj.id === MAN_ID && (manWalk || manAnim.phase !== 'idle')) continue; // mid-walk or mid-dance — drawn dynamically above instead
       if(obj === duckObj && duckFlying){
         const flapGlyph = duckAnimFrame === 0 ? G40 : G41;
         drawList.push({ y: obj.y, draw: ()=>drawLevelObject(obj, flapGlyph, true) });
@@ -1691,9 +2384,26 @@ function render(time){
         drawList.push({ y: ladyObj.y, draw: ()=>drawSpeechBubble(ladyObj.x*W, ladyObj.y*H-ladySize*0.75, LADY_QUEST_LINE, 22) });
       }
     }
+    if(currentMap === -1 && manObj && !manQuestDone && !manWalk){
+      const distMan = Math.hypot((player.x-manObj.x)*W, (player.y-manObj.y)*H);
+      if(distMan < Math.min(W,H)*MAN_TALK_RANGE){
+        const manSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(manObj.y) * manObj.scale;
+        drawList.push({ y: manObj.y, draw: ()=>drawSpeechBubble(manObj.x*W, manObj.y*H-manSize*0.75, MAN_QUEST_LINE, 22) });
+      }
+    }
+    if(currentMap === -1 && womanObj && !womanQuestDone){
+      const distWoman = Math.hypot((player.x-womanObj.x)*W, (player.y-womanObj.y)*H);
+      if(distWoman < Math.min(W,H)*WOMAN_TALK_RANGE){
+        const womanSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(womanObj.y) * womanObj.scale;
+        drawList.push({ y: womanObj.y, draw: ()=>drawSpeechBubble(womanObj.x*W, womanObj.y*H-womanSize*0.75, WOMAN_QUEST_LINE, 22) });
+      }
+    }
     drawList.sort((a,b)=> a.y-b.y);
     drawList.forEach(e=>e.draw());
     drawPlayer();
+    drawBirdAttack();
+    drawFishJump();
+    drawSunGuardian();
     drawDebugOverlay();
 
     ctx.save();
@@ -1720,6 +2430,19 @@ function render(time){
 
   requestAnimationFrame(render);
 }
+initElephant();
+
+// coming back from a death-triggered reload (see respawnAfterDeath()) —
+// land on whichever level you died on instead of always lvl 1
+try{
+  const respawnMap = sessionStorage.getItem(RESPAWN_MAP_KEY);
+  if(respawnMap !== null){
+    sessionStorage.removeItem(RESPAWN_MAP_KEY);
+    const mapId = parseInt(respawnMap, 10);
+    if(!Number.isNaN(mapId)) setMap(mapId);
+  }
+}catch(e){}
+
 requestAnimationFrame(render);
 
 })();
