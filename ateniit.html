@@ -665,8 +665,8 @@ const MAP2_OBJECTS = [
   {"id":459,"glyph":"𓇒","x":0.9208066498507479,"y":0.8500749625187406,"scale":0.7,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},
   {"id":463,"glyph":"𓊢","x":0.6018194541637508,"y":0.8110944527736131,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},
   {"id":464,"glyph":"𓊢","x":0.40237928621413577,"y":0.8125937031484258,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},
-  {"id":477,"glyph":"𓉱","x":0.36875,"y":0.6950998185117967,"scale":1.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},
-  {"id":479,"glyph":"𓉱","x":0.33125,"y":0.6950998185117967,"scale":1.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},
+  {"id":477,"glyph":"𓉱","x":0.36875,"y":0.6950998185117967,"scale":1.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[],"opaque":true},
+  {"id":479,"glyph":"𓉱","x":0.32578125,"y":0.6950998185117967,"scale":1.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[],"opaque":true},
   {"id":485,"glyph":"𓉹","x":0.53671875,"y":0.24500907441016334,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},
   {"id":486,"glyph":"𓉹","x":0.50078125,"y":0.24500907441016334,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},
   {"id":503,"glyph":"𓆏","x":0.21983899843977942,"y":0.8124158809589427,"scale":0.3,"pickup":true,"mirror":false,"noHitbox":false,"items":[],"golden":false},
@@ -677,18 +677,88 @@ const MAP2_OBJECTS = [
   {"id":512,"glyph":"𓊁","x":0.840625,"y":0.420899854862119,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
   {"id":513,"glyph":"𓊁","x":0.8675,"y":0.420899854862119,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
   {"id":514,"glyph":"𓊁","x":0.814375,"y":0.420899854862119,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
-  {"id":515,"glyph":"𓉶","x":0.88625,"y":0.4310595065312046,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":515,"glyph":"𓉶","x":0.8865968932464792,"y":0.4272863568215892,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
   {"id":517,"glyph":"𓉶","x":0.89125,"y":0.45718432510885343,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
   {"id":518,"glyph":"𓉶","x":0.896875,"y":0.48911465892597966,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
   {"id":519,"glyph":"𓉶","x":0.900625,"y":0.5195936139332366,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
-  {"id":520,"glyph":"𓉶","x":0.796875,"y":0.42670537010159654,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":520,"glyph":"𓉶","x":0.7942246049329732,"y":0.4257871064467766,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
   {"id":521,"glyph":"𓉶","x":0.7878465378843378,"y":0.4542728635682159,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
   {"id":522,"glyph":"𓉶","x":0.7780494770026023,"y":0.4827586206896552,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
   {"id":523,"glyph":"𓉶","x":0.768125,"y":0.5108853410740203,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
-  {"id":526,"glyph":"𓃠","x":0.869375,"y":0.4876632801161103,"scale":0.5,"reveal":1,"pickup":true,"mirror":false,"noHitbox":false,"opaque":false,"items":[]}
+  {"id":526,"glyph":"𓃠","x":0.869375,"y":0.4876632801161103,"scale":0.5,"reveal":1,"pickup":true,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":528,"glyph":"𓉱","x":0.659375,"y":0.6950998185117967,"scale":1.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":529,"glyph":"𓉥","x":0.6375,"y":0.7041742286751361,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":530,"glyph":"𓉥","x":0.34765625,"y":0.7023593466424682,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":531,"glyph":"𓉱","x":0.4734375,"y":0.29945553539019965,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":532,"glyph":"𓉱","x":0.4578125,"y":0.3502722323049002,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":533,"glyph":"𓉱","x":0.44375,"y":0.397459165154265,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":534,"glyph":"𓉱","x":0.4265625,"y":0.4519056261343013,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":535,"glyph":"𓉱","x":0.40625,"y":0.5117967332123412,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":536,"glyph":"𓉱","x":0.3859375,"y":0.5680580762250453,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":537,"glyph":"𓉱","x":0.36328125,"y":0.6116152450090744,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":538,"glyph":"𓉱","x":0.56484375,"y":0.29945553539019965,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":539,"glyph":"𓉱","x":0.5765625,"y":0.3411978221415608,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":540,"glyph":"𓉱","x":0.590625,"y":0.3938294010889292,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":541,"glyph":"𓉱","x":0.6015625,"y":0.44464609800362975,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":542,"glyph":"𓉱","x":0.6171875,"y":0.5099818511796733,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":543,"glyph":"𓉱","x":0.634375,"y":0.5644283121597096,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":544,"glyph":"𓉱","x":0.653125,"y":0.6188747731397459,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":545,"glyph":"𓁏","x":0.443666899930021,"y":0.56071964017991,"scale":1.15,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":546,"glyph":"𓉱","x":0.615625,"y":0.691470054446461,"scale":1.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":547,"glyph":"𓁉","x":0.5390625,"y":0.33575317604355714,"scale":0.9,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":549,"glyph":"𓃶","x":0.15234375,"y":0.647912885662432,"scale":0.65,"reveal":1,"pickup":true,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":550,"glyph":"𓇣","x":0.128125,"y":0.676950998185118,"scale":0.65,"reveal":0.65,"pickup":true,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":551,"glyph":"𓇣","x":0.078125,"y":0.6442831215970962,"scale":0.65,"reveal":0.65,"pickup":true,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":552,"glyph":"𓇣","x":0.096875,"y":0.7168784029038112,"scale":0.65,"reveal":0.65,"pickup":true,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":553,"glyph":"𓇣","x":0.03515625,"y":0.691470054446461,"scale":0.65,"reveal":0.65,"pickup":true,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":548,"glyph":"𓃠","x":0.18639017395437207,"y":0.24505843393581336,"scale":0.65,"pickup":true,"mirror":false,"noHitbox":false,"items":[],"golden":false},
+  {"id":554,"glyph":"𓌾","x":0.4177746675997201,"y":0.5727136431784108,"scale":0.7,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":555,"glyph":"𓌽","x":0.41567529741077675,"y":0.5802098950524738,"scale":0.7,"reveal":1,"pickup":true,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":556,"glyph":"𓍷","x":0.4268719384184745,"y":0.5142428785607196,"scale":0.7,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":558,"glyph":"𓌾","x":0.4268719384184745,"y":0.5142428785607196,"scale":0.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":560,"glyph":"𓆧","x":0.40097970608817357,"y":0.45577211394302847,"scale":0.6,"reveal":1,"pickup":true,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":561,"glyph":"𓆧","x":0.4310706787963611,"y":0.5967016491754122,"scale":0.6,"reveal":1,"pickup":true,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":563,"glyph":"𓁙","x":0.5850244926522044,"y":0.5577211394302849,"scale":1.05,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":564,"glyph":"𓀂","x":0.47655703289013296,"y":0.41829085457271364,"scale":1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":565,"glyph":"𓍷","x":0.47655703289013296,"y":0.35082458770614694,"scale":0.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":566,"glyph":"𓋹","x":0.4639608117564731,"y":0.43478260869565216,"scale":0.55,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":567,"glyph":"𓋹","x":0.47655703289013296,"y":0.35082458770614694,"scale":0.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":568,"glyph":"𓊂","x":0.41499455680873865,"y":0.4032983508245877,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":569,"glyph":"𓊂","x":0.36880841265198566,"y":0.5232383808095952,"scale":1.5,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":570,"glyph":"𓊂","x":0.5885424924280528,"y":0.30434782608695654,"scale":1.25,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":571,"glyph":"𓊂","x":0.4492842698948128,"y":0.3028485757121439,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":572,"glyph":"𓊂","x":0.6186334651362404,"y":0.4002998500749625,"scale":1.35,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":573,"glyph":"𓊂","x":0.6494242279074091,"y":0.5172413793103449,"scale":1.25,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":574,"glyph":"𓍞","x":0.5822443818612228,"y":0.4752623688155922,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":576,"glyph":"𓍞","x":0.40869644624190865,"y":0.6656671664167916,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":577,"glyph":"𓊯","x":0.6011387135617128,"y":0.5862068965517241,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":578,"glyph":"𓊉","x":0.6046186144156753,"y":0.3028485757121439,"scale":1.05,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":579,"glyph":"𓊉","x":0.6410076976906928,"y":0.4002998500749625,"scale":1.15,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":580,"glyph":"𓊉","x":0.67531646023771,"y":0.5187406296851574,"scale":1.15,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":581,"glyph":"𓊈","x":0.3926012747933432,"y":0.4032983508245877,"scale":1.15,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":582,"glyph":"𓊈","x":0.4296901481313418,"y":0.30134932533733133,"scale":1.15,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":583,"glyph":"𓊈","x":0.3394172300067792,"y":0.52023988005997,"scale":1.15,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":562,"glyph":"𓆧","x":0.47373694385824877,"y":0.5562218890554723,"scale":0.6,"pickup":true,"mirror":false,"noHitbox":false,"items":[],"golden":false},
+  {"id":587,"glyph":"𓇠","x":0.7542566148612447,"y":0.6881559220389805,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":588,"glyph":"𓇠","x":0.7237257747236376,"y":0.6851574212893553,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":589,"glyph":"𓇠","x":0.7815484273175078,"y":0.6881559220389805,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":590,"glyph":"𓇠","x":0.8095400298367521,"y":0.6896551724137931,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":594,"glyph":"𓇠","x":0.8389312124819586,"y":0.6881559220389805,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":595,"glyph":"𓇠","x":0.8669228150012027,"y":0.6881559220389805,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":596,"glyph":"𓇠","x":0.8956142075834281,"y":0.6881559220389805,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":597,"glyph":"𓇠","x":0.9250053902286345,"y":0.6881559220389805,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":598,"glyph":"𓇠","x":0.9508976225589354,"y":0.6881559220389805,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":599,"glyph":"𓇡","x":0.9655932138815386,"y":0.6551724137931034,"scale":0.45,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":600,"glyph":"𓇡","x":0.9620942635666332,"y":0.5952023988005997,"scale":0.45,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":601,"glyph":"𓇡","x":0.9585953132517276,"y":0.5487256371814093,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":602,"glyph":"𓇡","x":0.9508976225589354,"y":0.4992503748125937,"scale":0.45,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":603,"glyph":"𓇡","x":0.9431999318661433,"y":0.45577211394302847,"scale":0.45,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":604,"glyph":"𓇉","x":0.753941455197718,"y":0.5922038980509745,"scale":0.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":605,"glyph":"𓃠","x":0.7172638857756736,"y":0.6596701649175413,"scale":0.45,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":607,"glyph":"𓇚","x":0.8950105617728744,"y":0.5937031484257871,"scale":0.65,"reveal":0.8,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]}
 ]; // baked-in starting layout for "lvl 2", pasted in via the level editor's Export
 let levelObjects = MAP1_OBJECTS; // active object list for whichever map is currently loaded
-let nextObjId = 527; // past the highest id placed on any map (the sun/snakes/grapes/woman at 400-410 on lvl -1, the cat at 411 on lvl 1, lvl 2's own layout at 426-526)
+let nextObjId = 608; // past the highest id placed on any map (the sun/snakes/grapes/woman at 400-410 on lvl -1, the cat at 411 on lvl 1, lvl 2's own layout at 426-607)
 let selectedObjId = null;
 let placeGlyph = A1;   // currently chosen palette sign, for the next placement
 let placeScale = 1;    // currently chosen size, for the next placement
@@ -1006,6 +1076,9 @@ function tryDropHeldItem(){
   // feed the cat one of the pickup fish (carried over from lvl -1 by boat,
   // same as anything else held) for 5 points — not a quest, just a snack
   if(tryGiveFishToCat(item)) return;
+  // hand the bowl man on lvl 2 any pickup sign for 5 points — same idea,
+  // just not picky about which sign it is
+  if(tryGiveItemToBowlMan(item)) return;
 
   // the boat only ever sits as its own base in the world — everything else
   // (the cow, any pickupable sign) is happy to stack onto whatever's nearby.
@@ -2083,6 +2156,59 @@ function updateFishSwim(dt){
   }
 }
 
+/* ---------- lvl 2: the 3 pickup locusts hop in place ----------
+   Purely cosmetic (until picked up), same "remembers its resting spot"
+   trick the pickup fish's sway and the hippo's pace use above — just a
+   2-leg hop instead of a smooth sine glide: hop forward one of its own
+   lengths (arcing up mid-hop), pause, hop back to where it started
+   (arcing up again), pause, repeat. Moves the object's actual x/y, not
+   just how it's drawn, so picking one up still just grabs whichever is
+   currently in reach — once it's picked up it leaves levelObjects for
+   good and simply stops hopping.
+*/
+const LOCUST_IDS = [560, 561, 562];
+const LOCUST_HOP_LEG = 0.5; // seconds spent airborne on each leg (forward, then back)
+const LOCUST_REST = 0.6; // seconds paused on the ground between legs
+const LOCUST_HOP_CYCLE = LOCUST_HOP_LEG*2 + LOCUST_REST*2;
+let locustHopT = 0;
+
+function updateLocustHop(dt){
+  if(currentMap !== 2) return;
+  locustHopT += dt;
+  for(const obj of levelObjects){
+    if(!LOCUST_IDS.includes(obj.id)) continue;
+    if(obj._hopBaseX === undefined){ obj._hopBaseX = obj.x; obj._hopBaseY = obj.y; }
+    const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj._hopBaseY) * obj.scale;
+    const hopLenX = size / W; // "1 length" forward, in the same 0..1 fraction obj.x uses
+    const hopUpY = size / H; // "1 length" up, in the same 0..1 fraction obj.y uses
+    const phase = (obj.id % 5) * 0.35; // stagger so the three don't all hop in lockstep
+    const t = (locustHopT + phase) % LOCUST_HOP_CYCLE;
+
+    let xFrac, yBump, mirror;
+    if(t < LOCUST_HOP_LEG){
+      // leg 1: hopping forward
+      const legT = t / LOCUST_HOP_LEG;
+      xFrac = legT;
+      yBump = Math.sin(Math.PI*legT);
+      mirror = false;
+    } else if(t < LOCUST_HOP_LEG + LOCUST_REST){
+      xFrac = 1; yBump = 0; mirror = false; // resting out at the forward spot
+    } else if(t < LOCUST_HOP_LEG*2 + LOCUST_REST){
+      // leg 2: hopping back to the start
+      const legT = (t - LOCUST_HOP_LEG - LOCUST_REST) / LOCUST_HOP_LEG;
+      xFrac = 1 - legT;
+      yBump = Math.sin(Math.PI*legT);
+      mirror = true;
+    } else {
+      xFrac = 0; yBump = 0; mirror = true; // resting back at the start
+    }
+
+    obj.x = obj._hopBaseX + xFrac*hopLenX;
+    obj.y = obj._hopBaseY - yBump*hopUpY; // up on screen is smaller y
+    obj.mirror = mirror;
+  }
+}
+
 /* ---------- the hippo sign on lvl -1's riverbank (level object id 276) ----------
    Sits on the left side of the river. Purely cosmetic, same idea as the
    pickup fish's sway above: paces back and forth along the bank without
@@ -2102,6 +2228,40 @@ function updateHippoSway(dt){
   const theta = hippoSwayT * (Math.PI*2/HIPPO_SWAY_PERIOD);
   hippoObj.x = hippoObj._baseX + Math.sin(theta) * amplitude;
   hippoObj.mirror = Math.cos(theta) > 0; // faces whichever way it's currently moving
+}
+
+/* ---------- lvl 2: the man with the offering bowl (level object id 547) ----------
+   Stands near the obelisk towers, bowl held out. Hand him any pickup sign
+   and he takes it for 5 points and a line of thanks — not a one-time
+   quest, same idea as the cat's snack on lvl 1: every item handed over
+   pays out again. He doesn't move around, so there's no zigzag to freeze,
+   just a speech-bubble timer ticking down on its own (see
+   updateBowlManSpeech below). While the player is near and hasn't just
+   handed him something, he asks for an item instead (BOWL_MAN_ASK_LINE) —
+   same always-shown-while-nearby treatment as the lady/man/woman quest
+   lines, just not gated on a one-time "quest done" flag since this repeats. */
+const BOWL_MAN_ID = 547;
+const BOWL_MAN_TALK_RANGE = 0.20; // fraction of min(W,H)
+const BOWL_MAN_REWARD = 5;
+const BOWL_MAN_SPEECH_DURATION = 5; // seconds it "talks" after being given something
+const BOWL_MAN_SPEECH_LINE = '𓎛𓎿𓊃𓀁𓁷𓏤𓏏𓏲𓎡';
+const BOWL_MAN_ASK_LINE = '𓅓𓂝𓇋𓂻𓅓𓐟𓏤';
+let bowlManSpeechT = 0;
+const bowlManObj = MAP2_OBJECTS.find(o => o.id === BOWL_MAN_ID) || null;
+
+// called from tryDropHeldItem() — handing him any pickup sign while close
+// enough consumes it instead of just setting it down; returns true if so
+function tryGiveItemToBowlMan(item){
+  if(currentMap !== 2 || !bowlManObj || item.kind !== 'level') return false;
+  const dist = Math.hypot((player.x-bowlManObj.x)*W, (player.y-bowlManObj.y)*H);
+  if(dist >= Math.min(W,H)*BOWL_MAN_TALK_RANGE) return false;
+  score += BOWL_MAN_REWARD;
+  bowlManSpeechT = BOWL_MAN_SPEECH_DURATION;
+  return true;
+}
+
+function updateBowlManSpeech(dt){
+  if(bowlManSpeechT > 0) bowlManSpeechT = Math.max(0, bowlManSpeechT - dt);
 }
 
 /* ---------- the cat (level object id 411) ----------
@@ -2525,6 +2685,8 @@ function update(dt){
     updateFishSwim(dt);
     updateCatMove(dt);
     updateHippoSway(dt);
+    updateLocustHop(dt);
+    updateBowlManSpeech(dt);
     updateSunGuardian(dt);
     return;
   }
@@ -2586,6 +2748,8 @@ function update(dt){
   updateFishSwim(dt);
   updateCatMove(dt);
   updateHippoSway(dt);
+  updateLocustHop(dt);
+  updateBowlManSpeech(dt);
   updateSunGuardian(dt);
 
   // the reed staircase's guardian bird — stepping onto it without the stick
@@ -2849,6 +3013,17 @@ function render(time){
     if(currentMap === 1 && catObj && catSpeechT > 0){
       const catSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(catObj.y) * catObj.scale;
       drawList.push({ y: catObj.y, draw: ()=>drawSpeechBubble(catObj.x*W, catObj.y*H-catSize*0.75, CAT_SPEECH_LINE, 22) });
+    }
+    if(currentMap === 2 && bowlManObj){
+      const bowlManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(bowlManObj.y) * bowlManObj.scale;
+      if(bowlManSpeechT > 0){
+        drawList.push({ y: bowlManObj.y, draw: ()=>drawSpeechBubble(bowlManObj.x*W, bowlManObj.y*H-bowlManSize*0.75, BOWL_MAN_SPEECH_LINE, 22) });
+      } else {
+        const distBowlMan = Math.hypot((player.x-bowlManObj.x)*W, (player.y-bowlManObj.y)*H);
+        if(distBowlMan < Math.min(W,H)*BOWL_MAN_TALK_RANGE){
+          drawList.push({ y: bowlManObj.y, draw: ()=>drawSpeechBubble(bowlManObj.x*W, bowlManObj.y*H-bowlManSize*0.75, BOWL_MAN_ASK_LINE, 22) });
+        }
+      }
     }
     // Almost everything here draws behind the player no matter its own y —
     // the player is meant to always read as the thing you're controlling,
