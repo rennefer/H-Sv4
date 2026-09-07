@@ -669,10 +669,26 @@ const MAP2_OBJECTS = [
   {"id":479,"glyph":"𓉱","x":0.33125,"y":0.6950998185117967,"scale":1.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},
   {"id":485,"glyph":"𓉹","x":0.53671875,"y":0.24500907441016334,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},
   {"id":486,"glyph":"𓉹","x":0.50078125,"y":0.24500907441016334,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"items":[]},
-  {"id":503,"glyph":"𓆏","x":0.21983899843977942,"y":0.8124158809589427,"scale":0.3,"pickup":true,"mirror":false,"noHitbox":false,"items":[],"golden":false}
+  {"id":503,"glyph":"𓆏","x":0.21983899843977942,"y":0.8124158809589427,"scale":0.3,"pickup":true,"mirror":false,"noHitbox":false,"items":[],"golden":false},
+  {"id":506,"glyph":"𓉜","x":0.86875,"y":0.5471698113207547,"scale":1.25,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":507,"glyph":"𓉙","x":0.7941446484511677,"y":0.5487256371814093,"scale":1.25,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":508,"glyph":"𓉱","x":0.89375,"y":0.5457184325108854,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":510,"glyph":"𓉱","x":0.76875,"y":0.5500725689404935,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":512,"glyph":"𓊁","x":0.840625,"y":0.420899854862119,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":513,"glyph":"𓊁","x":0.8675,"y":0.420899854862119,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":514,"glyph":"𓊁","x":0.814375,"y":0.420899854862119,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":515,"glyph":"𓉶","x":0.88625,"y":0.4310595065312046,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":517,"glyph":"𓉶","x":0.89125,"y":0.45718432510885343,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":518,"glyph":"𓉶","x":0.896875,"y":0.48911465892597966,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":519,"glyph":"𓉶","x":0.900625,"y":0.5195936139332366,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":520,"glyph":"𓉶","x":0.796875,"y":0.42670537010159654,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":521,"glyph":"𓉶","x":0.7878465378843378,"y":0.4542728635682159,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":522,"glyph":"𓉶","x":0.7780494770026023,"y":0.4827586206896552,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"items":[]},
+  {"id":523,"glyph":"𓉶","x":0.768125,"y":0.5108853410740203,"scale":1.35,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"items":[]},
+  {"id":526,"glyph":"𓃠","x":0.869375,"y":0.4876632801161103,"scale":0.5,"reveal":1,"pickup":true,"mirror":false,"noHitbox":false,"opaque":false,"items":[]}
 ]; // baked-in starting layout for "lvl 2", pasted in via the level editor's Export
 let levelObjects = MAP1_OBJECTS; // active object list for whichever map is currently loaded
-let nextObjId = 504; // past the highest id placed on any map (the sun/snakes/grapes/woman at 400-410 on lvl -1, the cat at 411 on lvl 1, lvl 2's own layout at 426-503)
+let nextObjId = 527; // past the highest id placed on any map (the sun/snakes/grapes/woman at 400-410 on lvl -1, the cat at 411 on lvl 1, lvl 2's own layout at 426-526)
 let selectedObjId = null;
 let placeGlyph = A1;   // currently chosen palette sign, for the next placement
 let placeScale = 1;    // currently chosen size, for the next placement
@@ -1382,11 +1398,17 @@ function drawGroundBoat(){
 
   ctx.save();
   if(floating) clipToTopFraction(sx, sy, size, 0.70);
+  ctx.translate(sx, sy);
+  // boatOnGround.facing (set only while boarded, in updateBoardedMovement)
+  // instead of the shared `facing` var — that var keeps changing for the
+  // on-foot walk cycle once you step out, which used to make an empty,
+  // parked boat keep flipping to match your on-foot heading.
+  ctx.scale(boatOnGround.facing || 1, 1);
   ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#2a1f14';
-  ctx.fillText(P1, sx, sy);
+  ctx.fillText(P1, 0, 0);
   ctx.restore();
 
   drawStackedItems(boatOnGround.items, sx, sy, size);
@@ -1845,18 +1867,38 @@ function obstacleCircles(){
     const cowSize = Math.min(W,H) * COW_SIZE_MULT * scaleForY(cow.y);
     list.push(feetHitbox(cow.x*W, cow.y*H, cowSize, cowSize*0.20));
   }
-  // level-editor objects block movement by default — mark one "no hitbox" to let the player walk through it
+  // level-editor objects block movement by default — mark one "no hitbox" to let the player walk through it.
+  // The glyph is drawn centered on obj.y (textBaseline 'middle'), spanning
+  // roughly from -0.5*size to +0.5*size — but the hitbox itself only covers
+  // the bottom quarter of that span (from +0.25*size to +0.5*size, centered
+  // at +0.375*size with a radius that keeps it inside that band). That way a
+  // tall sign or column only blocks the ground right at its base, the same
+  // way its own footprint would in real life, instead of a circle centered
+  // on the whole glyph blocking the player from ever walking near its top.
+  // It's an ellipse rather than a circle: rx is wider than ry so a sign
+  // still blocks its full visible width at the base, without the band
+  // getting any taller than that bottom-quarter slice.
   for(const obj of levelObjects){
     if(obj.noHitbox || obj.id === ELEPHANT_OBJ_ID) continue; // the elephant handles its own contact once it's awake and moving
     const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale;
-    list.push({ x: obj.x*W, y: obj.y*H, r: size*0.35 });
+    list.push({ x: obj.x*W, y: obj.y*H + size*0.375, rx: size*0.45, ry: size*0.125 });
   }
   return list;
 }
 function collidesAt(fx, fy){
   const size = Math.min(W,H) * PLAYER_SIZE_MULT * scaleForY(fy);
   const foot = feetHitbox(fx*W, fy*H, size, size*0.16);
-  return obstacleCircles().some(o => Math.hypot(foot.x-o.x, foot.y-o.y) < (o.r+foot.r));
+  // Obstacles are either a plain circle ({r}, the npc/cow) or an ellipse
+  // ({rx,ry}, level objects — see obstacleCircles above). Either way the
+  // player's own foot circle is folded into both axes of the obstacle's
+  // radius (the usual circle+circle Minkowski trick, just applied per axis
+  // for the ellipse case), then it's a standard normalized-ellipse test.
+  return obstacleCircles().some(o => {
+    const orx = (o.rx != null ? o.rx : o.r) + foot.r;
+    const ory = (o.ry != null ? o.ry : o.r) + foot.r;
+    const dx = foot.x - o.x, dy = foot.y - o.y;
+    return (dx*dx)/(orx*orx) + (dy*dy)/(ory*ory) < 1;
+  });
 }
 
 /* ---------- river hazard: the crocodile (lvl 1) / hippo (lvl -1) ---------- */
@@ -2430,6 +2472,12 @@ function updateBoardedMovement(dt){
   }
   const moving = dx!==0 || dy!==0;
   if(dx > 0) facing = -1; else if(dx < 0) facing = 1;
+  // the hull keeps its own heading, only ever touched from in here — see
+  // drawGroundBoat, which reads this instead of the shared `facing` var, so
+  // an empty boat left on the bank doesn't keep spinning around to match
+  // wherever the player (now on foot, updating `facing` for their own walk
+  // cycle) happens to be walking.
+  boatOnGround.facing = facing;
   if((keys['arrowleft']||keys['a']||keys['arrowright']||keys['d']) && (keys['arrowup']||keys['w']||keys['arrowdown']||keys['s'])){ dx *= 0.7071; dy *= 0.7071; }
 
   const targetX = boatOnGround.x + dx*speed;
@@ -2611,13 +2659,19 @@ function drawDebugOverlay(){
     ctx.stroke();
 
     // every !noHitbox sign in the active map — orange if it currently
-    // counts as a boat obstacle, gray if it's a foot-only obstacle
+    // counts as a boat obstacle (boatHitsObstacle's own centered radius,
+    // unchanged), gray if it's a foot-only obstacle (obstacleCircles' bottom-
+    // quarter footprint circle, see the comment there)
     for(const obj of levelObjects){
       if(obj.noHitbox) continue;
-      const objR = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale * 0.35;
+      const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale;
       const inWater = pointInPolygon(obj.x, obj.y, activePoly);
       ctx.beginPath();
-      ctx.arc(obj.x*W, obj.y*H, objR, 0, Math.PI*2);
+      if(inWater){
+        ctx.arc(obj.x*W, obj.y*H, size*0.35, 0, Math.PI*2);
+      } else {
+        ctx.ellipse(obj.x*W, obj.y*H + size*0.375, size*0.45, size*0.125, 0, 0, Math.PI*2);
+      }
       ctx.strokeStyle = inWater ? 'orange' : 'rgba(120,120,120,0.8)';
       ctx.lineWidth = 2;
       ctx.stroke();
@@ -2765,7 +2819,10 @@ function render(time){
         const flapGlyph = duckAnimFrame === 0 ? G40 : G41;
         drawList.push({ y: obj.y, draw: ()=>drawLevelObject(obj, flapGlyph, true) });
       } else {
-        drawList.push({ y: obj.y, draw: ()=>drawLevelObject(obj) });
+        // opaque (solid-backing) items are the one kind that's allowed to
+        // actually hide the player, see the sort/split below — everything
+        // else stays exempt from it, same as before.
+        drawList.push({ y: obj.y, opaque: obj.opaque === true, draw: ()=>drawLevelObject(obj) });
       }
     }
     if(currentMap === 1 && ladyObj && !birdQuestDone){
@@ -2793,9 +2850,27 @@ function render(time){
       const catSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(catObj.y) * catObj.scale;
       drawList.push({ y: catObj.y, draw: ()=>drawSpeechBubble(catObj.x*W, catObj.y*H-catSize*0.75, CAT_SPEECH_LINE, 22) });
     }
-    drawList.sort((a,b)=> a.y-b.y);
-    drawList.forEach(e=>e.draw());
+    // Almost everything here draws behind the player no matter its own y —
+    // the player is meant to always read as the thing you're controlling,
+    // never accidentally hidden behind an ordinary sign or npc. The one
+    // exception is a level object with "solid backing" (opaque:true, see the
+    // editor's "Solid backing" checkbox and drawLevelObject's backing-plate
+    // comment): those represent actual architecture (doorframes, walls) that
+    // should be able to hide you when you're standing behind them, so any
+    // opaque item whose own y puts it further toward the camera than the
+    // player (obj.y > player.y) draws AFTER the player instead, occluding
+    // him with its backing plate exactly like it already occludes whatever
+    // else is drawn behind it in the z-order.
+    const behindPlayer = [], occludingPlayer = [];
+    for(const e of drawList){
+      if(e.opaque && e.y > player.y) occludingPlayer.push(e);
+      else behindPlayer.push(e);
+    }
+    behindPlayer.sort((a,b)=> a.y-b.y);
+    behindPlayer.forEach(e=>e.draw());
     drawPlayer();
+    occludingPlayer.sort((a,b)=> a.y-b.y);
+    occludingPlayer.forEach(e=>e.draw());
     drawBirdAttack();
     drawFishJump();
     drawSunGuardian();
