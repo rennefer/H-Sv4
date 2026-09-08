@@ -324,6 +324,12 @@ const BODY_ID = 48;       // the corpse (A054) resting at the pyramid — removi
 const PILLAR_IDS = [32, 33]; // the pair of obelisks (O025) flanking the pyramid
 const PILLAR_RANGE = 0.20;   // fraction of min(W,H) — generous, so it locks in from anywhere nearby
 let bodyPenaltyGiven = false;
+const U10_GLYPH = String.fromCodePoint(0x1333E); // Gardiner U10 (sheaf/flax) — picking one up off the map is always a penalty, wherever it's placed
+// Gardiner U9 shares its codepoint with GOLDEN_BARREL (the arms-up man's
+// cat-quest reward, see below) — the penalty check on this glyph excludes
+// golden items so that reward is never accidentally punished if it's set
+// down and picked back up
+const U9_GLYPH = String.fromCodePoint(0x1333D);
 let goldenScored = false;
 function pillarMidpoint(){
   const a = levelObjects.find(o => o.id === PILLAR_IDS[0]);
@@ -669,7 +675,7 @@ const MAP1_EAST_SPAWN = { x: 0.96, y: 0.25 };
 const MAP2_WEST_SPAWN = { x: 0.05, y: 0.90 };
 // Hand-drawn with the level editor's own river-drawing tool, straight on top
 // of the map's actual glyphs.
-const WATER2_POLY = [[0,0.8448],[0.0287,0.8373],[0.0791,0.8403],[0.2106,0.8388],[0.3142,0.8478],[0.4192,0.8569],[0.5409,0.8599],[0.6571,0.8448],[0.7719,0.8282],[0.8328,0.8403],[0.883,0.8358],[0.9376,0.8358],[1,0.8358],[1,1],[0.9676,1],[0.9127,1],[0.8171,1],[0.6819,1],[0.6149,1],[0.5511,1],[0.4258,1],[0.3456,1],[0.1774,0.9941],[0,0.9965]];
+const WATER2_POLY = [[0,0.8448],[0.0287,0.8373],[0.0791,0.8403],[0.2106,0.8388],[0.3142,0.8478],[0.3978,0.8502],[0.403,0.8335],[0.5945,0.839],[0.6048,0.8558],[0.6571,0.8448],[0.7719,0.8282],[0.8328,0.8403],[0.883,0.8358],[0.9376,0.8358],[1,0.8358],[1,1],[0.9676,1],[0.9127,1],[0.8171,1],[0.6819,1],[0.6149,1],[0.5511,1],[0.4258,1],[0.3456,1],[0.1774,0.9941],[0,0.9965]];
 const MAP2_OBJECTS = [
   {
     "id": 426,
@@ -1713,7 +1719,7 @@ const MAP2_OBJECTS = [
         "glyph": "𓌽",
         "scale": 0.7,
         "mirror": false,
-        "noHitbox": false,
+        "noHitbox": true,
         "pickup": true
       }
     ]
@@ -4082,6 +4088,12 @@ function tryPickup(){
         score -= 30; // disturbing the body in the pyramid costs you
         bodyPenaltyGiven = true;
       }
+      // every plain (non-golden) U10 or U9 sign is a trap, wherever it's
+      // placed on the map — unlike the body above, this isn't a one-time
+      // thing, so it applies each time one gets picked up. The !base.golden
+      // guard keeps this from ever firing on the golden barrel reward,
+      // which happens to reuse U9's own codepoint.
+      if((base.glyph === U10_GLYPH || base.glyph === U9_GLYPH) && !base.golden) score -= 50;
       // the goat's wander target (see updateGoatGraze) is an absolute spot
       // on whichever map it was last wandering — picking it up needs to
       // clear that, or the moment it's dropped somewhere else it'd lurch
@@ -4329,6 +4341,7 @@ const BUBBLE_CHAR_MS = 40; // ms revealed per character — tuned for a quick "t
 const BUBBLE_BOUNCE_MS = 220; // how long each letter keeps bouncing after it appears
 const BUBBLE_BOUNCE_AMP = 5; // px — how high each letter hops
 const BUBBLE_GAP_RESET_MS = 200; // longer than a dropped frame or two, short enough to catch a real disappearance
+const BUBBLE_FONT_SIZE = 22; // reverted back to original size — the smaller bubbles caused a perf regression
 
 function drawSpeechBubble(cx, bottomY, text, fontSize, key){
   ctx.save();
@@ -4339,7 +4352,15 @@ function drawSpeechBubble(cx, bottomY, text, fontSize, key){
   let textW = 0;
   lines.forEach(l=>{ textW = Math.max(textW, ctx.measureText(l).width); });
   const w = textW+padX*2, h = lines.length*lineH+padY*2;
-  const x = cx-w/2, y = bottomY-h;
+  const x = cx-w/2;
+  // the bubble's pixel size doesn't shrink along with a smaller game
+  // window, so a speaker standing near the top of the map can end up with
+  // the whole box computed above y=0 — invisible, clipped off the top of
+  // the canvas — once the window (and so H) gets small enough. Clamping
+  // keeps it fully on-screen; the tail (still anchored on cx below) just
+  // gets a little longer to reach back down to the speaker.
+  const BUBBLE_TOP_MARGIN = 4;
+  const y = Math.max(BUBBLE_TOP_MARGIN, bottomY-h);
   const r = 8;
 
   // the bubble itself is sized off the FULL text above, so it never resizes
@@ -4414,7 +4435,7 @@ function drawSpeechBubble(cx, bottomY, text, fontSize, key){
   ctx.restore();
 }
 
-function drawNpc(showBubble){
+function drawNpc(){
   const s = scaleForY(npc.y);
   const size = Math.min(W,H) * NPC_SIZE_MULT * s;
   const sx = npc.x*W, sy = npc.y*H;
@@ -4428,17 +4449,18 @@ function drawNpc(showBubble){
   ctx.fillStyle = '#2a1f14';
   ctx.fillText(npcGlyph(), 0, 0);
   ctx.restore();
+}
 
-  if(showBubble){
-    let bubbleText = null;
-    if(cowDelivered){
-      // the second line only shows once his celebration animation has fully played out
-      if(npcAnim.phase === 'idle') bubbleText = npc.lineWithCow;
-    } else if(!(heldItem && heldItem.kind === 'cow')){
-      bubbleText = npc.line; // while carrying the cow but not yet delivered, no bubble at all — no early flash of the second line
-    }
-    if(bubbleText) drawSpeechBubble(sx, sy-size*0.75, bubbleText, 22, 'npc');
+// What the npc's bubble would say right now, or null if he has nothing to
+// say — split out from drawNpc so the render loop can weigh his bubble
+// against every other nearby npc/sign's and only show whichever is closest.
+function npcBubbleText(){
+  if(cowDelivered){
+    // the second line only shows once his celebration animation has fully played out
+    return npcAnim.phase === 'idle' ? npc.lineWithCow : null;
   }
+  if(heldItem && heldItem.kind === 'cow') return null; // carrying the cow but not yet delivered — no early flash of the second line
+  return npc.line;
 }
 
 function drawCow(){
@@ -5729,12 +5751,13 @@ function updateBowlManSpeech(dt){
 /* ---------- lvl 2: the man with his arms up in the air (level object id 545) ----------
    Bring him all 3 of lvl 2's pickup cats (ids 526, 548, 605 — same cat sign
    as lvl 1's, just placed here as loose pickups instead of a fixed npc) and
-   once the 3rd lands he sends them running off to eat the 3 locusts, then
-   hands back a golden barrel. A one-time quest, like the woman's snakes or
-   the lady's birds — the reward comes the moment the 3rd cat is delivered;
-   the cats-eating-the-locusts bit right after is purely cosmetic (see
-   updateCatEatCutscene/drawCatEatCutscene below), so it can't get stuck
-   holding the reward hostage on some animation edge case. */
+   each cat you hand him immediately runs off to eat one locust — instant
+   feedback that that delivery counted, rather than waiting for all 3 and
+   only then playing the whole thing at once. The golden barrel reward still
+   only comes the moment the 3rd cat is delivered. A one-time quest, like
+   the woman's snakes or the lady's birds; the cats-eating-locusts bit is
+   purely cosmetic (see updateCatEatCutscene/drawCatEatCutscene below), so
+   it can't get stuck holding the reward hostage on some animation edge case. */
 const ARMS_UP_MAN_ID = 545;
 const ARMS_UP_MAN_TALK_RANGE = 0.20; // fraction of min(W,H)
 const ARMS_UP_MAN_ASK_LINE = 'help';
@@ -5746,9 +5769,10 @@ let catQuestDone = false;
 const armsUpManObj = MAP2_OBJECTS.find(o => o.id === ARMS_UP_MAN_ID) || null;
 
 const CAT_EAT_HOP_DURATION = 1.4; // seconds airborne per cat, on its way to a locust — slow, deliberate
-const CAT_EAT_PAUSE = 0.5; // seconds between one cat landing and the next setting off
-const CAT_EAT_STAGGER = CAT_EAT_HOP_DURATION + CAT_EAT_PAUSE; // strictly one at a time, never overlapping
-let catEatCutscene = null; // { t, jumps: [{toX,toY,locustId,done,eaten}] }
+// independent in-flight cat->locust hops — one appended per delivery (see
+// tryGiveCatToArmsUpMan), each animating on its own clock rather than all 3
+// being staggered off a single shared start time
+let catEatJumps = []; // [{t, toX, toY, locustId, eaten}]
 
 // called from tryDropHeldItem() — handing him one of the 3 cats while close
 // enough consumes it instead of just setting it down; returns true if so
@@ -5757,53 +5781,39 @@ function tryGiveCatToArmsUpMan(item){
   const dist = Math.hypot((player.x-armsUpManObj.x)*W, (player.y-armsUpManObj.y)*H);
   if(dist >= Math.min(W,H)*ARMS_UP_MAN_TALK_RANGE) return false;
 
+  // this delivery's own cat sets off for its own locust right away
+  const locustId = LOCUST_IDS[catsDelivered];
+  const loc = levelObjects.find(o => o.id === locustId);
+  catEatJumps.push({ t: 0, toX: loc ? loc.x : armsUpManObj.x, toY: loc ? loc.y : armsUpManObj.y, locustId, eaten: false });
+
   catsDelivered++;
   if(catsDelivered >= CAT_IDS.length){
     catQuestDone = true;
     score += 5; // completing the delivery pays out once, on top of the golden barrel
     // straight onto the player's head, worn like the boat — not left on the ground
     heldItem = { kind:'level', id: nextObjId++, glyph: GOLDEN_BARREL, scale: 1, mirror: false, noHitbox: true, pickup: true, golden: true };
-    catEatCutscene = {
-      t: 0,
-      jumps: LOCUST_IDS.map(id => {
-        const loc = levelObjects.find(o => o.id === id);
-        return { toX: loc ? loc.x : armsUpManObj.x, toY: loc ? loc.y : armsUpManObj.y, locustId: id, done: false, eaten: false };
-      })
-    };
   }
   return true;
 }
 
 function updateCatEatCutscene(dt){
-  if(!catEatCutscene) return;
-  catEatCutscene.t += dt;
-  let allDone = true;
-  catEatCutscene.jumps.forEach((j, i) => {
-    if(j.done) return;
-    const localT = catEatCutscene.t - i*CAT_EAT_STAGGER;
-    if(localT < 0){ allDone = false; return; }
-    if(localT >= CAT_EAT_HOP_DURATION){
-      if(!j.eaten){
-        const idx = levelObjects.findIndex(o => o.id === j.locustId);
-        if(idx !== -1) levelObjects.splice(idx, 1); // eaten — gone for good, like being picked up
-        j.eaten = true;
-      }
-      j.done = true;
-      return;
+  if(!catEatJumps.length) return;
+  for(const j of catEatJumps){
+    j.t += dt;
+    if(!j.eaten && j.t >= CAT_EAT_HOP_DURATION){
+      const idx = levelObjects.findIndex(o => o.id === j.locustId);
+      if(idx !== -1) levelObjects.splice(idx, 1); // eaten — gone for good, like being picked up
+      j.eaten = true;
     }
-    allDone = false;
-  });
-  if(allDone) catEatCutscene = null;
+  }
+  catEatJumps = catEatJumps.filter(j => j.t < CAT_EAT_HOP_DURATION);
 }
 
 function drawCatEatCutscene(){
-  if(!catEatCutscene || !armsUpManObj) return;
+  if(!catEatJumps.length || !armsUpManObj) return;
   const hopSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(armsUpManObj.y) * 0.45; // same scale as the cat pickups
-  catEatCutscene.jumps.forEach((j, i) => {
-    if(j.done) return;
-    const localT = catEatCutscene.t - i*CAT_EAT_STAGGER;
-    if(localT < 0 || localT >= CAT_EAT_HOP_DURATION) return;
-    const frac = localT / CAT_EAT_HOP_DURATION;
+  for(const j of catEatJumps){
+    const frac = j.t / CAT_EAT_HOP_DURATION;
     const x = armsUpManObj.x + (j.toX - armsUpManObj.x)*frac;
     const yArc = Math.sin(Math.PI*frac) * (hopSize*0.5) / H; // a hop arc along the way, same idea as the locusts'/frog's hops
     const y = armsUpManObj.y + (j.toY - armsUpManObj.y)*frac - yArc;
@@ -5816,7 +5826,7 @@ function drawCatEatCutscene(){
     ctx.fillStyle = '#2a1f14';
     ctx.fillText(CAT_GLYPH, 0, 0);
     ctx.restore();
-  });
+  }
 }
 
 /* ---------- lvl 2: the man among the giraffes (level object id 619) ----------
@@ -5827,7 +5837,7 @@ function drawCatEatCutscene(){
    line. A one-time quest, and it pays out 5 points on top of the spectacle. */
 const GIRAFFE_MAN_ID = 619;
 const GIRAFFE_MAN_TALK_RANGE = 0.20; // fraction of min(W,H)
-const GIRAFFE_MAN_ASK_LINE = '?';
+const GIRAFFE_MAN_ASK_LINE = '𓃱𓏶𓅓𓏭𓀁𓌾';
 const GIRAFFE_IDS = [620, 621, 622, 624, 629]; // every giraffe currently standing in the river
 const GIRAFFE_WALK_DURATION = 2.4; // seconds each giraffe takes to walk clear of the river — a longer walk now that they're headed further inland
 const GIRAFFE_MAN_REWARD = 5;
@@ -5919,6 +5929,10 @@ const TRANSFORM_GLYPH = String.fromCodePoint(0x13019); // what it changes into o
 const FROG_REWARD_GLYPH = String.fromCodePoint(0x133CB); // the frog-keeper's reward — carried to the staff-bearing man next
 let frogQuestDone = false;
 let staffQuestDone = false;
+// the frog-keeper's own ask-line only starts showing once the player has
+// actually been in range of the staff-bearing man once — introduces him
+// before the frog-keeper's request makes sense, so they're met in order
+let staffManMet = false;
 const frogKeeperObj = MAP2_OBJECTS.find(o => o.id === FROG_KEEPER_ID) || null;
 const staffManObj = MAP2_OBJECTS.find(o => o.id === STAFF_MAN_ID) || null;
 
@@ -6793,7 +6807,7 @@ function getRiverFadeCtx(){
 // One flat color for every river — no gradient, no separate outline color.
 const RIVER_COLOR = '180,230,225';
 const RIVER_ALPHA = 0.36;
-function paintWaterPolyWash(poly, holes, fadeLeftFrac){
+function paintWaterPolyWash(poly, holes, fadeLeftFrac, targetCtx){
   if(!poly || poly.length < 3) return;
 
   let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
@@ -6895,14 +6909,17 @@ function paintWaterPolyWash(poly, holes, fadeLeftFrac){
   }
   fc.restore(); // drops the clip
 
-  // Composite the finished wash back onto the real canvas as a normal
-  // (non-erasing) paint. Both canvases share the same DPR transform, so
-  // copying in raw device-pixel space (identity transform) keeps them
-  // pixel-aligned without any extra scaling math.
-  ctx.save();
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.drawImage(riverFadeCanvas, 0, 0);
-  ctx.restore();
+  // Composite the finished wash onto the given target (the persistent
+  // water-wash cache canvas during a build, or the real canvas directly if
+  // no target was given) as a normal (non-erasing) paint. Both canvases
+  // share the same DPR transform, so copying in raw device-pixel space
+  // (identity transform) keeps them pixel-aligned without any extra
+  // scaling math.
+  const dest = targetCtx || ctx;
+  dest.save();
+  dest.setTransform(1,0,0,1,0,0);
+  dest.drawImage(riverFadeCanvas, 0, 0);
+  dest.restore();
 }
 // Grows a water polygon outward by pct (0.05 = 5%) around its own average
 // vertex position, for the visual wash only — the real activeWaterPoly()
@@ -6915,7 +6932,36 @@ function scalePolyOutward(poly, pct){
   const f = 1 + pct;
   return poly.map(([x,y]) => [cx + (x-cx)*f, cy + (y-cy)*f]);
 }
-function drawWaterWash(){
+// The river polygons are static per map (only the level editor ever moves
+// them), so — exactly like the plant/flower washes below — there's no
+// reason to re-run the fill + multi-pass edge erosion every single frame;
+// that was fine back when this was a single flat fill, but it's grown into
+// real per-frame cost (a clip, a fill, 4 destination-out stroke passes and
+// sometimes a radial-gradient erase, on an offscreen canvas the size of the
+// whole frame) that was previously being paid 60 times a second on every
+// map regardless of whether anything changed. Baking it once per map onto
+// its own persistent canvas and just blitting that afterward removes that
+// entire pipeline from the per-frame hot path. Rebuilt whenever the map or
+// canvas size changes, and every frame in the editor so a hand-drawn
+// polygon tweak still previews live.
+let waterWashCanvas = null, waterWashCtx = null;
+let waterWashCacheKey = null;
+function getWaterWashCtx(){
+  if(!waterWashCanvas){
+    waterWashCanvas = document.createElement('canvas');
+    waterWashCtx = waterWashCanvas.getContext('2d');
+  }
+  if(waterWashCanvas.width !== canvas.width || waterWashCanvas.height !== canvas.height){
+    waterWashCanvas.width = canvas.width;
+    waterWashCanvas.height = canvas.height;
+  }
+  return waterWashCtx;
+}
+function buildWaterWash(){
+  const wc = getWaterWashCtx();
+  wc.setTransform(1,0,0,1,0,0);
+  wc.clearRect(0,0,waterWashCanvas.width, waterWashCanvas.height);
+
   const poly = scalePolyOutward(activeWaterPoly(), 0.05);
   // The reed staircase (NEG1_LAND_POCKETS) used to be punched out of the
   // wash as a dry hole — it's still dry underfoot for gameplay (see
@@ -6927,7 +6973,7 @@ function drawWaterWash(){
   // middle of the map instead of bleeding off the map's own edge (lvl 1
   // and lvl 2's rivers both do), so it's the one that gets the left-edge
   // fade — see paintWaterPolyWash's fadeLeftFrac.
-  paintWaterPolyWash(poly, null, currentMap === -1 ? 0.34 : 0);
+  paintWaterPolyWash(poly, null, currentMap === -1 ? 0.34 : 0, wc);
 
   // lvl -1 also has a second, separate cluster of water-ripple glyphs (a
   // small pond, unconnected to the main river channel — see NEG1_POND_POLY
@@ -6935,8 +6981,204 @@ function drawWaterWash(){
   // no boat access, no wading slowdown, no crocodile spawns there, just a
   // matching wash so the color follows the glyphs that are already placed.
   if(currentMap === -1){
-    paintWaterPolyWash(scalePolyOutward(NEG1_POND_POLY, 0.05), null);
+    paintWaterPolyWash(scalePolyOutward(NEG1_POND_POLY, 0.05), null, undefined, wc);
   }
+  waterWashCacheKey = currentMap+'|'+canvas.width+'|'+canvas.height;
+}
+function drawWaterWash(){
+  const key = currentMap+'|'+canvas.width+'|'+canvas.height;
+  if(editMode || waterWashCacheKey !== key) buildWaterWash();
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.drawImage(waterWashCanvas, 0, 0);
+  ctx.restore();
+}
+
+/* ---------- sign washes: soft watercolor glows under plant/flower signs
+   Unicode assigns the Egyptian Hieroglyphs block in contiguous runs per
+   Gardiner letter category, and U+131AD–U+131EE is exactly Gardiner's "M"
+   series (trees & plants) — so a plain codepoint range check finds every
+   plant sign already placed on any map (reeds, papyrus, lotus, etc.)
+   without hand-listing them, and keeps working for any plant sign added
+   later in the editor. The 3 lotus signs the lvl-2 flower woman accepts
+   (FLOWER_GLYPHS, above) get their own pink category instead of green, and
+   M033 (𓇠) was asked to be dropped from the plant category entirely — it
+   gets no wash at all now. */
+function isFlowerGlyph(ch){
+  return !!ch && FLOWER_GLYPHS.includes(ch);
+}
+function isPlantGlyph(ch){
+  if(!ch) return false;
+  if(isFlowerGlyph(ch)) return false; // flowers get their own pink wash below
+  const cp = ch.codePointAt(0);
+  if(cp === 0x131E0 || cp === 0x131E1) return false; // M033, M033A — excluded from any wash
+  return cp >= 0x131AD && cp <= 0x131EE;
+}
+// Every plant/flower sign is static (nothing in the M-series ever
+// hops/swims/wanders the way animals do), so unlike the river wash — whose
+// fill has to be rebuilt every frame because the tip fade math is cheap and
+// the shape never repeats work worth caching — repainting dozens of
+// gradients a frame (up to ~100 on lvl -1's reed banks) is real, measured
+// cost: it dropped lvl -1 from 60fps to under 30. Baking each category once
+// per map onto its own scratch canvas and just blitting that afterward
+// brings it back to 60. Rebuilt whenever the map or the canvas size
+// changes, and every frame in the editor so dragging a sign around still
+// previews live.
+//
+// One bounding box over EVERY sign in a category turned out to be nearly
+// the whole canvas on lvl -1 (a dense reed cluster in one corner plus a
+// handful of stray plants scattered clear across the map stretch the box
+// edge to edge), so blitting it every frame cost about as much as blitting
+// the full frame would have. Instead, signs are grouped into clusters by
+// merging any whose (already-overshot) circles touch or overlap, and each
+// cluster gets its own small, tightly-fitted scratch canvas — an isolated
+// sign out in open papyrus costs almost nothing to blit, and only the
+// actual dense clusters pay for their own real footprint.
+function clusterSignBlobs(blobs){
+  let boxes = blobs.map(([cx,cy,r]) => ({
+    x0: cx-r, y0: cy-r, x1: cx+r, y1: cy+r, items: [[cx,cy,r]]
+  }));
+  let merged = true;
+  while(merged){
+    merged = false;
+    outer:
+    for(let i=0; i<boxes.length; i++){
+      for(let j=i+1; j<boxes.length; j++){
+        const a = boxes[i], b = boxes[j];
+        if(a.x0 <= b.x1 && a.x1 >= b.x0 && a.y0 <= b.y1 && a.y1 >= b.y0){
+          boxes[i] = {
+            x0: Math.min(a.x0,b.x0), y0: Math.min(a.y0,b.y0),
+            x1: Math.max(a.x1,b.x1), y1: Math.max(a.y1,b.y1),
+            items: a.items.concat(b.items)
+          };
+          boxes.splice(j,1);
+          merged = true;
+          break outer;
+        }
+      }
+    }
+  }
+  return boxes;
+}
+// Factory so the green plant wash and the pink flower wash share all the
+// caching/clustering machinery and differ only in which signs they pick up
+// and what color they paint.
+//
+// Each blob is a radial gradient, and two overlapping gradients drawn the
+// ordinary way (globalCompositeOperation source-over) alpha-stack — the
+// overlap ends up MORE opaque than either blob alone, reading as a
+// noticeably stronger/deeper color exactly where clusters overlap. To keep
+// every cluster reading as one even color regardless of how many signs
+// overlap there, each blob is instead painted as an opaque GRAYSCALE
+// "coverage" shape (same falloff shape, just carried as brightness instead
+// of alpha, always fully opaque) onto a scratch mask, combined with
+// globalCompositeOperation 'lighten' — which keeps whichever blob is
+// brightest at a pixel and simply discards the rest instead of summing
+// them. That per-pixel MAX (never a sum) is exactly "don't stack, don't
+// get stronger". The finished grayscale mask is then read back once
+// (getImageData) and turned into the real translucent color (putImageData)
+// — brightness becomes alpha, everywhere scaled by the same peak alpha, so
+// the actual on-screen alpha at any pixel is still just the strongest
+// single blob touching it, never a sum of several.
+function makeSignWash(predicate, color, stops, overshoot){
+  let tiles = []; // [{canvas, offX, offY}], device pixels
+  let cacheKey = null;
+  const peakAlpha = Math.max(...stops.map(s=>s[1]));
+  // Same falloff shape as `stops`, renormalized to 0..1 brightness so the
+  // mask stays pure "relative coverage" — the actual peak alpha is only
+  // applied once, uniformly, in the brightness->alpha conversion below.
+  const brightnessStops = stops.map(([frac,a]) => [frac, peakAlpha>0 ? a/peakAlpha : 0]);
+  function build(){
+    const blobs = [];
+    for(const obj of levelObjects){
+      if(!predicate(obj.glyph)) continue;
+      const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj.y) * obj.scale;
+      blobs.push([obj.x*W, obj.y*H, size*overshoot]);
+    }
+    cacheKey = currentMap+'|'+canvas.width+'|'+canvas.height;
+    tiles = [];
+    if(!blobs.length) return;
+
+    const [cr,cg,cb] = color.split(',').map(Number);
+    for(const box of clusterSignBlobs(blobs)){
+      const x0 = Math.max(0, box.x0), y0 = Math.max(0, box.y0);
+      const x1 = Math.min(W, box.x1), y1 = Math.min(H, box.y1);
+      const offX = Math.floor(x0*DPR), offY = Math.floor(y0*DPR);
+      const cw = Math.max(1, Math.ceil((x1-x0)*DPR));
+      const ch = Math.max(1, Math.ceil((y1-y0)*DPR));
+      const tileCanvas = document.createElement('canvas');
+      tileCanvas.width = cw;
+      tileCanvas.height = ch;
+      const pc = tileCanvas.getContext('2d');
+
+      // Base coverage is zero (black) everywhere, in plain device pixels —
+      // getImageData/putImageData below ignore transforms anyway, so this
+      // part is done before switching to the shifted/scaled transform the
+      // blob loop needs.
+      pc.setTransform(1,0,0,1,0,0);
+      pc.fillStyle = '#000';
+      pc.fillRect(0,0,cw,ch);
+
+      // Shift world coordinates so this tile's own (0,0) lines up with
+      // (x0,y0) in device pixels — lets the blob-drawing loop keep using
+      // the same cx/cy each blob was already computed with, unchanged.
+      pc.setTransform(DPR,0,0,DPR, -offX, -offY);
+      pc.globalCompositeOperation = 'lighten';
+      for(const [cx,cy,r] of box.items){
+        const grad = pc.createRadialGradient(cx, cy, 0, cx, cy, r);
+        for(const [stop, b] of brightnessStops){
+          const v = Math.round(b*255);
+          grad.addColorStop(stop, 'rgb('+v+','+v+','+v+')');
+        }
+        pc.fillStyle = grad;
+        pc.beginPath();
+        pc.arc(cx, cy, r, 0, Math.PI*2);
+        pc.fill();
+      }
+      pc.globalCompositeOperation = 'source-over';
+
+      // Brightness -> alpha: recolor every pixel to the wash's own color,
+      // with alpha taken straight from that pixel's (already-maxed, never
+      // summed) coverage value.
+      const img = pc.getImageData(0,0,cw,ch);
+      const data = img.data;
+      for(let i=0; i<data.length; i+=4){
+        const v = data[i]; // grayscale — r, g and b all equal
+        data[i] = cr; data[i+1] = cg; data[i+2] = cb;
+        data[i+3] = Math.round((v/255) * peakAlpha * 255);
+      }
+      pc.putImageData(img, 0, 0);
+
+      tiles.push({ canvas: tileCanvas, offX, offY });
+    }
+  }
+  return function drawWash(){
+    const key = currentMap+'|'+canvas.width+'|'+canvas.height;
+    if(editMode || cacheKey !== key) build();
+    if(!tiles.length) return;
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);
+    for(const t of tiles) ctx.drawImage(t.canvas, t.offX, t.offY);
+    ctx.restore();
+  };
+}
+// Unlike the river wash (one flat color, faded only at its own true edge —
+// see paintWaterPolyWash above), these are meant to read as a soft
+// watercolor bloom, so they're genuine radial gradients: a small solid
+// core, tapering gradually over most of the reach. No destination-out
+// erosion or offscreen scratch canvas needed for the falloff shape itself —
+// a gradient already fades to fully transparent on its own (the
+// non-stacking mask trick above is a separate step, only needed because
+// overlapping blobs would otherwise alpha-stack).
+const SIGN_WASH_STOPS = [[0, 0.28], [0.2, 0.22], [1, 0]];
+// How far past a sign's own on-screen size the wash reaches — "overshoot a
+// bit" rather than hugging the glyph's exact silhouette.
+const SIGN_WASH_OVERSHOOT = 1.26; // 2.1 reduced 40% per request
+const drawGreenPlantWash = makeSignWash(isPlantGlyph, '170,200,165', SIGN_WASH_STOPS, SIGN_WASH_OVERSHOOT);
+const drawPinkFlowerWash = makeSignWash(isFlowerGlyph, '225,145,175', SIGN_WASH_STOPS, SIGN_WASH_OVERSHOOT);
+function drawPlantWash(){
+  drawGreenPlantWash();
+  drawPinkFlowerWash();
 }
 
 let t0 = performance.now();
@@ -6958,10 +7200,17 @@ function render(time){
   ctx.fillStyle = papyrusPattern || '#e9e4d8';
   ctx.fillRect(0,0,W,H);
   drawWaterWash();
+  drawPlantWash();
 
   if(fontsReady){
     const dist = Math.hypot((player.x-npc.x)*W, (player.y-npc.y)*H);
     const nearNpc = dist < Math.min(W,H)*NPC_TALK_RANGE;
+
+    // Every npc/sign that has something to say this frame gets offered up
+    // here instead of straight into drawList — once they're all gathered,
+    // only the single closest one to the player actually gets its bubble
+    // drawn, so you're never looking at a wall of overlapping speech.
+    const bubbleCandidates = [];
 
     // NPC/cow/level-objects draw back-to-front by depth among themselves;
     // the player always draws last, full opacity, on top of all of them —
@@ -6970,7 +7219,14 @@ function render(time){
     // drawPlayer() itself, riding upside-down above his head.
     const drawList = [];
     if(currentMap === 1){
-      drawList.push({ y: npc.y, draw: ()=>drawNpc(nearNpc) });
+      drawList.push({ y: npc.y, draw: drawNpc });
+      if(nearNpc){
+        const npcBubble = npcBubbleText();
+        if(npcBubble){
+          const npcSize = Math.min(W,H) * NPC_SIZE_MULT * scaleForY(npc.y);
+          bubbleCandidates.push({ dist, y: npc.y, draw: ()=>drawSpeechBubble(npc.x*W, npc.y*H-npcSize*0.75, npcBubble, BUBBLE_FONT_SIZE, 'npc') });
+        }
+      }
     }
     // the cow can be carried onto the boat and sailed anywhere, so — unlike
     // the npc, who never leaves lvl 1 — it has to stay visible (and pickable
@@ -7018,41 +7274,40 @@ function render(time){
       const distLady = Math.hypot((player.x-ladyObj.x)*W, (player.y-ladyObj.y)*H);
       if(distLady < Math.min(W,H)*LADY_TALK_RANGE){
         const ladySize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(ladyObj.y) * ladyObj.scale;
-        drawList.push({ y: ladyObj.y, draw: ()=>drawSpeechBubble(ladyObj.x*W, ladyObj.y*H-ladySize*0.75, LADY_QUEST_LINE, 22, 'lady') });
+        bubbleCandidates.push({ dist: distLady, y: ladyObj.y, draw: ()=>drawSpeechBubble(ladyObj.x*W, ladyObj.y*H-ladySize*0.75, LADY_QUEST_LINE, BUBBLE_FONT_SIZE, 'lady') });
       }
     }
     if(currentMap === -1 && manObj && !manQuestDone && !manWalk){
       const distMan = Math.hypot((player.x-manObj.x)*W, (player.y-manObj.y)*H);
       if(distMan < Math.min(W,H)*MAN_TALK_RANGE){
         const manSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(manObj.y) * manObj.scale;
-        drawList.push({ y: manObj.y, draw: ()=>drawSpeechBubble(manObj.x*W, manObj.y*H-manSize*0.75, MAN_QUEST_LINE, 22, 'man') });
+        bubbleCandidates.push({ dist: distMan, y: manObj.y, draw: ()=>drawSpeechBubble(manObj.x*W, manObj.y*H-manSize*0.75, MAN_QUEST_LINE, BUBBLE_FONT_SIZE, 'man') });
       }
     }
     if(currentMap === -1 && womanObj && !womanQuestDone){
       const distWoman = Math.hypot((player.x-womanObj.x)*W, (player.y-womanObj.y)*H);
       if(distWoman < Math.min(W,H)*WOMAN_TALK_RANGE){
         const womanSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(womanObj.y) * womanObj.scale;
-        drawList.push({ y: womanObj.y, draw: ()=>drawSpeechBubble(womanObj.x*W, womanObj.y*H-womanSize*0.75, WOMAN_QUEST_LINE, 22, 'woman') });
+        bubbleCandidates.push({ dist: distWoman, y: womanObj.y, draw: ()=>drawSpeechBubble(womanObj.x*W, womanObj.y*H-womanSize*0.75, WOMAN_QUEST_LINE, BUBBLE_FONT_SIZE, 'woman') });
       }
     }
     if(currentMap === 1 && catObj && catSpeechT > 0){
       const catSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(catObj.y) * catObj.scale;
-      drawList.push({ y: catObj.y, draw: ()=>drawSpeechBubble(catObj.x*W, catObj.y*H-catSize*0.75, CAT_SPEECH_LINE, 22, 'cat') });
+      const distCat = Math.hypot((player.x-catObj.x)*W, (player.y-catObj.y)*H);
+      bubbleCandidates.push({ dist: distCat, y: catObj.y, draw: ()=>drawSpeechBubble(catObj.x*W, catObj.y*H-catSize*0.75, CAT_SPEECH_LINE, BUBBLE_FONT_SIZE, 'cat') });
     }
     if(currentMap === 2 && bowlManObj){
       const bowlManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(bowlManObj.y) * bowlManObj.scale;
+      const distBowlMan = Math.hypot((player.x-bowlManObj.x)*W, (player.y-bowlManObj.y)*H);
       if(bowlManSpeechT > 0){
-        drawList.push({ y: bowlManObj.y, draw: ()=>drawSpeechBubble(bowlManObj.x*W, bowlManObj.y*H-bowlManSize*0.75, BOWL_MAN_SPEECH_LINE, 22, 'bowlMan') });
-      } else {
-        const distBowlMan = Math.hypot((player.x-bowlManObj.x)*W, (player.y-bowlManObj.y)*H);
-        if(distBowlMan < Math.min(W,H)*BOWL_MAN_TALK_RANGE){
-          drawList.push({ y: bowlManObj.y, draw: ()=>drawSpeechBubble(bowlManObj.x*W, bowlManObj.y*H-bowlManSize*0.75, BOWL_MAN_ASK_LINE, 22, 'bowlMan') });
-        }
+        bubbleCandidates.push({ dist: distBowlMan, y: bowlManObj.y, draw: ()=>drawSpeechBubble(bowlManObj.x*W, bowlManObj.y*H-bowlManSize*0.75, BOWL_MAN_SPEECH_LINE, BUBBLE_FONT_SIZE, 'bowlMan') });
+      } else if(distBowlMan < Math.min(W,H)*BOWL_MAN_TALK_RANGE){
+        bubbleCandidates.push({ dist: distBowlMan, y: bowlManObj.y, draw: ()=>drawSpeechBubble(bowlManObj.x*W, bowlManObj.y*H-bowlManSize*0.75, BOWL_MAN_ASK_LINE, BUBBLE_FONT_SIZE, 'bowlMan') });
       }
     }
     // the 3 cats hopping out from the arms-up man to eat the locusts —
     // purely cosmetic, drawn at his position for depth-sorting purposes
-    if(currentMap === 2 && catEatCutscene && armsUpManObj){
+    if(currentMap === 2 && catEatJumps.length && armsUpManObj){
       drawList.push({ y: armsUpManObj.y, draw: drawCatEatCutscene });
     }
     // same always-shown-while-nearby idle line as the bowl man's ask bubble,
@@ -7061,35 +7316,49 @@ function render(time){
       const distArmsUp = Math.hypot((player.x-armsUpManObj.x)*W, (player.y-armsUpManObj.y)*H);
       if(distArmsUp < Math.min(W,H)*ARMS_UP_MAN_TALK_RANGE){
         const armsUpSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(armsUpManObj.y) * armsUpManObj.scale;
-        drawList.push({ y: armsUpManObj.y, draw: ()=>drawSpeechBubble(armsUpManObj.x*W, armsUpManObj.y*H-armsUpSize*0.75, ARMS_UP_MAN_ASK_LINE, 22, 'armsUpMan') });
+        bubbleCandidates.push({ dist: distArmsUp, y: armsUpManObj.y, draw: ()=>drawSpeechBubble(armsUpManObj.x*W, armsUpManObj.y*H-armsUpSize*0.75, ARMS_UP_MAN_ASK_LINE, BUBBLE_FONT_SIZE, 'armsUpMan') });
       }
     }
     if(currentMap === 2 && giraffeManObj && !giraffeQuestDone){
       const distGiraffeMan = Math.hypot((player.x-giraffeManObj.x)*W, (player.y-giraffeManObj.y)*H);
       if(distGiraffeMan < Math.min(W,H)*GIRAFFE_MAN_TALK_RANGE){
         const giraffeManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(giraffeManObj.y) * giraffeManObj.scale;
-        drawList.push({ y: giraffeManObj.y, draw: ()=>drawSpeechBubble(giraffeManObj.x*W, giraffeManObj.y*H-giraffeManSize*0.75, GIRAFFE_MAN_ASK_LINE, 22, 'giraffeMan') });
+        bubbleCandidates.push({ dist: distGiraffeMan, y: giraffeManObj.y, draw: ()=>drawSpeechBubble(giraffeManObj.x*W, giraffeManObj.y*H-giraffeManSize*0.75, GIRAFFE_MAN_ASK_LINE, BUBBLE_FONT_SIZE, 'giraffeMan') });
       }
     }
-    if(currentMap === 2 && frogKeeperObj && !frogQuestDone){
-      const distFrogKeeper = Math.hypot((player.x-frogKeeperObj.x)*W, (player.y-frogKeeperObj.y)*H);
-      if(distFrogKeeper < Math.min(W,H)*FROG_KEEPER_TALK_RANGE){
-        const frogKeeperSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(frogKeeperObj.y) * frogKeeperObj.scale;
-        drawList.push({ y: frogKeeperObj.y, draw: ()=>drawSpeechBubble(frogKeeperObj.x*W, frogKeeperObj.y*H-frogKeeperSize*0.75, FROG_KEEPER_ASK_LINE, 22, 'frogKeeper') });
-      }
-    }
+    // staff man's own range-check runs first so staffManMet is already
+    // up to date by the time the frog-keeper's gate below checks it
     if(currentMap === 2 && staffManObj && !staffQuestDone){
       const distStaffMan = Math.hypot((player.x-staffManObj.x)*W, (player.y-staffManObj.y)*H);
       if(distStaffMan < Math.min(W,H)*STAFF_MAN_TALK_RANGE){
+        staffManMet = true;
         const staffManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(staffManObj.y) * staffManObj.scale;
-        drawList.push({ y: staffManObj.y, draw: ()=>drawSpeechBubble(staffManObj.x*W, staffManObj.y*H-staffManSize*0.75, STAFF_MAN_ASK_LINE, 22, 'staffMan') });
+        bubbleCandidates.push({ dist: distStaffMan, y: staffManObj.y, draw: ()=>drawSpeechBubble(staffManObj.x*W, staffManObj.y*H-staffManSize*0.75, STAFF_MAN_ASK_LINE, BUBBLE_FONT_SIZE, 'staffMan') });
+      }
+    }
+    // gated on staffManMet (or the quest already being done, which implies
+    // he was met) — see the staffManMet comment by its declaration above
+    if(currentMap === 2 && frogKeeperObj && !frogQuestDone && (staffManMet || staffQuestDone)){
+      const distFrogKeeper = Math.hypot((player.x-frogKeeperObj.x)*W, (player.y-frogKeeperObj.y)*H);
+      if(distFrogKeeper < Math.min(W,H)*FROG_KEEPER_TALK_RANGE){
+        const frogKeeperSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(frogKeeperObj.y) * frogKeeperObj.scale;
+        bubbleCandidates.push({ dist: distFrogKeeper, y: frogKeeperObj.y, draw: ()=>drawSpeechBubble(frogKeeperObj.x*W, frogKeeperObj.y*H-frogKeeperSize*0.75, FROG_KEEPER_ASK_LINE, BUBBLE_FONT_SIZE, 'frogKeeper') });
       }
     }
     // repeatable — only shows for a beat right after she's handed a flower,
     // no idle ask-line the rest of the time
     if(currentMap === 2 && flowerWomanObj && flowerWomanSpeechT > 0){
       const flowerWomanSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(flowerWomanObj.y) * flowerWomanObj.scale;
-      drawList.push({ y: flowerWomanObj.y, draw: ()=>drawSpeechBubble(flowerWomanObj.x*W, flowerWomanObj.y*H-flowerWomanSize*0.75, FLOWER_WOMAN_SPEECH_LINE, 22, 'flowerWoman') });
+      const distFlowerWoman = Math.hypot((player.x-flowerWomanObj.x)*W, (player.y-flowerWomanObj.y)*H);
+      bubbleCandidates.push({ dist: distFlowerWoman, y: flowerWomanObj.y, draw: ()=>drawSpeechBubble(flowerWomanObj.x*W, flowerWomanObj.y*H-flowerWomanSize*0.75, FLOWER_WOMAN_SPEECH_LINE, BUBBLE_FONT_SIZE, 'flowerWoman') });
+    }
+
+    // of everyone with something to say this frame, only the one closest to
+    // the player actually gets a bubble — no stacked chatter from a crowd.
+    if(bubbleCandidates.length){
+      bubbleCandidates.sort((a,b)=> a.dist-b.dist);
+      const closestBubble = bubbleCandidates[0];
+      drawList.push({ y: closestBubble.y, draw: closestBubble.draw });
     }
     // Almost everything here draws behind the player no matter its own y —
     // the player is meant to always read as the thing you're controlling,
