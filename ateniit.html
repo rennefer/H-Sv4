@@ -17,7 +17,7 @@
      #gameWrap is black so that when the locked-aspect-ratio canvas doesn't
      fill the window, the leftover space reads as letterbox/pillarbox bars. */
   #gameWrap { position:fixed; top:0; left:0; width:100%; height:100%; overflow:hidden; background:#000; }
-  #gameWrap.editing { width:calc(100% - 440px); overflow-x:auto; overflow-y:hidden; }
+  #gameWrap.editing { width:calc(100% - 440px); overflow:auto; }
 
   #editor {
     position:fixed; top:0; right:0; width:440px; height:100%; box-sizing:border-box;
@@ -43,7 +43,9 @@
   .palette-btn.active { background:#e3b98c; border-color:#a06a2e; }
   .sliderRow { display:flex; align-items:center; gap:8px; }
   .sliderRow input[type=range] { flex:1; }
+  .sliderRow button { margin:0 !important; padding:2px 9px !important; line-height:1.4; }
   #scaleValue { font-variant-numeric: tabular-nums; min-width:2.6em; text-align:right; }
+  #zoomValue { font-variant-numeric: tabular-nums; min-width:2.6em; text-align:right; }
   .row { display:flex; align-items:center; gap:6px; margin-top:8px; }
   #editor button {
     font: inherit; padding:6px 10px; border:1px solid #a06a2e; background:#e3b98c;
@@ -61,6 +63,14 @@
 <div id="editor" hidden>
   <h2>Level Editor</h2>
   <p class="hint">Press E to close. Click the map to place the selected sign, click a placed sign to select it, then drag it to move it. Del removes the selection.</p>
+  <label>Zoom</label>
+  <div class="sliderRow">
+    <button id="zoomOutBtn" type="button">&minus;</button>
+    <input type="range" id="zoomSlider" min="1" max="4" step="0.25" value="1">
+    <button id="zoomInBtn" type="button">+</button>
+    <span id="zoomValue">100%</span>
+  </div>
+  <p class="hint">Zoomed in, scroll or drag the scrollbars to pan around the map for precise placement.</p>
   <label>Sign palette</label>
   <div id="palette"></div>
   <label>Size</label>
@@ -102,6 +112,27 @@
     <input type="checkbox" id="debugCheck">
     <label style="margin:0; text-transform:none; letter-spacing:0; font-size:13px;" for="debugCheck">Show hitboxes</label>
   </div>
+  <label>River outline</label>
+  <p class="hint">Click the map to add a point, drag a point to move it, right-click a point to delete it — the shape auto-closes back to the first point. Turn on "Show hitboxes" too to see the river that's actually live in the game (cyan) next to what you're drawing (green).</p>
+  <div>
+    <select id="riverTargetSelect">
+      <option value="water1">Lvl 1 river</option>
+      <option value="watern1">Lvl -1 main channel</option>
+      <option value="pondn1">Lvl -1 pond</option>
+      <option value="water2">Lvl 2 river</option>
+    </select>
+  </div>
+  <div class="row">
+    <input type="checkbox" id="riverDrawCheck">
+    <label style="margin:0; text-transform:none; letter-spacing:0; font-size:13px;" for="riverDrawCheck">Draw river mode</label>
+  </div>
+  <div>
+    <button id="riverLoadBtn">Load existing</button>
+    <button id="riverUndoBtn">Undo point</button>
+    <button id="riverClearBtn">Clear</button>
+    <button id="riverExportBtn">Export</button>
+  </div>
+  <textarea id="riverJson" placeholder="Exported river polygon appears here — copy it back to Claude to bake into the game."></textarea>
   <label>Level data</label>
   <div>
     <button id="exportBtn">Export</button>
@@ -185,13 +216,26 @@ const BOUNDS = { xMin:0.035, xMax:0.965, yMin:DEPTH_ANCHORS[0][0], yMax:DEPTH_AN
    A closed polygon (traced from the reference map) marking the water.
    Wading in it without a boat is slow and draws a crocodile; a boat
    parked in it can be boarded and is confined to it until it beaches. */
-const WATER_POLY = [[0.0046,0.0491],[0.0083,0.0369],[0.0495,0.0442],[0.1001,0.0971],[0.1264,0.14],[0.1863,0.1929],[0.2926,0.1904],[0.5243,0.2162],[0.6956,0.2113],[0.7621,0.2002],[0.8586,0.2027],[0.9025,0.1843],[0.9917,0.1916],[0.9943,0.2912],[0.9799,0.3108],[0.9205,0.2961],[0.8829,0.301],[0.8555,0.3219],[0.7967,0.3194],[0.7028,0.3354],[0.6806,0.3501],[0.6228,0.3428],[0.5294,0.3649],[0.4603,0.335],[0.2786,0.335],[0.1223,0.3219],[0.1146,0.301],[0.0743,0.2801],[0.0057,0.2727]];
+// Hand-drawn with the level editor's own river-drawing tool, straight on top
+// of the map's actual glyphs, replacing an earlier auto-fitted attempt.
+const WATER_POLY = [[-0.0117,0.0454],[0.0301,0.0405],[0.0581,0.0616],[0.091,0.0767],[0.1218,0.1326],[0.1421,0.1597],[0.2022,0.1854],[0.2715,0.1884],[0.3191,0.1944],[0.3604,0.1959],[0.4045,0.1975],[0.4451,0.205],[0.5003,0.2095],[0.5297,0.2156],[0.5724,0.214],[0.6123,0.2156],[0.6494,0.2156],[0.6837,0.2095],[0.7173,0.211],[0.7544,0.202],[0.816,0.202],[0.8615,0.1944],[0.9013,0.1884],[0.9454,0.1884],[0.9985,0.1914],[1.0164,0.1665],[1.0164,0.3167],[0.9758,0.3167],[0.9347,0.3178],[0.8935,0.32],[0.8523,0.3243],[0.8112,0.3301],[0.77,0.3369],[0.7288,0.3441],[0.6876,0.3505],[0.6465,0.3525],[0.6053,0.3531],[0.5641,0.3526],[0.523,0.3562],[0.4818,0.3626],[0.4406,0.3545],[0.3995,0.3531],[0.3583,0.3607],[0.3171,0.3608],[0.2759,0.3549],[0.2348,0.3451],[0.1936,0.3397],[0.1524,0.3336],[0.1113,0.3236],[0.063,0.2986],[0.0259,0.285],[0.0005,0.2808]];
 // lvl -1's own river/lake — traced from a screenshot the user marked up with
 // a red outline. The stair-step ramp built out of stacked 𓇿 signs crosses
 // through it, but every one of those objects is noHitbox, so it doesn't need
 // carving out here: a boat already passes underneath it exactly like it
 // passes over any other noHitbox sign in the water.
-const WATER_NEG1_POLY = [[0.291,0.3434],[0.3096,0.2993],[0.3389,0.2691],[0.3701,0.2575],[0.4088,0.2599],[0.4451,0.2575],[0.4839,0.2575],[0.5099,0.2564],[0.5233,0.2494],[0.5668,0.2471],[0.6014,0.2529],[0.647,0.2517],[0.6987,0.2413],[0.7505,0.2367],[0.8022,0.2401],[0.854,0.2471],[0.9058,0.2517],[0.9576,0.2552],[0.9979,0.261],[0.9979,0.464],[0.9576,0.4617],[0.9058,0.4548],[0.854,0.4525],[0.8022,0.4617],[0.7505,0.4501],[0.6987,0.427],[0.647,0.4084],[0.6014,0.4015],[0.5689,0.4003],[0.5233,0.3782],[0.4839,0.4003],[0.4451,0.4003],[0.4088,0.4003],[0.3701,0.4003],[0.3389,0.4003],[0.3096,0.4003]];
+// Hand-drawn with the level editor's own river-drawing tool, straight on top
+// of the map's actual glyphs (the main channel only — see NEG1_POND_POLY
+// below for the separate glyph cluster found lower on this map).
+const WATER_NEG1_POLY = [[0.1962,0.4265],[0.2744,0.2323],[0.293,0.2269],[0.3384,0.2341],[0.3872,0.2414],[0.4024,0.2287],[0.4327,0.2323],[0.4764,0.2341],[0.5337,0.2269],[0.5859,0.2323],[0.638,0.2269],[0.6936,0.2287],[0.7373,0.2214],[0.7811,0.2196],[0.8198,0.2269],[0.8569,0.2305],[0.8804,0.2486],[0.9528,0.2486],[0.9991,0.2523],[1.014,0.2131],[1.014,0.4283],[1,0.4847],[0.9612,0.4991],[0.9175,0.4973],[0.8998,0.4882],[0.9006,0.4628],[0.8222,0.467],[0.7853,0.4428],[0.7373,0.4301],[0.7087,0.4029],[0.6818,0.4102],[0.6683,0.412],[0.6439,0.4156],[0.6321,0.3956],[0.5943,0.4102],[0.5715,0.4065],[0.5623,0.3902],[0.5303,0.3975],[0.4784,0.4002],[0.4537,0.4156],[0.4327,0.4138],[0.4184,0.4247],[0.3999,0.4192],[0.3746,0.4192],[0.3311,0.4187],[0.282,0.4271]];
+// A second, separate cluster of water-ripple glyphs lower on this map (around
+// x:0.54-0.87, y:0.73-0.97) — a small pond, distinct from the main river
+// channel above and not connected to it. It has no gameplay behavior (no
+// boat access, no wading slowdown, no crocodile spawns there) — it's given a
+// matching visual wash purely so the color follows the glyphs that are
+// already there; see the NEG1_POND_POLY use in drawWaterWash(). Hand-drawn
+// with the level editor's own river-drawing tool, straight on top of the map.
+const NEG1_POND_POLY = [[0.552,0.8222],[0.5772,0.8176],[0.6115,0.7799],[0.6381,0.7633],[0.6766,0.7558],[0.7186,0.7513],[0.7487,0.7573],[0.7955,0.7663],[0.8361,0.7694],[0.8627,0.8524],[0.8452,0.9022],[0.8158,0.9429],[0.7961,0.9503],[0.7593,0.955],[0.7207,0.967],[0.6858,0.9661],[0.649,0.9685],[0.5989,0.9701],[0.573,0.9414],[0.5534,0.9052],[0.5471,0.8539]];
 // Which river polygon (if any) governs isInWater/boat-sailing for whichever
 // map is currently active.
 function activeWaterPoly(){
@@ -623,10 +667,9 @@ const MAP1_EAST_SPAWN = { x: 0.96, y: 0.25 };
 // point inside WATER2_POLY, close to its own west edge, picked the same way
 // every other cross-map spawn point was.
 const MAP2_WEST_SPAWN = { x: 0.05, y: 0.90 };
-// lvl 2's own river — traced the same way WATER_NEG1_POLY was, from a
-// screenshot the user marked up with a red outline: a wide band running
-// almost the full width of the map, well down in the foreground.
-const WATER2_POLY = [[0.0283,0.8379],[0.0567,0.8357],[0.085,0.8445],[0.1133,0.8456],[0.1417,0.8479],[0.17,0.8445],[0.1984,0.8423],[0.2267,0.839],[0.255,0.8412],[0.2834,0.8445],[0.3117,0.8445],[0.34,0.8401],[0.3684,0.8357],[0.3967,0.8335],[0.425,0.8324],[0.4534,0.8291],[0.4817,0.8269],[0.51,0.8258],[0.5384,0.8335],[0.5667,0.8324],[0.5951,0.8302],[0.6234,0.8247],[0.6517,0.8225],[0.6801,0.8247],[0.7084,0.8247],[0.7367,0.8181],[0.7651,0.8236],[0.7934,0.8148],[0.8217,0.8236],[0.8501,0.8247],[0.8784,0.8159],[0.9067,0.8137],[0.9351,0.8148],[0.9634,0.8214],[0.9918,0.8181],[0.9995,0.8324],[0.9995,0.8368],[0.9918,0.9746],[0.9634,0.9802],[0.9351,0.9835],[0.9067,0.9879],[0.8784,0.9934],[0.8501,0.9923],[0.8217,0.9857],[0.7934,0.9846],[0.7651,0.9934],[0.7367,0.9967],[0.7084,0.9912],[0.6801,0.989],[0.6517,0.9857],[0.6234,0.9901],[0.5951,0.9846],[0.5667,0.9835],[0.5384,0.9813],[0.51,0.9802],[0.4817,0.989],[0.4534,0.9746],[0.425,0.9813],[0.3967,0.9945],[0.3684,0.9835],[0.34,0.9868],[0.3117,0.9768],[0.2834,0.9824],[0.255,0.9735],[0.2267,0.9868],[0.1984,0.9868],[0.17,0.9857],[0.1417,0.9835],[0.1133,0.9757],[0.085,0.9868],[0.0567,0.9824],[0.0283,0.9857]];
+// Hand-drawn with the level editor's own river-drawing tool, straight on top
+// of the map's actual glyphs.
+const WATER2_POLY = [[0,0.8448],[0.0287,0.8373],[0.0791,0.8403],[0.2106,0.8388],[0.3142,0.8478],[0.4192,0.8569],[0.5409,0.8599],[0.6571,0.8448],[0.7719,0.8282],[0.8328,0.8403],[0.883,0.8358],[0.9376,0.8358],[1,0.8358],[1,1],[0.9676,1],[0.9127,1],[0.8171,1],[0.6819,1],[0.6149,1],[0.5511,1],[0.4258,1],[0.3456,1],[0.1774,0.9941],[0,0.9965]];
 const MAP2_OBJECTS = [
   {
     "id": 426,
@@ -4786,6 +4829,11 @@ canvas.addEventListener('mousedown', ()=>{ if(gameOver) respawnAfterDeath(); });
 const gameWrap = document.getElementById('gameWrap');
 const editorPanel = document.getElementById('editor');
 const paletteEl = document.getElementById('palette');
+const zoomSlider = document.getElementById('zoomSlider');
+const zoomValueEl = document.getElementById('zoomValue');
+const zoomInBtn = document.getElementById('zoomInBtn');
+const zoomOutBtn = document.getElementById('zoomOutBtn');
+let editorZoom = 1; // only applies while editMode; 1 = fit-to-panel (the normal letterboxed view)
 const scaleSlider = document.getElementById('scaleSlider');
 const scaleValueEl = document.getElementById('scaleValue');
 const revealSlider = document.getElementById('revealSlider');
@@ -4802,16 +4850,118 @@ function updateMapButtons(){
   map1Btn.disabled = currentMap === 1;
   mapNeg1Btn.disabled = currentMap === -1;
   map2Btn.disabled = currentMap === 2;
+  // keep the river-target dropdown honest about which map is on screen —
+  // e.g. never leave "Lvl -1 pond" selected while lvl 1 is showing
+  if(typeof riverTargetSelect !== 'undefined'){
+    const valid = riverTargetsForMap(currentMap);
+    if(!valid.includes(riverTarget)){
+      riverTarget = valid[0];
+      riverTargetSelect.value = riverTarget;
+    }
+  }
 }
 let showDebug = false;
 const debugCheck = document.getElementById('debugCheck');
 debugCheck.addEventListener('change', ()=>{ showDebug = debugCheck.checked; });
 
+/* ---------- river-drawing tool ----------
+   A hand-drawn alternative to hard-coding a river polygon by eye/screenshot:
+   turn it on, click points straight onto the actual map (with its real
+   glyphs showing underneath), and it builds a closed polygon in the exact
+   [[x,y],...] fraction format WATER_POLY/WATER_NEG1_POLY/NEG1_POND_POLY/
+   WATER2_POLY already use, ready to paste back into the source. Each of the
+   four river-shaped things in the game gets its own independent draft so
+   switching maps/targets mid-session never loses work. */
+let riverDrawMode = false;
+let riverTarget = 'water1';
+const riverDrafts = { water1: null, watern1: null, pondn1: null, water2: null };
+let draggingRiverIdx = null;
+const RIVER_TARGET_MAP = { water1: 1, watern1: -1, pondn1: -1, water2: 2 };
+const RIVER_TARGET_CONST_NAME = { water1: 'WATER_POLY', watern1: 'WATER_NEG1_POLY', pondn1: 'NEG1_POND_POLY', water2: 'WATER2_POLY' };
+function riverTargetSource(target){
+  return { water1: WATER_POLY, watern1: WATER_NEG1_POLY, pondn1: NEG1_POND_POLY, water2: WATER2_POLY }[target];
+}
+// which of the 4 river targets make sense for a given map — used to keep the
+// dropdown from offering "Lvl -1 pond" while lvl 1 is on screen, say
+function riverTargetsForMap(mapId){
+  return Object.keys(RIVER_TARGET_MAP).filter(k => RIVER_TARGET_MAP[k] === mapId);
+}
+const riverDrawCheck = document.getElementById('riverDrawCheck');
+const riverTargetSelect = document.getElementById('riverTargetSelect');
+const riverJsonEl = document.getElementById('riverJson');
+riverDrawCheck.addEventListener('change', ()=>{ riverDrawMode = riverDrawCheck.checked; });
+riverTargetSelect.addEventListener('change', ()=>{
+  riverTarget = riverTargetSelect.value;
+  setMap(RIVER_TARGET_MAP[riverTarget]);
+});
+document.getElementById('riverLoadBtn').addEventListener('click', ()=>{
+  riverDrafts[riverTarget] = riverTargetSource(riverTarget).map(p => [p[0], p[1]]);
+});
+document.getElementById('riverUndoBtn').addEventListener('click', ()=>{
+  const draft = riverDrafts[riverTarget];
+  if(draft && draft.length) draft.pop();
+});
+document.getElementById('riverClearBtn').addEventListener('click', ()=>{
+  riverDrafts[riverTarget] = [];
+});
+document.getElementById('riverExportBtn').addEventListener('click', ()=>{
+  const draft = riverDrafts[riverTarget];
+  if(!draft || draft.length < 3){ alert('Add at least 3 points first.'); return; }
+  const rounded = draft.map(p => [Math.round(p[0]*10000)/10000, Math.round(p[1]*10000)/10000]);
+  const text = 'const ' + RIVER_TARGET_CONST_NAME[riverTarget] + ' = ' + JSON.stringify(rounded) + ';';
+  riverJsonEl.value = text;
+  riverJsonEl.select();
+  try{ navigator.clipboard.writeText(text); }catch(e){}
+});
+function hitTestRiverVertex(cx, cy){
+  const draft = riverDrafts[riverTarget];
+  if(!draft) return -1;
+  const r = Math.max(14, Math.min(W,H)*0.018);
+  let hit = -1, hitDist = Infinity;
+  draft.forEach((p,i)=>{
+    const d = Math.hypot(cx - p[0]*W, cy - p[1]*H);
+    if(d < r && d < hitDist){ hit = i; hitDist = d; }
+  });
+  return hit;
+}
+// A click that isn't close enough to an existing point to grab it adds a new
+// one — but a plain array.push() always tacks it onto the very END of the
+// list, regardless of WHERE on the loop you clicked. For anywhere but the
+// last stretch you're drawing, that's wrong: the new point becomes a stray
+// vertex the closing edge has to lasso all the way back to, instead of
+// slotting in where it visually belongs. This finds the closest edge of the
+// (implicitly closed) polygon-so-far and returns the index to splice the new
+// point into, so clicking near any part of the outline extends it right
+// there.
+function nearestRiverEdgeInsertIndex(draft, fx, fy){
+  if(draft.length < 2) return draft.length;
+  let bestDist = Infinity, bestIdx = draft.length;
+  for(let i=0; i<draft.length; i++){
+    const a = draft[i], b = draft[(i+1) % draft.length];
+    const dx = b[0]-a[0], dy = b[1]-a[1];
+    const len2 = dx*dx + dy*dy;
+    let t = len2 > 0 ? ((fx-a[0])*dx + (fy-a[1])*dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const px = a[0] + t*dx, py = a[1] + t*dy;
+    const d = Math.hypot(fx-px, fy-py);
+    if(d < bestDist){ bestDist = d; bestIdx = i+1; }
+  }
+  return bestIdx;
+}
+canvas.addEventListener('contextmenu', e=>{
+  if(!editMode || !riverDrawMode) return;
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const idx = hitTestRiverVertex(cx, cy);
+  if(idx !== -1) riverDrafts[riverTarget].splice(idx, 1);
+});
+
 function setEditMode(on){
   editMode = on;
   editorPanel.hidden = !on;
   gameWrap.classList.toggle('editing', on); // narrows the scroll viewport, not the map itself
-  resize();
+  setEditorZoom(1); // always reopen (and leave) the editor at the normal fit-to-panel view; also calls resize()
 }
 
 // populate the palette with every sign in the Egyptian Hieroglyphs block
@@ -4843,6 +4993,18 @@ function refreshScaleLabel(v){ scaleValueEl.textContent = Number(v).toFixed(2)+'
 refreshScaleLabel(scaleSlider.value);
 function refreshRevealLabel(v){ revealValueEl.textContent = Math.round(Number(v)*100)+'%'; }
 refreshRevealLabel(revealSlider.value);
+
+function refreshZoomLabel(v){ zoomValueEl.textContent = Math.round(Number(v)*100)+'%'; }
+function setEditorZoom(v){
+  editorZoom = Math.max(parseFloat(zoomSlider.min), Math.min(parseFloat(zoomSlider.max), v));
+  zoomSlider.value = editorZoom;
+  refreshZoomLabel(editorZoom);
+  resize();
+}
+refreshZoomLabel(zoomSlider.value);
+zoomSlider.addEventListener('input', ()=>{ setEditorZoom(parseFloat(zoomSlider.value)); });
+zoomInBtn.addEventListener('click', ()=>{ setEditorZoom(editorZoom + parseFloat(zoomSlider.step)); });
+zoomOutBtn.addEventListener('click', ()=>{ setEditorZoom(editorZoom - parseFloat(zoomSlider.step)); });
 
 scaleSlider.addEventListener('input', ()=>{
   const v = parseFloat(scaleSlider.value);
@@ -4974,6 +5136,22 @@ canvas.addEventListener('mousedown', e=>{
   const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
   const fx = cx/W, fy = cy/H;
 
+  // river-drawing mode takes over the canvas entirely — clicking adds/drags
+  // polygon points instead of placing/selecting a sign
+  if(riverDrawMode){
+    const idx = hitTestRiverVertex(cx, cy);
+    if(idx !== -1){
+      draggingRiverIdx = idx;
+    } else {
+      if(!riverDrafts[riverTarget]) riverDrafts[riverTarget] = [];
+      const draft = riverDrafts[riverTarget];
+      const clampedFx = Math.max(0,Math.min(1,fx)), clampedFy = Math.max(0,Math.min(1,fy));
+      const insertAt = nearestRiverEdgeInsertIndex(draft, clampedFx, clampedFy);
+      draft.splice(insertAt, 0, [clampedFx, clampedFy]);
+    }
+    return;
+  }
+
   // hit-test existing objects first — closest one within its own radius wins
   const hit = hitTestObject(cx, cy);
 
@@ -4988,13 +5166,23 @@ canvas.addEventListener('mousedown', e=>{
 });
 
 window.addEventListener('mousemove', e=>{
-  if(!editMode || !draggingObj) return;
+  if(!editMode) return;
   const rect = canvas.getBoundingClientRect();
   const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+
+  if(riverDrawMode){
+    if(draggingRiverIdx === null) return;
+    const draft = riverDrafts[riverTarget];
+    if(!draft) return;
+    draft[draggingRiverIdx] = [Math.max(0, Math.min(1, cx/W)), Math.max(0, Math.min(1, cy/H))];
+    return;
+  }
+
+  if(!draggingObj) return;
   draggingObj.x = Math.max(0, Math.min(1, cx/W));
   draggingObj.y = Math.max(0, Math.min(1, cy/H));
 });
-window.addEventListener('mouseup', ()=>{ draggingObj = null; });
+window.addEventListener('mouseup', ()=>{ draggingObj = null; draggingRiverIdx = null; });
 
 /* ---------- collision ----------
    Nothing fancy: every solid is a circle in pixel space, sized off the
@@ -6313,22 +6501,59 @@ const LOCKED_ASPECT = 1917/889; // ~2.156:1 — matches the wide-window screensh
                              // (see #gameWrap's black background above)
 function resize(){
   DPR = Math.min(window.devicePixelRatio||1, 2);
-  // The fit is always computed against the full window size, editor open or
-  // not — see the #gameWrap comment above for why it no longer shrinks by
-  // EDITOR_WIDTH here. W/H become the fitted box's own size (not the raw
-  // window size), so all of the game's existing fractional 0..1 coordinate
-  // math is unaffected by the locked ratio — only the canvas's on-screen
-  // size/position changes.
+  // While editing, the fit is computed against the space actually left over
+  // once the 440px side panel is accounted for — not the full window — so
+  // the WHOLE map is visible, letterboxed with the same black bars as
+  // always, rather than full-size-but-cropped with a horizontal scrollbar
+  // hiding the far edge. That made it impossible to see the whole map at
+  // once while lining up something like a hand-drawn river against it — see
+  // the river-drawing tool above. This still can't distort anything: gameW
+  // and gameH are always derived together from LOCKED_ASPECT, so shrinking
+  // to fit the narrower space scales the map uniformly (same as fitting any
+  // other window size) instead of squishing it into a different aspect
+  // ratio, which is the actual thing worth avoiding here.
+  //
+  // In edit mode we also want black bars on the SIDES, not just top/bottom —
+  // but fitting the map exactly to availW x winH only ever produces bars on
+  // one axis (whichever dimension isn't the binding constraint), never both,
+  // because the fitted box always touches at least one edge of its box
+  // exactly. So while editing we shrink the box we fit against by a small
+  // margin on every side first, then fit LOCKED_ASPECT into that smaller
+  // box — guaranteeing gameW < availW and gameH < winH at the same time,
+  // so bars show on all four sides regardless of which dimension would
+  // otherwise bind exactly.
   const winW = window.innerWidth;
   const winH = window.innerHeight;
-  let gameW = winW, gameH = winW / LOCKED_ASPECT;
-  if (gameH > winH) { gameH = winH; gameW = winH * LOCKED_ASPECT; }
+  const availW = editMode ? Math.max(0, winW - EDITOR_WIDTH) : winW;
+  const EDIT_MARGIN = 0.92; // fit against 92% of the available box while editing
+  const fitW = editMode ? availW * EDIT_MARGIN : availW;
+  const fitH = editMode ? winH * EDIT_MARGIN : winH;
+  let gameW = fitW, gameH = fitW / LOCKED_ASPECT;
+  if (gameH > fitH) { gameH = fitH; gameW = fitH * LOCKED_ASPECT; }
+  // Zoom (editor only) scales the fitted box up further so signs and river
+  // points can be placed more precisely — see the zoom slider above. Once
+  // that's bigger than the panel, #gameWrap.editing's own scrollbars
+  // (overflow:auto) are what let you pan around to reach the rest of the
+  // map; this doesn't touch normal play, where editorZoom is always 1.
+  if(editMode && editorZoom !== 1){
+    gameW *= editorZoom;
+    gameH *= editorZoom;
+  }
   W = gameW;
   H = gameH;
   canvas.style.width = W+'px';
   canvas.style.height = H+'px';
-  canvas.style.left = ((winW - gameW)/2)+'px';
-  canvas.style.top = ((winH - gameH)/2)+'px';
+  if(gameW <= availW && gameH <= winH){
+    // fits within the panel: center it, same as the non-zoomed view
+    canvas.style.left = ((availW - gameW)/2)+'px';
+    canvas.style.top = ((winH - gameH)/2)+'px';
+  } else {
+    // bigger than the panel: pin to the top-left so the scrollable area
+    // runs 0..gameW / 0..gameH, which is what the overflow:auto container
+    // scrolls across
+    canvas.style.left = '0px';
+    canvas.style.top = '0px';
+  }
   canvas.width = W*DPR;
   canvas.height = H*DPR;
   ctx.setTransform(DPR,0,0,DPR,0,0);
@@ -6395,6 +6620,21 @@ function drawDebugOverlay(){
       ctx.lineWidth = 2;
       ctx.stroke();
     }
+  }
+
+  // lvl -1's pond (see NEG1_POND_POLY) is cosmetic-only and isn't returned
+  // by activeWaterPoly(), so it needs its own outline here to stay visible
+  // for comparison while drawing over it.
+  if(currentMap === -1){
+    ctx.beginPath();
+    NEG1_POND_POLY.forEach((p,i)=>{
+      const px = p[0]*W, py = p[1]*H;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    });
+    ctx.closePath();
+    ctx.strokeStyle = 'cyan';
+    ctx.lineWidth = 2;
+    ctx.stroke();
   }
 
   if(boatOnGround){
@@ -6470,6 +6710,235 @@ function drawDebugOverlay(){
   ctx.restore();
 }
 
+// The river-drawing tool's own live preview — the polygon-in-progress for
+// whichever target is selected in the editor panel, drawn regardless of
+// showDebug so it's visible the moment "Draw river mode" is turned on.
+function drawRiverDraft(){
+  if(!riverDrawMode) return;
+  const draft = riverDrafts[riverTarget];
+  if(!draft || draft.length === 0) return;
+
+  ctx.save();
+  ctx.beginPath();
+  draft.forEach((p,i)=>{
+    const px = p[0]*W, py = p[1]*H;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  });
+  if(draft.length > 2){
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(60,200,90,0.25)';
+    ctx.fill();
+  }
+  ctx.strokeStyle = '#2f9e46';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  draft.forEach((p,i)=>{
+    const px = p[0]*W, py = p[1]*H;
+    ctx.beginPath();
+    ctx.arc(px, py, 6, 0, Math.PI*2);
+    ctx.fillStyle = i===0 ? '#c0392b' : '#2f9e46'; // first point marked red so the closing edge is obvious
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+/* ---------- the river's watercolor wash ----------
+   The water polygon (activeWaterPoly, above) has always been an invisible
+   hitbox — used for isInWater/boat-confinement/collision, but nothing was
+   ever actually painted over it, so the river never had a visual sign of
+   its own; it just happened to line up with a blue patch on whatever
+   reference screenshot it was traced from. This gives it a real painted
+   look: a soft, translucent blue-green wash filled straight over the
+   papyrus background, letting the paper texture show through underneath
+   the way a real watercolor wash shows the paper grain through it, with a
+   gentle gradient across it and a slightly deeper, more saturated rim at
+   the shoreline — the way a wet-on-dry wash actually pools and dries a
+   bit darker right at its own edge.
+
+   Deliberately no ctx.filter/blur here — see the depth-haze feature this
+   game tried and then dropped (drop the shadows / haze changelog above):
+   canvas filters silently force the whole canvas onto a slow, software
+   rendering path the moment they're used even once, which tanked the
+   frame rate to a near-standstill. This is just a couple of plain
+   translucent fills and a gradient — no filter, so no cost at all. */
+// Shared painter behind drawWaterWash() below — draws the wash for a single
+// polygon (a river channel or a pond) so the pond cluster on lvl -1 can get
+// the same treatment as the three real rivers without duplicating the
+// gradient/stroke setup.
+// Scratch offscreen canvas the river wash is built on before being copied
+// to the real canvas. Fading an edge needs a destination-out erase to
+// actually punch the wash back to transparent — but destination-out
+// erases whatever's already on whatever canvas it's drawn to, and the
+// real canvas already has the map art underneath the wash by this point
+// in the frame, so erasing there would tear a hole in the map itself, not
+// just fade the water. Building the wash on this separate, otherwise-empty
+// layer and compositing the result back with a normal (non-erasing)
+// drawImage keeps the erase from ever touching anything but the wash.
+let riverFadeCanvas = null, riverFadeCtx = null;
+function getRiverFadeCtx(){
+  if(!riverFadeCanvas){
+    riverFadeCanvas = document.createElement('canvas');
+    riverFadeCtx = riverFadeCanvas.getContext('2d');
+  }
+  if(riverFadeCanvas.width !== canvas.width || riverFadeCanvas.height !== canvas.height){
+    riverFadeCanvas.width = canvas.width;
+    riverFadeCanvas.height = canvas.height;
+  }
+  return riverFadeCtx;
+}
+// One flat color for every river — no gradient, no separate outline color.
+const RIVER_COLOR = '180,230,225';
+const RIVER_ALPHA = 0.36;
+function paintWaterPolyWash(poly, holes, fadeLeftFrac){
+  if(!poly || poly.length < 3) return;
+
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  let tipX=0, tipY=0;
+  for(const [x,y] of poly){
+    if(x<minX){ minX=x; tipX=x; tipY=y; } if(x>maxX) maxX=x;
+    if(y<minY) minY=y; if(y>maxY) maxY=y;
+  }
+
+  // Always built on the scratch layer — see getRiverFadeCtx above — since
+  // every edge now gets faded with a destination-out erase, not just lvl
+  // -1's tip.
+  const fc = getRiverFadeCtx();
+  fc.setTransform(DPR,0,0,DPR,0,0);
+  fc.clearRect(0,0,W,H);
+
+  // The fill is clipped to the river's own outline before a hole rectangle
+  // ever enters the picture. Filling the river+hole path with the even-odd
+  // rule alone isn't enough: any part of a hole rectangle that sticks
+  // outside the river counts as being inside exactly one subpath, which
+  // even-odd treats as "filled" — painting a patch of water-colored fill
+  // beyond the river's actual edge. That's exactly the "water above the
+  // river" artifact seen after hand-drawing a tighter WATER_NEG1_POLY than
+  // the fixed reed-staircase hole (NEG1_LAND_POCKETS) — the hole no longer
+  // sat fully inside the new channel. Clipping first means nothing can
+  // ever render outside the true river shape, however the holes compare.
+  fc.save();
+  fc.beginPath();
+  fc.moveTo(poly[0][0]*W, poly[0][1]*H);
+  for(let i=1; i<poly.length; i++) fc.lineTo(poly[i][0]*W, poly[i][1]*H);
+  fc.closePath();
+  fc.clip();
+
+  fc.beginPath();
+  fc.moveTo(poly[0][0]*W, poly[0][1]*H);
+  for(let i=1; i<poly.length; i++) fc.lineTo(poly[i][0]*W, poly[i][1]*H);
+  fc.closePath();
+  // Some rivers technically still cover a raised, walkable patch (e.g. lvl
+  // -1's reed staircase — see NEG1_LAND_POCKETS/isInLandPocket above), so
+  // carve that back out of the wash too, the same way isInWater() already
+  // carves it out of the gameplay hitbox — otherwise it'd paint the
+  // staircase as if it were submerged. Adding it as a second subpath and
+  // filling with the even-odd rule turns it into a clean hole (and the clip
+  // above keeps that hole's own shape from ever painting past the river).
+  if(holes){
+    for(const z of holes){
+      fc.moveTo(z.xMin*W, z.yMin*H);
+      fc.lineTo(z.xMax*W, z.yMin*H);
+      fc.lineTo(z.xMax*W, z.yMax*H);
+      fc.lineTo(z.xMin*W, z.yMax*H);
+      fc.closePath();
+    }
+  }
+  fc.fillStyle = 'rgba('+RIVER_COLOR+','+RIVER_ALPHA+')';
+  fc.fill('evenodd');
+
+  // Fade every edge of the fill smoothly to nothing, entirely INSIDE the
+  // fill's own area (still within the clip above) — no separate outline,
+  // no color drawn outside the river's true shape, just the water's own
+  // color thinning out to transparent as it nears the true boundary. Each
+  // pass erases (destination-out) a band along the outline; several
+  // passes, widest/faintest first, narrowest/strongest last, approximate a
+  // smooth ramp rather than one hard step. lineJoin 'round' keeps a sharp
+  // vertex (like lvl -1's tapering tip) from spiking the erased area —
+  // over-eroding slightly at a point only makes it fade a touch sooner,
+  // which is the desired look there anyway.
+  fc.lineJoin = 'round';
+  fc.beginPath();
+  fc.moveTo(poly[0][0]*W, poly[0][1]*H);
+  for(let i=1; i<poly.length; i++) fc.lineTo(poly[i][0]*W, poly[i][1]*H);
+  fc.closePath();
+  const baseLW = Math.max(2, Math.min(W,H)*0.006);
+  fc.globalCompositeOperation = 'destination-out';
+  [[baseLW*7, 0.18], [baseLW*4, 0.28], [baseLW*2, 0.45], [baseLW*0.8, 0.7]].forEach(([w,a])=>{
+    fc.lineWidth = w;
+    fc.strokeStyle = 'rgba(0,0,0,'+a+')';
+    fc.stroke();
+  });
+  fc.globalCompositeOperation = 'source-over';
+
+  // Some rivers (lvl -1's main channel) have a tip that doesn't reach the
+  // map's own edge, unlike lvl 1/2's rivers which bleed off both sides of
+  // the visible map — so without extra help that tip still reads as a
+  // hard, unnatural dead end even with the general edge fade above (that
+  // fade is only a thin band; the tip needs to dissolve over a much wider
+  // area). fadeLeftFrac erases a much bigger radius centered on the tip
+  // vertex itself, RADIALLY rather than as a left-to-right band, because
+  // the channel's top and bottom edges converge on that one point at
+  // different angles (it's a wedge, not a flat end) — fading outward in
+  // every direction from the point catches both edges evenly.
+  if(fadeLeftFrac){
+    const fadeGrad = fc.createRadialGradient(tipX*W, tipY*H, 0, tipX*W, tipY*H, fadeLeftFrac*W);
+    fadeGrad.addColorStop(0, 'rgba(0,0,0,1)');
+    fadeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    fc.globalCompositeOperation = 'destination-out';
+    fc.fillStyle = fadeGrad;
+    fc.fillRect(minX*W, minY*H, (maxX-minX)*W, (maxY-minY)*H);
+    fc.globalCompositeOperation = 'source-over';
+  }
+  fc.restore(); // drops the clip
+
+  // Composite the finished wash back onto the real canvas as a normal
+  // (non-erasing) paint. Both canvases share the same DPR transform, so
+  // copying in raw device-pixel space (identity transform) keeps them
+  // pixel-aligned without any extra scaling math.
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.drawImage(riverFadeCanvas, 0, 0);
+  ctx.restore();
+}
+// Grows a water polygon outward by pct (0.05 = 5%) around its own average
+// vertex position, for the visual wash only — the real activeWaterPoly()
+// stays untouched so gameplay hit-testing (isInWater) and the debug cyan
+// hitbox outline keep matching the original, hand-tuned shape exactly.
+function scalePolyOutward(poly, pct){
+  let cx=0, cy=0;
+  for(const [x,y] of poly){ cx+=x; cy+=y; }
+  cx /= poly.length; cy /= poly.length;
+  const f = 1 + pct;
+  return poly.map(([x,y]) => [cx + (x-cx)*f, cy + (y-cy)*f]);
+}
+function drawWaterWash(){
+  const poly = scalePolyOutward(activeWaterPoly(), 0.05);
+  // The reed staircase (NEG1_LAND_POCKETS) used to be punched out of the
+  // wash as a dry hole — it's still dry underfoot for gameplay (see
+  // isInLandPocket, used by isInWater below), but visually the staircase
+  // reads as a little bridge/ramp INTO the river, and water showing through
+  // under it there looks right, so the wash itself no longer carves it out.
+  //
+  // lvl -1's main channel is the one river whose left tip lands in the
+  // middle of the map instead of bleeding off the map's own edge (lvl 1
+  // and lvl 2's rivers both do), so it's the one that gets the left-edge
+  // fade — see paintWaterPolyWash's fadeLeftFrac.
+  paintWaterPolyWash(poly, null, currentMap === -1 ? 0.34 : 0);
+
+  // lvl -1 also has a second, separate cluster of water-ripple glyphs (a
+  // small pond, unconnected to the main river channel — see NEG1_POND_POLY
+  // above) that had no visual treatment at all before. It's cosmetic only:
+  // no boat access, no wading slowdown, no crocodile spawns there, just a
+  // matching wash so the color follows the glyphs that are already placed.
+  if(currentMap === -1){
+    paintWaterPolyWash(scalePolyOutward(NEG1_POND_POLY, 0.05), null);
+  }
+}
+
 let t0 = performance.now();
 function render(time){
   const dt = Math.min(0.05, (time-t0)/1000); t0 = time;
@@ -6488,6 +6957,7 @@ function render(time){
   // (that always carries over, untouched by setMap)
   ctx.fillStyle = papyrusPattern || '#e9e4d8';
   ctx.fillRect(0,0,W,H);
+  drawWaterWash();
 
   if(fontsReady){
     const dist = Math.hypot((player.x-npc.x)*W, (player.y-npc.y)*H);
@@ -6646,6 +7116,7 @@ function render(time){
     drawFishJump();
     drawSunGuardian();
     drawDebugOverlay();
+    drawRiverDraft();
 
     ctx.save();
     ctx.font = '600 16px system-ui, sans-serif';
