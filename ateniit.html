@@ -1712,17 +1712,7 @@ const MAP2_OBJECTS = [
     "mirror": true,
     "noHitbox": false,
     "opaque": true,
-    "items": [
-      {
-        "kind": "level",
-        "id": 555,
-        "glyph": "𓌽",
-        "scale": 0.7,
-        "mirror": false,
-        "noHitbox": true,
-        "pickup": true
-      }
-    ]
+    "items": []
   },
   {
     "id": 563,
@@ -4054,7 +4044,10 @@ function tryPickup(){
   const nb = nearestBase();
   if(nb){
     const { base, kind } = nb;
-    if(base.items && base.items.length){
+    // a petMarker riding on top (the cat pet auto-loaded aboard the boat —
+    // see loadCatPetOntoBoat) isn't real cargo, so it's skipped rather than
+    // handed over like an ordinary stacked item
+    if(base.items && base.items.length && !base.items[base.items.length-1].petMarker){
       // a stack always gives up whatever was placed on it last
       pickUpItem(base.items.pop());
       return;
@@ -4352,14 +4345,17 @@ function drawSpeechBubble(cx, bottomY, text, fontSize, key){
   let textW = 0;
   lines.forEach(l=>{ textW = Math.max(textW, ctx.measureText(l).width); });
   const w = textW+padX*2, h = lines.length*lineH+padY*2;
-  const x = cx-w/2;
   // the bubble's pixel size doesn't shrink along with a smaller game
-  // window, so a speaker standing near the top of the map can end up with
-  // the whole box computed above y=0 — invisible, clipped off the top of
-  // the canvas — once the window (and so H) gets small enough. Clamping
-  // keeps it fully on-screen; the tail (still anchored on cx below) just
-  // gets a little longer to reach back down to the speaker.
+  // window, so a speaker standing near the top or a side edge of the map
+  // can end up with the whole box computed off-screen — clipped above y=0,
+  // or past the left/right edge — once the window gets small enough.
+  // Clamping the center point (cx) keeps the box, its tail, and the text
+  // all shifting together and staying fully on-screen; the tail just gets
+  // a little longer/off-angle to reach back down to the speaker in that case.
   const BUBBLE_TOP_MARGIN = 4;
+  const BUBBLE_SIDE_MARGIN = 4;
+  cx = Math.max(w/2 + BUBBLE_SIDE_MARGIN, Math.min(W - w/2 - BUBBLE_SIDE_MARGIN, cx));
+  const x = cx-w/2;
   const y = Math.max(BUBBLE_TOP_MARGIN, bottomY-h);
   const r = 8;
 
@@ -5141,6 +5137,54 @@ document.getElementById('importBtn').addEventListener('click', ()=>{
 
 let draggingObj = null;
 
+// click-and-drag placement: holding the mouse down on empty canvas and
+// dragging stamps out a whole row of copies of the current palette
+// settings instead of just the one object a plain click drops. The line is
+// always snapped to the nearest horizontal/vertical/45° diagonal from
+// wherever the drag started (not just whatever the mouse actually traced),
+// so a row of pillars/reeds comes out straight without needing a steady
+// hand — and each new copy is spaced by its own on-screen size at that
+// point, so it tiles sensibly whether it's a tiny or huge sign, near or far.
+let dragPlaceActive = false;
+let dragPlaceStartPx = null;   // {x,y} in canvas pixels, where the drag began
+let dragPlaceLastPx = null;    // pixel position of the most recently stamped copy
+const DRAG_PLACE_SPACING_MULT = 1.0; // spacing between stamps, in multiples of the object's own size
+
+// snaps (dx,dy) to whichever of the 8 compass/diagonal directions it's
+// closest to, returning that direction as a unit vector
+function snapDragDirection(dx, dy){
+  const angle = Math.atan2(dy, dx);
+  const snapped = Math.round(angle / (Math.PI/4)) * (Math.PI/4);
+  return { x: Math.cos(snapped), y: Math.sin(snapped) };
+}
+
+// stamps as many evenly-spaced copies as the drag has covered since the
+// last one, walking along the snapped ray from dragPlaceStartPx — handles
+// a fast drag covering several spacing-units within one mousemove event
+function advanceDragPlacement(curPx){
+  const dx = curPx.x - dragPlaceStartPx.x, dy = curPx.y - dragPlaceStartPx.y;
+  if(dx === 0 && dy === 0) return;
+  const dir = snapDragDirection(dx, dy);
+  // how far the actual cursor has traveled along the snapped line, not its
+  // raw (possibly off-line) distance from the start
+  const projected = dx*dir.x + dy*dir.y;
+  let placed = 0;
+  while(placed < 200){ // hard safety cap on one drag gesture
+    const lastDx = dragPlaceLastPx.x - dragPlaceStartPx.x, lastDy = dragPlaceLastPx.y - dragPlaceStartPx.y;
+    const lastProjected = lastDx*dir.x + lastDy*dir.y;
+    const nextY = (dragPlaceStartPx.y + dir.y*(lastProjected)) / H; // fy at the last stamp, for perspective-correct spacing
+    const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(nextY) * placeScale;
+    const spacing = size * DRAG_PLACE_SPACING_MULT;
+    if(projected < lastProjected + spacing) break;
+    const stampProjected = lastProjected + spacing;
+    const stampPx = { x: dragPlaceStartPx.x + dir.x*stampProjected, y: dragPlaceStartPx.y + dir.y*stampProjected };
+    const fx = Math.max(0, Math.min(1, stampPx.x/W)), fy = Math.max(0, Math.min(1, stampPx.y/H));
+    levelObjects.push({ id: nextObjId++, glyph: placeGlyph, x: fx, y: fy, scale: placeScale, reveal: placeReveal, pickup: placePickup, mirror: placeMirror, noHitbox: placeNoHitbox, opaque: placeOpaque, items: [] });
+    dragPlaceLastPx = stampPx;
+    placed++;
+  }
+}
+
 function hitTestObject(cx, cy){
   let hit = null, hitDist = Infinity;
   for(const obj of levelObjects){
@@ -5184,6 +5228,12 @@ canvas.addEventListener('mousedown', e=>{
     const obj = { id: nextObjId++, glyph: placeGlyph, x: fx, y: fy, scale: placeScale, reveal: placeReveal, pickup: placePickup, mirror: placeMirror, noHitbox: placeNoHitbox, opaque: placeOpaque, items: [] };
     levelObjects.push(obj);
     selectObject(obj);
+    // this first object doubles as the anchor for a possible drag-placement
+    // row — if the mouse never moves before mouseup it just stays the one
+    // object a plain click always placed
+    dragPlaceActive = true;
+    dragPlaceStartPx = { x: cx, y: cy };
+    dragPlaceLastPx = { x: cx, y: cy };
   }
 });
 
@@ -5200,11 +5250,22 @@ window.addEventListener('mousemove', e=>{
     return;
   }
 
+  if(dragPlaceActive){
+    advanceDragPlacement({ x: cx, y: cy });
+    return;
+  }
+
   if(!draggingObj) return;
   draggingObj.x = Math.max(0, Math.min(1, cx/W));
   draggingObj.y = Math.max(0, Math.min(1, cy/H));
 });
-window.addEventListener('mouseup', ()=>{ draggingObj = null; draggingRiverIdx = null; });
+window.addEventListener('mouseup', ()=>{
+  draggingObj = null;
+  draggingRiverIdx = null;
+  dragPlaceActive = false;
+  dragPlaceStartPx = null;
+  dragPlaceLastPx = null;
+});
 
 /* ---------- collision ----------
    Nothing fancy: every solid is a circle in pixel space, sized off the
@@ -5998,7 +6059,8 @@ function updateFlowerWomanSpeech(dt){
    Sits on lvl 1. Hand it one of the pickup fish — the same 3 signs the
    man's quest uses on lvl -1, carried across by boat like anything else
    held — and it eats it for 5 points. Not a one-time quest: every fish
-   handed over pays out again. */
+   handed over pays out again — and on the 3rd fish ever, it becomes a pet
+   for good (see "the cat, as a pet" below). */
 const CAT_ID = 411;
 const CAT_TALK_RANGE = 0.20; // fraction of min(W,H)
 const CAT_FEED_REWARD = 5;
@@ -6010,12 +6072,93 @@ const catObj = MAP1_OBJECTS.find(o => o.id === CAT_ID) || null;
 // called from tryDropHeldItem() — handing it a fish while close enough
 // consumes it instead of just setting it down; returns true if so
 function tryGiveFishToCat(item){
-  if(currentMap !== 1 || !catObj || item.kind !== 'level' || !FISH_IDS.includes(item.id)) return false;
+  if(item.kind !== 'level' || !FISH_IDS.includes(item.id) || !catObj) return false;
+  // once it's a pet it roams the whole world with you, not just lvl 1 —
+  // see becomeCatPet() below
+  if(!catIsPet && currentMap !== 1) return false;
   const dist = Math.hypot((player.x-catObj.x)*W, (player.y-catObj.y)*H);
   if(dist >= Math.min(W,H)*CAT_TALK_RANGE) return false;
   score += CAT_FEED_REWARD;
-  catSpeechT = CAT_SPEECH_DURATION; // freezes its zigzag and shows its line for a beat
+  catSpeechT = CAT_SPEECH_DURATION; // freezes its zigzag/follow and shows its line for a beat
+  if(!catIsPet){
+    catFishFed++;
+    if(catFishFed >= CAT_PET_FEEDS_NEEDED) becomeCatPet();
+  }
   return true;
+}
+
+/* ---------- the cat, as a pet ----------
+   The 3rd fish ever handed over wins it over for good: instead of staying
+   put on lvl 1, it follows the player everywhere from then on, closing the
+   gap once it falls more than a couple of its own body-lengths behind
+   (never crowding right on top of you). It auto-rides the boat as cargo
+   while boarded (see tryAutoBoard/updateBoardedMovement) and hops back
+   down beside the player the instant they disembark — no manual pickup
+   needed either way, unlike ordinary cargo. */
+const CAT_PET_FEEDS_NEEDED = 3;
+const CAT_PET_FOLLOW_GAP_MULT = 2; // stays put until it's this many multiples of its own size behind
+const CAT_PET_FOLLOW_SPEED = 0.40; // fraction of canvas width/sec at full (foreground) depth — a bit brisker than the player's own 0.30 base so it can actually catch back up
+let catFishFed = 0;
+let catIsPet = false;
+let catOnBoat = false; // true while riding as boat cargo instead of walking/drawn in the world
+
+function becomeCatPet(){
+  catIsPet = true;
+  // it's not a fixed lvl-1 fixture living in levelObjects any more — pull it
+  // out and treat it like the elephant/croc from here on: a standalone
+  // entity drawn and updated every frame regardless of which map's
+  // levelObjects happens to be active
+  const idx = MAP1_OBJECTS.indexOf(catObj);
+  if(idx !== -1) MAP1_OBJECTS.splice(idx, 1);
+  // fed while already sailing — get it straight onto the boat instead of
+  // waiting for the next tryAutoBoard() call, which won't come again until
+  // the player disembarks and re-boards
+  if(boarded) loadCatPetOntoBoat();
+}
+
+function loadCatPetOntoBoat(){
+  if(!boatOnGround || catOnBoat) return;
+  boatOnGround.items = boatOnGround.items || [];
+  // petMarker keeps this from being yanked off as ordinary cargo by
+  // tryPickup's generic stack-popping (see its guard against this flag)
+  boatOnGround.items.push({ kind:'level', glyph: catObj.glyph, scale: catObj.scale, mirror: catObj.mirror, petMarker: true });
+  catOnBoat = true;
+}
+
+function unloadCatPetFromBoat(){
+  if(!catOnBoat) return;
+  if(boatOnGround && boatOnGround.items){
+    const idx = boatOnGround.items.findIndex(it => it.petMarker);
+    if(idx !== -1) boatOnGround.items.splice(idx, 1);
+  }
+  catOnBoat = false;
+  // right at the player's own just-disembarked spot — the follow AI takes
+  // over from here and settles it back to a trailing distance on its own
+  catObj.x = player.x;
+  catObj.y = player.y;
+}
+
+function updatePetCat(dt){
+  if(!catIsPet || boarded) return; // rides passively while boarded — see loadCatPetOntoBoat
+  if(catSpeechT > 0){
+    // frozen in place, "talking", right after being fed — updateCatMove()
+    // used to own this countdown, but it stops running the moment the cat
+    // becomes a pet (see its own guard), so this is now the only place
+    // ticking it back down
+    catSpeechT = Math.max(0, catSpeechT - dt);
+    return;
+  }
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(catObj.y) * catObj.scale;
+  const dx = (player.x-catObj.x)*W, dy = (player.y-catObj.y)*H;
+  const dist = Math.hypot(dx, dy);
+  const followGap = size * CAT_PET_FOLLOW_GAP_MULT;
+  if(dist > followGap){
+    const speed = Math.min(W,H) * CAT_PET_FOLLOW_SPEED * scaleForY(catObj.y) * dt;
+    const step = Math.min(dist-followGap, speed);
+    catObj.x += (dx/dist) * step / W;
+    catObj.y += (dy/dist) * step / H;
+    if(dx > 0) catObj.mirror = true; else if(dx < 0) catObj.mirror = false; // faces whichever way it's walking — default glyph faces left, same convention as its old zigzag
+  }
 }
 
 /* ---------- the cat roams a little zigzag ----------
@@ -6041,7 +6184,7 @@ function triangleWave(t, period){
 }
 
 function updateCatMove(dt){
-  if(currentMap !== 1 || !catObj) return;
+  if(currentMap !== 1 || !catObj || catIsPet) return; // once it's a pet, updatePetCat() drives it instead
   if(catObj._baseX === undefined){ catObj._baseX = catObj.x; catObj._baseY = catObj.y; }
   if(catSpeechT > 0){
     // frozen in place, "talking", while its fed reaction plays out — the
@@ -6259,6 +6402,7 @@ function tryAutoBoard(){
       boatOnGround.items.push(item);
       settleDroppedItem(item, true);
     }
+    if(catIsPet) loadCatPetOntoBoat();
     boarded = true;
     // the player's safe aboard, but a crocodile already hunting a loose cow
     // left behind in the water keeps right on going
@@ -6395,6 +6539,7 @@ function updateBoardedMovement(dt){
     // it's time to disembark
     boarded = false;
     boardCooldown = 0.6;
+    if(catIsPet) unloadCatPetFromBoat();
   }
   player.x = boatOnGround.x;
   player.y = boatOnGround.y;
@@ -6484,6 +6629,7 @@ function update(dt){
   updateFishJump(dt);
   updateFishSwim(dt);
   updateCatMove(dt);
+  updatePetCat(dt);
   updateHippoSway(dt);
   updateLocustHop(dt);
   updateFrogHop(dt);
@@ -7249,6 +7395,10 @@ function render(time){
     // position once awake, or its placed one while still asleep — either
     // way it's excluded from the static per-object loop just below
     if(elephant && currentMap === -1) drawList.push({ y: elephant.y, draw: drawElephant });
+    // the cat, once it's a pet, follows across every map the same way — see
+    // updatePetCat() — except while boarded, when it rides drawn as boat
+    // cargo instead (drawGroundBoat/drawStackedItems already cover that)
+    if(catIsPet && !boarded) drawList.push({ y: catObj.y, draw: () => drawLevelObject(catObj) });
     // the man dances in place the moment the 2nd fish is delivered, then
     // walks out to confront the elephant and back again — dynamically
     // positioned/drawn throughout, same idea as the elephant above
