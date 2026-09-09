@@ -3861,7 +3861,7 @@ function updateDuck(dt){
 const LADY_ID = 115;
 const BIRD_IDS = [6, 152, 155, 157, 158, 774, 775]; // every pickup-bird sign that counts toward her quest
 const BIRDS_NEEDED = 5; // how many of the above she actually asks for
-const LADY_TALK_RANGE = 0.24; // fraction of min(W,H) — matches the main npc's
+const LADY_TALK_RANGE = 0.15; // fraction of min(W,H) — matches the main npc's; narrowed from 0.24 so it's less likely to overlap with another npc's own range at once
 const LADY_QUEST_LINE = '𓅠𓅓𓏛𓏤5𓄿𓊪𓂧𓅯';
 let birdsDelivered = 0;
 let birdQuestDone = false;
@@ -4146,6 +4146,10 @@ function tryDropHeldItem(){
   if(tryGiveRewardToStaffMan(item)) return;
   // lvl 2: hand a flower to the woman for 5 points — repeatable
   if(tryGiveFlowerToWoman(item)) return;
+  // feed the goat one of the 3 flower signs for 5 points — not a quest,
+  // just a snack, same idea as the lvl-1 cat's fish; the 3rd one ever
+  // handed over wins it over as a pet for good
+  if(tryGiveFlowerToGoat(item)) return;
 
   // the boat only ever sits as its own base in the world — everything else
   // (the cow, any pickupable sign) is happy to stack onto whatever's nearby.
@@ -4249,7 +4253,7 @@ function updateCow(dt){
   }
 }
 
-const NPC_TALK_RANGE = 0.24; // fraction of min(W,H) — how close before the bubble shows
+const NPC_TALK_RANGE = 0.15; // fraction of min(W,H) — how close before the bubble shows; narrowed from 0.24, see LADY_TALK_RANGE
 
 /* ---------- NPC delivery celebration ----------
    Drop the cow next to him and he plays a little sequence — A28, A32,
@@ -5481,7 +5485,7 @@ function updateElephant(dt){
    Leaving and coming back to lvl -1 (see setMap(-1)) starts the whole thing
    over: the elephant, and the quest to send it away again. */
 const MAN_ID = 279; // the standing 𓀙 figure just south of the yellow zone
-const MAN_TALK_RANGE = 0.24; // fraction of min(W,H) — matches the lady's on lvl 1
+const MAN_TALK_RANGE = 0.15; // fraction of min(W,H) — matches the lady's on lvl 1; narrowed from 0.24, see LADY_TALK_RANGE
 const MAN_QUEST_LINE = '𓏎𓇋𓆞2';
 const FISH_IDS = [382, 383, 384]; // the level's 3 pickup fish — any 2 satisfy him
 const FISH_QUEST_TARGET = 2;
@@ -5729,6 +5733,109 @@ function updateGoatGraze(dt){
   }
 }
 
+/* ---------- the goat, fed and as a pet ----------
+   Same shape as the lvl-1 cat (see "the cat, as a pet" below), but fed the
+   3 flower signs (FLOWER_GLYPHS, above — the same 3 the lvl-2 woman also
+   accepts) instead of fish, and starting life as a portable pickup
+   (GOAT_ID, above) rather than a fixed NPC. Because it can be carried off
+   and dropped anywhere before it's ever fed, there's no single fixed
+   "the goat" object reference the way catObj is one from the very start —
+   goatObj here is just whichever live goat entity was last found close
+   enough to actually feed, captured at that moment so the "thank you"
+   bubble (and, once it's a pet, the follow AI) always has a real object to
+   read x/y from. Once the 3rd flower is handed over it's pulled out of
+   levelObjects for good and roams every map from then on, exactly like the
+   cat — auto-riding the boat as cargo while boarded and hopping back down
+   beside the player on disembark. */
+const GOAT_TALK_RANGE = 0.12; // fraction of min(W,H) — narrowed from 0.20, see LADY_TALK_RANGE
+const GOAT_FEED_REWARD = 5;
+const GOAT_PET_FEEDS_NEEDED = 3;
+const GOAT_SPEECH_DURATION = 5; // seconds it pauses and "talks" after being fed
+const GOAT_SPEECH_LINE = '𓃶𓊃𓈙𓆰';
+const GOAT_PET_FOLLOW_GAP_MULT = 2.8; // a bit further back than the cat's own 2x gap, so a second pet doesn't ride stacked directly on top of the first
+const GOAT_PET_FOLLOW_SPEED = 0.40; // fraction of canvas width/sec at full (foreground) depth, same as the cat
+let goatFedCount = 0;
+let goatIsPet = false;
+let goatOnBoat = false; // true while riding as boat cargo instead of walking/drawn in the world
+let goatSpeechT = 0;
+// whichever live goat entity was last fed — see the comment above
+let goatObj = null;
+
+// called from tryDropHeldItem() — handing it one of the 3 flower signs while
+// close enough consumes it instead of just setting it down; returns true if so
+function tryGiveFlowerToGoat(item){
+  if(item.kind !== 'level' || !FLOWER_GLYPHS.includes(item.glyph)) return false;
+  // once it's a pet, goatObj IS the standalone entity; before that, it's
+  // wherever GOAT_ID currently rests on the active map (it can't be fed
+  // while the player is the one holding it — nothing to walk up to yet)
+  const obj = goatIsPet ? goatObj : levelObjects.find(o => o.id === GOAT_ID);
+  if(!obj) return false;
+  const dist = Math.hypot((player.x-obj.x)*W, (player.y-obj.y)*H);
+  if(dist >= Math.min(W,H)*GOAT_TALK_RANGE) return false;
+  goatObj = obj;
+  score += GOAT_FEED_REWARD;
+  goatSpeechT = GOAT_SPEECH_DURATION; // freezes its wander/follow and shows its line for a beat
+  if(!goatIsPet){
+    goatFedCount++;
+    if(goatFedCount >= GOAT_PET_FEEDS_NEEDED) becomeGoatPet(obj);
+  }
+  return true;
+}
+
+function becomeGoatPet(obj){
+  goatIsPet = true;
+  goatObj = obj;
+  // no longer an ordinary pickup living in levelObjects — pulled out and
+  // treated like the cat from here on: a standalone entity drawn/updated
+  // every frame regardless of which map's levelObjects happens to be active
+  const idx = levelObjects.indexOf(obj);
+  if(idx !== -1) levelObjects.splice(idx, 1);
+  goatWander = null; // no more wander state to track once it's not in levelObjects at all
+  // fed while already sailing — get it straight onto the boat instead of
+  // waiting for the next tryAutoBoard() call
+  if(boarded) loadGoatPetOntoBoat();
+}
+
+function loadGoatPetOntoBoat(){
+  if(!boatOnGround || goatOnBoat) return;
+  boatOnGround.items = boatOnGround.items || [];
+  // petMarker (plus petKind, so it can't be confused with the cat's own
+  // marker if both are ever aboard at once) keeps this from being yanked
+  // off as ordinary cargo by tryPickup's generic stack-popping
+  boatOnGround.items.push({ kind:'level', glyph: goatObj.glyph, scale: goatObj.scale, mirror: goatObj.mirror, petMarker: true, petKind: 'goat' });
+  goatOnBoat = true;
+}
+
+function unloadGoatPetFromBoat(){
+  if(!goatOnBoat) return;
+  if(boatOnGround && boatOnGround.items){
+    const idx = boatOnGround.items.findIndex(it => it.petMarker && it.petKind === 'goat');
+    if(idx !== -1) boatOnGround.items.splice(idx, 1);
+  }
+  goatOnBoat = false;
+  goatObj.x = player.x;
+  goatObj.y = player.y;
+}
+
+function updatePetGoat(dt){
+  if(!goatIsPet || boarded) return; // rides passively while boarded — see loadGoatPetOntoBoat
+  if(goatSpeechT > 0){
+    goatSpeechT = Math.max(0, goatSpeechT - dt);
+    return;
+  }
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(goatObj.y) * goatObj.scale;
+  const dx = (player.x-goatObj.x)*W, dy = (player.y-goatObj.y)*H;
+  const dist = Math.hypot(dx, dy);
+  const followGap = size * GOAT_PET_FOLLOW_GAP_MULT;
+  if(dist > followGap){
+    const speed = Math.min(W,H) * GOAT_PET_FOLLOW_SPEED * scaleForY(goatObj.y) * dt;
+    const step = Math.min(dist-followGap, speed);
+    goatObj.x += (dx/dist) * step / W;
+    goatObj.y += (dy/dist) * step / H;
+    if(dx > 0) goatObj.mirror = true; else if(dx < 0) goatObj.mirror = false;
+  }
+}
+
 /* ---------- the 4 running figures (level object ids 757/758/759/760, U+130D7) ----------
    A fast, continuous back-and-forth run, no pause at either end (unlike
    the locusts' hop): 8 of their own body-lengths forward while climbing
@@ -5786,7 +5893,7 @@ function updateFastRunners(dt){
    same always-shown-while-nearby treatment as the lady/man/woman quest
    lines, just not gated on a one-time "quest done" flag since this repeats. */
 const BOWL_MAN_ID = 547;
-const BOWL_MAN_TALK_RANGE = 0.10; // fraction of min(W,H) — shared by the ask-bubble range and the give-item range
+const BOWL_MAN_TALK_RANGE = 0.07; // fraction of min(W,H) — shared by the ask-bubble range and the give-item range; narrowed from 0.10, see LADY_TALK_RANGE
 const BOWL_MAN_REWARD = 5;
 const BOWL_MAN_SPEECH_DURATION = 5; // seconds it "talks" after being given something
 const BOWL_MAN_SPEECH_LINE = '𓎛𓎿𓊃𓀁𓁷𓏤𓏏𓏲𓎡';
@@ -5820,7 +5927,7 @@ function updateBowlManSpeech(dt){
    purely cosmetic (see updateCatEatCutscene/drawCatEatCutscene below), so
    it can't get stuck holding the reward hostage on some animation edge case. */
 const ARMS_UP_MAN_ID = 545;
-const ARMS_UP_MAN_TALK_RANGE = 0.20; // fraction of min(W,H)
+const ARMS_UP_MAN_TALK_RANGE = 0.12; // fraction of min(W,H) — narrowed from 0.20, see LADY_TALK_RANGE
 const ARMS_UP_MAN_ASK_LINE = 'help';
 const CAT_IDS = [526, 548, 605]; // lvl 2's 3 pickup cat signs
 const CAT_GLYPH = String.fromCodePoint(0x130E0); // same cat sign as lvl 1's npc
@@ -5897,7 +6004,7 @@ function drawCatEatCutscene(){
    (3 further back, 2 closer up front) rather than a single spread-out
    line. A one-time quest, and it pays out 5 points on top of the spectacle. */
 const GIRAFFE_MAN_ID = 619;
-const GIRAFFE_MAN_TALK_RANGE = 0.20; // fraction of min(W,H)
+const GIRAFFE_MAN_TALK_RANGE = 0.12; // fraction of min(W,H) — narrowed from 0.20, see LADY_TALK_RANGE
 const GIRAFFE_MAN_ASK_LINE = '𓃱𓏶𓅓𓏭𓀁𓌾';
 const GIRAFFE_IDS = [620, 621, 622, 624, 629]; // every giraffe currently standing in the river
 const GIRAFFE_WALK_DURATION = 2.4; // seconds each giraffe takes to walk clear of the river — a longer walk now that they're headed further inland
@@ -5980,10 +6087,10 @@ function updateGiraffeWalk(dt){
    different sign, paying out a golden N6 — reusing the same sun-disk
    reward glyph already used by the lady's and the woman's quests. */
 const FROG_KEEPER_ID = 564;
-const FROG_KEEPER_TALK_RANGE = 0.20;
+const FROG_KEEPER_TALK_RANGE = 0.12; // narrowed from 0.20, see LADY_TALK_RANGE
 const FROG_KEEPER_ASK_LINE = '𓈎𓂋𓂋𓆏';
 const STAFF_MAN_ID = 686;
-const STAFF_MAN_TALK_RANGE = 0.20;
+const STAFF_MAN_TALK_RANGE = 0.12; // narrowed from 0.20, see LADY_TALK_RANGE
 const STAFF_MAN_ASK_LINE = '𓋴𓂝𓅓𓄈𓀁';
 const TRANSFORM_ID = 684; // the figure standing with the staff-bearing man
 const TRANSFORM_GLYPH = String.fromCodePoint(0x13019); // what it changes into once the quest completes
@@ -6032,7 +6139,7 @@ function tryGiveRewardToStaffMan(item){
    5 points. Repeatable, same "feed her something" shape as the bowl man
    and the lvl-1 cat — not a one-time quest. */
 const FLOWER_WOMAN_ID = 563;
-const FLOWER_WOMAN_TALK_RANGE = 0.20; // fraction of min(W,H)
+const FLOWER_WOMAN_TALK_RANGE = 0.12; // fraction of min(W,H) — narrowed from 0.20, see LADY_TALK_RANGE
 const FLOWER_WOMAN_REWARD = 5;
 const FLOWER_WOMAN_SPEECH_DURATION = 5; // seconds she "talks" after being given a flower
 const FLOWER_WOMAN_SPEECH_LINE = '𓊃𓈙𓊃𓈙𓆰';
@@ -6062,7 +6169,7 @@ function updateFlowerWomanSpeech(dt){
    handed over pays out again — and on the 3rd fish ever, it becomes a pet
    for good (see "the cat, as a pet" below). */
 const CAT_ID = 411;
-const CAT_TALK_RANGE = 0.20; // fraction of min(W,H)
+const CAT_TALK_RANGE = 0.12; // fraction of min(W,H) — narrowed from 0.20, see LADY_TALK_RANGE
 const CAT_FEED_REWARD = 5;
 const CAT_SPEECH_DURATION = 5; // seconds it pauses and "talks" after being fed
 const CAT_SPEECH_LINE = '𓏇𓇋𓅱𓃠';
@@ -6121,14 +6228,16 @@ function loadCatPetOntoBoat(){
   boatOnGround.items = boatOnGround.items || [];
   // petMarker keeps this from being yanked off as ordinary cargo by
   // tryPickup's generic stack-popping (see its guard against this flag)
-  boatOnGround.items.push({ kind:'level', glyph: catObj.glyph, scale: catObj.scale, mirror: catObj.mirror, petMarker: true });
+  // petKind lets this be told apart from any other pet's own marker (the
+  // goat, see below) if more than one is ever aboard at once
+  boatOnGround.items.push({ kind:'level', glyph: catObj.glyph, scale: catObj.scale, mirror: catObj.mirror, petMarker: true, petKind: 'cat' });
   catOnBoat = true;
 }
 
 function unloadCatPetFromBoat(){
   if(!catOnBoat) return;
   if(boatOnGround && boatOnGround.items){
-    const idx = boatOnGround.items.findIndex(it => it.petMarker);
+    const idx = boatOnGround.items.findIndex(it => it.petMarker && it.petKind === 'cat');
     if(idx !== -1) boatOnGround.items.splice(idx, 1);
   }
   catOnBoat = false;
@@ -6214,7 +6323,7 @@ function updateCatMove(dt){
    Bring her 5 of the pickup snake signs scattered around lvl -1 and she
    hands back a golden N5 — same idea as the lady's bird quest on lvl 1. */
 const WOMAN_ID = 410;
-const WOMAN_TALK_RANGE = 0.24; // fraction of min(W,H) — matches the lady's/man's
+const WOMAN_TALK_RANGE = 0.15; // fraction of min(W,H) — matches the lady's/man's; narrowed from 0.24, see LADY_TALK_RANGE
 const WOMAN_QUEST_LINE = '𓏎𓇋5𓎛𓆑𓄫𓅱𓆙';
 const SNAKE_IDS = [332, 402, 403, 406, 409]; // the level's 5 pickup snake signs
 const N5 = String.fromCodePoint(0x131F3); // sun disk (N5) — the woman's reward, rendered in gold
@@ -6403,6 +6512,7 @@ function tryAutoBoard(){
       settleDroppedItem(item, true);
     }
     if(catIsPet) loadCatPetOntoBoat();
+    if(goatIsPet) loadGoatPetOntoBoat();
     boarded = true;
     // the player's safe aboard, but a crocodile already hunting a loose cow
     // left behind in the water keeps right on going
@@ -6540,6 +6650,7 @@ function updateBoardedMovement(dt){
     boarded = false;
     boardCooldown = 0.6;
     if(catIsPet) unloadCatPetFromBoat();
+    if(goatIsPet) unloadGoatPetFromBoat();
   }
   player.x = boatOnGround.x;
   player.y = boatOnGround.y;
@@ -6630,6 +6741,7 @@ function update(dt){
   updateFishSwim(dt);
   updateCatMove(dt);
   updatePetCat(dt);
+  updatePetGoat(dt);
   updateHippoSway(dt);
   updateLocustHop(dt);
   updateFrogHop(dt);
@@ -7409,6 +7521,10 @@ function render(time){
     // updatePetCat() — except while boarded, when it rides drawn as boat
     // cargo instead (drawGroundBoat/drawStackedItems already cover that)
     if(catIsPet && !boarded) drawList.push({ y: catObj.y, draw: () => drawLevelObject(catObj) });
+    // the goat, once it's a pet, follows across every map the same way —
+    // see updatePetGoat() — except while boarded, when it rides drawn as
+    // boat cargo instead (drawGroundBoat/drawStackedItems already cover that)
+    if(goatIsPet && !boarded) drawList.push({ y: goatObj.y, draw: () => drawLevelObject(goatObj) });
     // the man dances in place the moment the 2nd fish is delivered, then
     // walks out to confront the elephant and back again — dynamically
     // positioned/drawn throughout, same idea as the elephant above
@@ -7455,6 +7571,14 @@ function render(time){
       const catSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(catObj.y) * catObj.scale;
       const distCat = Math.hypot((player.x-catObj.x)*W, (player.y-catObj.y)*H);
       bubbleCandidates.push({ dist: distCat, y: catObj.y, draw: ()=>drawSpeechBubble(catObj.x*W, catObj.y*H-catSize*0.75, CAT_SPEECH_LINE, BUBBLE_FONT_SIZE, 'cat') });
+    }
+    // the goat can be fed (and shows its "thank you" line) on whichever map
+    // it currently happens to be on, portable pickup or pet either way —
+    // unlike the cat there's no single home map to gate this on
+    if(goatObj && goatSpeechT > 0){
+      const goatSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(goatObj.y) * goatObj.scale;
+      const distGoat = Math.hypot((player.x-goatObj.x)*W, (player.y-goatObj.y)*H);
+      bubbleCandidates.push({ dist: distGoat, y: goatObj.y, draw: ()=>drawSpeechBubble(goatObj.x*W, goatObj.y*H-goatSize*0.75, GOAT_SPEECH_LINE, BUBBLE_FONT_SIZE, 'goat') });
     }
     if(currentMap === 2 && bowlManObj){
       const bowlManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(bowlManObj.y) * bowlManObj.scale;
@@ -7515,10 +7639,13 @@ function render(time){
 
     // of everyone with something to say this frame, only the one closest to
     // the player actually gets a bubble — no stacked chatter from a crowd.
-    if(bubbleCandidates.length){
-      bubbleCandidates.sort((a,b)=> a.dist-b.dist);
-      const closestBubble = bubbleCandidates[0];
-      drawList.push({ y: closestBubble.y, draw: closestBubble.draw });
+    // used to pick only the single closest candidate here (no stacked
+    // chatter from a crowd) — removed: every npc/sign with something to say
+    // this frame now gets its own bubble. Talk ranges were narrowed at the
+    // same time (see the *_TALK_RANGE constants) so it stays rare for more
+    // than one to actually be in range at once.
+    for(const bc of bubbleCandidates){
+      drawList.push({ y: bc.y, draw: bc.draw });
     }
     // Almost everything here draws behind the player no matter its own y —
     // the player is meant to always read as the thing you're controlling,
