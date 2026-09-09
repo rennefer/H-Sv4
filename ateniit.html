@@ -2195,6 +2195,19 @@ const MAP2_OBJECTS = [
     "items": []
   },
   {
+    "id": 809,
+    "glyph": "𓆧",
+    "x": 0.7396,
+    "y": 0.665,
+    "scale": 0.45,
+    "reveal": 1,
+    "pickup": true,
+    "mirror": false,
+    "noHitbox": false,
+    "opaque": false,
+    "items": []
+  },
+  {
     "id": 607,
     "glyph": "𓇚",
     "x": 0.8950105617728744,
@@ -5585,6 +5598,104 @@ function updateLocustHop(dt){
   }
 }
 
+/* ---------- lvl 2's dedicated locust (id 809) paces a 5-hop patrol ----------
+   Unlike the other three (which just hop 1 length out and immediately back
+   -- see updateLocustHop/LOCUST_IDS above, this one isn't in that list), this
+   one chains 5 hops to the right, each landing 1 more body-length further
+   out than the last (1, 2, 3, 4, 5 lengths from its resting spot), then the
+   same 5 hops back to the left retracing its way to exactly where it
+   started -- then the whole thing repeats. Same per-hop arc (a Math.sin
+   bounce) and default-faces-left mirroring convention as every other hop
+   in this file, just chained into a longer patrol instead of a single
+   there-and-back. Purely cosmetic, same "stops the moment it's held"
+   contract as the others: gone from levelObjects while carried, and it
+   simply resumes the patrol from wherever the cycle math says it should be
+   once it's back down (there's no picking up mid-air here since it's only
+   airborne for an instant per hop, same as the rest of the hop family). */
+const FOLLOWED_LOCUST_ID = 809;
+const FOLLOWED_LOCUST_HOP_STEPS = 5; // hops each direction
+const FOLLOWED_LOCUST_HOP_LEG = 0.5; // seconds airborne per hop -- matches LOCUST_HOP_LEG
+const FOLLOWED_LOCUST_REST = 0.6; // seconds paused between hops -- matches LOCUST_REST
+const FOLLOWED_LOCUST_HOP_UNIT = FOLLOWED_LOCUST_HOP_LEG + FOLLOWED_LOCUST_REST;
+let followedLocustHopT = 0;
+
+function updateFollowedLocustHop(dt){
+  const obj = levelObjects.find(o => o.id === FOLLOWED_LOCUST_ID);
+  if(!obj) return;
+  if(obj._hopBaseX === undefined){ obj._hopBaseX = obj.x; obj._hopBaseY = obj.y; }
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(obj._hopBaseY) * obj.scale;
+  const hopLenX = size / W; // 1 length per hop
+  const hopUpY = size / H;
+
+  followedLocustHopT += dt;
+  const cycleLen = FOLLOWED_LOCUST_HOP_UNIT * FOLLOWED_LOCUST_HOP_STEPS * 2; // 5 hops out + 5 back
+  const t = followedLocustHopT % cycleLen;
+  const stepIdx = Math.floor(t / FOLLOWED_LOCUST_HOP_UNIT); // 0..9
+  const stepT = t % FOLLOWED_LOCUST_HOP_UNIT;
+
+  const goingRight = stepIdx < FOLLOWED_LOCUST_HOP_STEPS;
+  const legIndex = goingRight ? stepIdx : (stepIdx - FOLLOWED_LOCUST_HOP_STEPS); // 0..4 within its half
+  const priorLengths = goingRight ? legIndex : (FOLLOWED_LOCUST_HOP_STEPS - legIndex); // lengths already covered before this hop
+
+  let withinHopFrac, yBump;
+  if(stepT < FOLLOWED_LOCUST_HOP_LEG){
+    const legT = stepT / FOLLOWED_LOCUST_HOP_LEG;
+    withinHopFrac = legT;
+    yBump = Math.sin(Math.PI*legT);
+    obj._airborne = true; // mid-hop -- see updateCatFollowLocust, which waits for this to clear
+  } else {
+    withinHopFrac = 1; yBump = 0; // resting having just landed, until the next hop starts
+    obj._airborne = false;
+  }
+
+  const lengthsSoFar = goingRight ? (priorLengths + withinHopFrac) : (priorLengths - withinHopFrac);
+
+  obj.x = obj._hopBaseX + lengthsSoFar*hopLenX;
+  obj.y = obj._hopBaseY - yBump*hopUpY; // up on screen is smaller y
+  obj.mirror = goingRight;
+}
+
+/* ---------- lvl 2's rightmost pickup cat (id 605) follows that locust ----------
+   The cat itself doesn't hop; it just paces after wherever the locust's
+   patrol currently has it, closing the gap whenever it strays more than
+   about 1 of its own body-lengths away -- same chase-and-hold-a-gap idea
+   as the goat pet following the player (see updatePetGoat above), just
+   retargeted at the locust instead of the player. It only actually paces
+   while the locust is down between hops (obj._airborne is false, set by
+   updateFollowedLocustHop above) -- while the locust is mid-hop the cat
+   just holds still and watches, then catches up once it lands, rather
+   than chasing the airborne arc itself. Purely cosmetic, same "stops the
+   moment it's held" contract as every other pickup here: if either one is
+   off being carried, it's gone from levelObjects and this simply does
+   nothing until both are back down. */
+const CAT_FOLLOWS_LOCUST_ID = 605;
+const CAT_FOLLOW_LOCUST_ID = 809;
+const CAT_FOLLOW_GAP_MULT = 1; // stops once within 1 length of the locust
+const CAT_FOLLOW_SPEED = 0.8; // body-lengths per second while closing the gap -- deliberately slow, so it walks rather than snaps
+
+function updateCatFollowLocust(dt){
+  const cat = levelObjects.find(o => o.id === CAT_FOLLOWS_LOCUST_ID);
+  const locust = levelObjects.find(o => o.id === CAT_FOLLOW_LOCUST_ID);
+  if(!cat || !locust) return;
+  if(locust._airborne) return; // pause and watch until it lands
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(cat.y) * cat.scale;
+  const dx = (locust.x-cat.x)*W, dy = (locust.y-cat.y)*H;
+  const dist = Math.hypot(dx, dy);
+  const followGap = size * CAT_FOLLOW_GAP_MULT;
+  if(dist > followGap){
+    // speed is genuinely in body-lengths/sec here (scaled by the cat's own
+    // on-screen size, not the whole screen) -- the old version scaled by
+    // Math.min(W,H) directly, copied from the goat-pet formula without
+    // adjusting it, which made it close a whole length in a couple of
+    // frames and read as a jerky snap rather than a walk.
+    const speed = size * CAT_FOLLOW_SPEED * dt;
+    const step = Math.min(dist-followGap, speed);
+    cat.x += (dx/dist) * step / W;
+    cat.y += (dy/dist) * step / H;
+    if(dx > 0) cat.mirror = true; else if(dx < 0) cat.mirror = false;
+  }
+}
+
 /* ---------- the pickup frog hops in place (level object id 503) ----------
    Same idea as the 3 locusts just above, one creature and a longer hop:
    2 body-lengths forward with a jump arc, a rest, then a matching hop back
@@ -5751,7 +5862,7 @@ const GOAT_TALK_RANGE = 0.12; // fraction of min(W,H) — narrowed from 0.20, se
 const GOAT_FEED_REWARD = 5;
 const GOAT_PET_FEEDS_NEEDED = 3;
 const GOAT_SPEECH_DURATION = 5; // seconds it pauses and "talks" after being fed
-const GOAT_SPEECH_LINE = '𓃶𓊃𓈙𓆰';
+const GOAT_SPEECH_LINE = '𓆸';
 const GOAT_PET_FOLLOW_GAP_MULT = 2.8; // a bit further back than the cat's own 2x gap, so a second pet doesn't ride stacked directly on top of the first
 const GOAT_PET_FOLLOW_SPEED = 0.40; // fraction of canvas width/sec at full (foreground) depth, same as the cat
 let goatFedCount = 0;
@@ -5928,7 +6039,7 @@ function updateBowlManSpeech(dt){
    it can't get stuck holding the reward hostage on some animation edge case. */
 const ARMS_UP_MAN_ID = 545;
 const ARMS_UP_MAN_TALK_RANGE = 0.12; // fraction of min(W,H) — narrowed from 0.20, see LADY_TALK_RANGE
-const ARMS_UP_MAN_ASK_LINE = 'help';
+const ARMS_UP_MAN_ASK_LINE = '𓊃𓈞𓐝𓆧𓏥';
 const CAT_IDS = [526, 548, 605]; // lvl 2's 3 pickup cat signs
 const CAT_GLYPH = String.fromCodePoint(0x130E0); // same cat sign as lvl 1's npc
 const GOLDEN_BARREL = String.fromCodePoint(0x1333D); // jar/barrel sign — his reward, rendered in gold (lvl 2 already has plain, non-golden ones placed as scenery)
@@ -6673,6 +6784,8 @@ function update(dt){
     updateCatMove(dt);
     updateHippoSway(dt);
     updateLocustHop(dt);
+    updateFollowedLocustHop(dt);
+    updateCatFollowLocust(dt);
     updateFrogHop(dt);
     updateGoatGraze(dt);
     updateFastRunners(dt);
@@ -6744,6 +6857,8 @@ function update(dt){
   updatePetGoat(dt);
   updateHippoSway(dt);
   updateLocustHop(dt);
+  updateFollowedLocustHop(dt);
+  updateCatFollowLocust(dt);
   updateFrogHop(dt);
   updateGoatGraze(dt);
   updateFastRunners(dt);
@@ -7451,6 +7566,7 @@ function drawPlantWash(){
 
 let t0 = performance.now();
 function render(time){
+ try{
   const dt = Math.min(0.05, (time-t0)/1000); t0 = time;
   if(!editMode && !gameOver){
     update(dt);
@@ -7695,6 +7811,43 @@ function render(time){
 
     if(gameOver) drawGameOver();
   }
+ }catch(err){
+  // A bug anywhere in a single frame's update/draw code must never be able
+  // to silently kill the whole game. Before this, requestAnimationFrame(render)
+  // was the very last line in this function -- so any uncaught exception,
+  // anywhere in update()/updateCow()/every drawXxx() function, meant that
+  // line never ran, and the entire animation loop stopped forever with
+  // nothing on screen to explain why (no error, no message -- the game just
+  // silently stopped advancing, which is exactly what's been reported as
+  // "everything gets slow and laggy" / things "disappearing"). Catching here
+  // means one bad frame can at worst glitch or skip something for an
+  // instant, but the game keeps running no matter what actually threw --
+  // and the real error is still logged (and kept in window.__lastRenderError)
+  // so the underlying cause can be tracked down from a browser's console.
+  console.error('[render] recovered from a frame error -- game kept running:', err);
+  window.__lastRenderError = err;
+  try{ sessionStorage.setItem('lastRenderError', (err && (err.stack||err.message)) || String(err)); }catch(e2){}
+ }
+
+ // If a frame ever did throw (just now, or on a load before a respawn reload
+ // carried the message forward in sessionStorage), keep a small, easy-to-
+ // screenshot note on screen -- this is the only way to actually find out
+ // what's throwing when it happens out in the wild on someone's phone,
+ // where there's no console to open.
+ try{
+   const errMsg = window.__lastRenderError ? String(window.__lastRenderError.message||window.__lastRenderError) : sessionStorage.getItem('lastRenderError');
+   if(errMsg){
+     ctx.save();
+     ctx.font = '600 12px monospace';
+     ctx.textAlign = 'left';
+     ctx.textBaseline = 'bottom';
+     ctx.fillStyle = 'rgba(0,0,0,0.55)';
+     ctx.fillRect(0, H-22, W, 22);
+     ctx.fillStyle = '#ff6b6b';
+     ctx.fillText(('recovered error: '+errMsg).slice(0,120), 6, H-5);
+     ctx.restore();
+   }
+ }catch(e3){}
 
   requestAnimationFrame(render);
 }
