@@ -6720,6 +6720,16 @@ function resize(){
 }
 window.addEventListener('resize', resize);
 resize();
+// Self-heal: devicePixelRatio/window layout can occasionally still be
+// settling right at page-load time (extra monitor, OS display-scaling
+// negotiation, a background/inactive tab finishing layout, etc.), leaving
+// the canvas backing buffer sized against a stale reading for the rest of
+// the session -- until something forces a real resize() call again.
+// Re-running resize() a couple of times shortly after load re-checks DPR
+// and the fitted dimensions for free and self-corrects if anything was off,
+// same effect as manually resizing the window, without asking for it.
+setTimeout(resize, 150);
+setTimeout(resize, 1500);
 
 /* ============================================================
    DEBUG OVERLAY — toggled from the Level Editor panel ("Show
