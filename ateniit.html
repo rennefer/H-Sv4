@@ -6988,6 +6988,30 @@ const LOCKED_ASPECT = 1917/889; // ~2.156:1 — matches the wide-window screensh
                              // space becomes black letterbox/pillarbox bars
                              // (see #gameWrap's black background above)
 function resize(){
+  // A window can legitimately report 0 for innerWidth/innerHeight for a
+  // moment -- minimized, a backgrounded/hidden tab, or a PWA window still
+  // being sized by the OS right after launch. Fitting LOCKED_ASPECT against
+  // that would compute gameW/gameH (and then canvas.width/height) as 0, and
+  // that 0x0 size doesn't just flash by harmlessly: getWaterWashCtx() and
+  // getRiverFadeCtx() each cache their own offscreen canvas at whatever
+  // canvas.width/height happened to be, and a canvas that's already 0x0
+  // "matches" a 0x0 target forever after (0 === 0), so nothing ever
+  // triggers them to resize back to something valid on their own. Every
+  // frame after that, drawWaterWash()'s ctx.drawImage(waterWashCanvas,0,0)
+  // throws InvalidStateError ("width or height of 0") -- and because
+  // render()'s own try/catch (see there) exists specifically so one bad
+  // frame can't freeze the whole game, that exception gets silently caught
+  // and the loop just keeps going... but the ctx.restore() a few lines below
+  // that throw never runs, so the canvas's own save stack leaks one level
+  // deeper on literally every subsequent frame, forever. That's the actual
+  // mechanism behind "the game gradually gets slower and slower and never
+  // recovers on its own" -- and exactly why an unrelated real resize event
+  // (which finally gives canvas.width/height a real, non-zero value again,
+  // invalidating the poisoned wash caches) or a death (full page reload)
+  // were the only two things that ever fixed it. The actual fix is simply
+  // never letting W/H go to 0 in the first place: bail out here and leave
+  // whatever the last good size was in place instead.
+  if(window.innerWidth <= 0 || window.innerHeight <= 0) return;
   DPR = Math.min(window.devicePixelRatio||1, 2);
   // While editing, the fit is computed against the space actually left over
   // once the 440px side panel is accounted for — not the full window — so
@@ -7282,9 +7306,14 @@ function getRiverFadeCtx(){
     riverFadeCanvas = document.createElement('canvas');
     riverFadeCtx = riverFadeCanvas.getContext('2d');
   }
-  if(riverFadeCanvas.width !== canvas.width || riverFadeCanvas.height !== canvas.height){
-    riverFadeCanvas.width = canvas.width;
-    riverFadeCanvas.height = canvas.height;
+  // Math.max(1, ...): never bake this in at 0x0. A 0-sized canvas.width
+  // (see resize()'s guard against that) would otherwise get copied here
+  // and then "match" 0 forever, permanently wedging this cache at 0x0 —
+  // see the long comment on resize() for why that used to be so damaging.
+  const w = Math.max(1, canvas.width), h = Math.max(1, canvas.height);
+  if(riverFadeCanvas.width !== w || riverFadeCanvas.height !== h){
+    riverFadeCanvas.width = w;
+    riverFadeCanvas.height = h;
   }
   return riverFadeCtx;
 }
@@ -7400,10 +7429,17 @@ function paintWaterPolyWash(poly, holes, fadeLeftFrac, targetCtx){
   // (identity transform) keeps them pixel-aligned without any extra
   // scaling math.
   const dest = targetCtx || ctx;
+  // Same guard as drawWaterWash below: a 0x0 riverFadeCanvas would make
+  // drawImage throw and skip dest.restore(), leaking dest's save stack —
+  // see the long comment on resize() for the full mechanism this prevents.
+  if(!riverFadeCanvas || riverFadeCanvas.width === 0 || riverFadeCanvas.height === 0) return;
   dest.save();
-  dest.setTransform(1,0,0,1,0,0);
-  dest.drawImage(riverFadeCanvas, 0, 0);
-  dest.restore();
+  try{
+    dest.setTransform(1,0,0,1,0,0);
+    dest.drawImage(riverFadeCanvas, 0, 0);
+  } finally {
+    dest.restore();
+  }
 }
 // Grows a water polygon outward by pct (0.05 = 5%) around its own average
 // vertex position, for the visual wash only — the real activeWaterPoly()
@@ -7435,9 +7471,12 @@ function getWaterWashCtx(){
     waterWashCanvas = document.createElement('canvas');
     waterWashCtx = waterWashCanvas.getContext('2d');
   }
-  if(waterWashCanvas.width !== canvas.width || waterWashCanvas.height !== canvas.height){
-    waterWashCanvas.width = canvas.width;
-    waterWashCanvas.height = canvas.height;
+  // Math.max(1, ...): same reasoning as getRiverFadeCtx above — never let
+  // this cache get wedged at 0x0.
+  const w = Math.max(1, canvas.width), h = Math.max(1, canvas.height);
+  if(waterWashCanvas.width !== w || waterWashCanvas.height !== h){
+    waterWashCanvas.width = w;
+    waterWashCanvas.height = h;
   }
   return waterWashCtx;
 }
@@ -7472,10 +7511,20 @@ function buildWaterWash(){
 function drawWaterWash(){
   const key = currentMap+'|'+canvas.width+'|'+canvas.height;
   if(editMode || waterWashCacheKey !== key) buildWaterWash();
+  // Belt-and-suspenders alongside the resize() guard above: a 0x0 source
+  // canvas makes drawImage throw, which would otherwise skip the restore()
+  // below and leak the main ctx's save stack one level deeper every frame
+  // forever (see the long comment on resize() for the full mechanism). The
+  // resize() guard should mean this never actually happens now, but there's
+  // no reason this call site should ever be able to reintroduce that leak.
+  if(!waterWashCanvas || waterWashCanvas.width === 0 || waterWashCanvas.height === 0) return;
   ctx.save();
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.drawImage(waterWashCanvas, 0, 0);
-  ctx.restore();
+  try{
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.drawImage(waterWashCanvas, 0, 0);
+  } finally {
+    ctx.restore();
+  }
 }
 
 /* ---------- sign washes: soft watercolor glows under plant/flower signs
@@ -7640,10 +7689,17 @@ function makeSignWash(predicate, color, stops, overshoot){
     const key = currentMap+'|'+canvas.width+'|'+canvas.height;
     if(editMode || cacheKey !== key) build();
     if(!tiles.length) return;
+    // tiles are already built with Math.max(1,...) dimensions so this
+    // shouldn't ever hit a 0x0 source, but try/finally keeps this call site
+    // from ever being able to leak the save stack the same way the water
+    // washes could (see resize()'s comment) if that ever stopped being true.
     ctx.save();
-    ctx.setTransform(1,0,0,1,0,0);
-    for(const t of tiles) ctx.drawImage(t.canvas, t.offX, t.offY);
-    ctx.restore();
+    try{
+      ctx.setTransform(1,0,0,1,0,0);
+      for(const t of tiles) ctx.drawImage(t.canvas, t.offX, t.offY);
+    } finally {
+      ctx.restore();
+    }
   };
 }
 // Unlike the river wash (one flat color, faded only at its own true edge —
@@ -7862,9 +7918,21 @@ function render(time){
     // this frame now gets its own bubble. Talk ranges were narrowed at the
     // same time (see the *_TALK_RANGE constants) so it stays rare for more
     // than one to actually be in range at once.
-    for(const bc of bubbleCandidates){
-      drawList.push({ y: bc.y, draw: bc.draw });
-    }
+    //
+    // These used to be mixed into the same y-sorted drawList as everything
+    // else, keyed off the SPEAKER's own y — but a bubble is actually drawn
+    // well ABOVE that anchor point (see drawSpeechBubble's bottomY offset),
+    // reaching up over whatever's sitting just behind the speaker on screen.
+    // Any nearby sign/column with a y between the speaker and the player
+    // (so it sorted AFTER the bubble in that shared list) would then get
+    // drawn right on top of it, silently burying the bubble's text behind
+    // ordinary scenery — worse the taller the neighboring sign and the
+    // closer it stood, so it read as random/position-dependent even though
+    // it was a deterministic z-order bug the whole time. A speech bubble is
+    // UI, not world geography, so it now always gets its own final pass,
+    // drawn after literally everything else in the scene (including the
+    // opaque architecture that's allowed to occlude the player) — it can
+    // never again be hidden behind a piece of scenery.
     // Almost everything here draws behind the player no matter its own y —
     // the player is meant to always read as the thing you're controlling,
     // never accidentally hidden behind an ordinary sign or npc. The one
@@ -7886,6 +7954,9 @@ function render(time){
     drawPlayer();
     occludingPlayer.sort((a,b)=> a.y-b.y);
     occludingPlayer.forEach(e=>e.draw());
+    // speech bubbles always last, always on top — see the comment above
+    // bubbleCandidates for why they were pulled out of the y-sorted list
+    bubbleCandidates.forEach(bc=>bc.draw());
     drawBirdAttack();
     drawFishJump();
     drawSunGuardian();
