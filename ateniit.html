@@ -62,7 +62,7 @@
 <div id="gameWrap"><canvas id="game"></canvas></div>
 <div id="editor" hidden>
   <h2>Level Editor</h2>
-  <p class="hint">Press E to close. Click the map to place the selected sign, click a placed sign to select it, then drag it to move it. Del removes the selection.</p>
+  <p class="hint">Press R to close. Click the map to place the selected sign, click a placed sign to select it, then drag it to move it. Del removes the selection.</p>
   <label>Zoom</label>
   <div class="sliderRow">
     <button id="zoomOutBtn" type="button">&minus;</button>
@@ -322,6 +322,13 @@ function clipHeadSafe(cx, cy, glyph, size, frac){
 const player = { x:0.2325, y:0.7874 }; // lvl 1 default spawn — the spot marked with a red circle in the screenshot
 let facing = 1; // 1 = default glyph orientation (faces left), -1 = mirrored (faces right)
 let cowDelivered = false; // true forever once enough cows/bulls have been dropped off with the npc to complete the quest
+// his cow-delivery line has a one-time (!) marker: read it once via space
+// (see tryTalkToNpc()) and the marker goes away for good — but the line
+// itself stays available on demand forever after, just silently, via space
+// with empty hands (see computeNpcAsks()'s npcMarkerHidden). Same idea as
+// riverManLineRead just below, not the temporary hide-while-a-bubble-is-up
+// behavior every other ask/completion line still gets.
+let npcCowLineRead = false;
 // once the player has been in range of ANY lvl-2 npc at least once (see
 // metAnyLvl2Npc's own update in render()), the npc is willing to trade: hand
 // him the golden F18 from the lady's 5-snake quest on lvl -1 (see
@@ -805,11 +812,15 @@ let birdQuestDone = false;
 const ladyObj = levelObjects.find(o => o.id === LADY_ID) || null;
 
 // the man standing by lvl 1's riverbank (id 1070, the same standing 𓀙 sign
-// used for the other MAN npcs) — just talks, no item quest of his own
+// used for the other MAN npcs) — just talks, no item quest of his own. His
+// (!) is a one-time thing: read his line once via space and the marker is
+// gone for good, but the line itself stays available via space forever
+// after, same idea as npcCowLineRead above.
 const RIVER_MAN_ID = 1070;
 const RIVER_MAN_TALK_RANGE = 0.15; // fraction of min(W,H) — matches the lady's/man's, see LADY_TALK_RANGE
 const RIVER_MAN_LINE = '𓅓𓊃𓎛𓆊𓅓𓅯𓄿𓇋𓏏𓂋𓏲𓈗';
 const riverManObj = levelObjects.find(o => o.id === RIVER_MAN_ID) || null;
+let riverManLineRead = false;
 
 // called from tryDropHeldItem() — handing her one of the birds while close
 // enough consumes it instead of just setting it down; returns true if so
@@ -838,7 +849,7 @@ const npc = {
   lineWithCow:'𓅯𓄿𓇋𓏏𓂋𓏲𓈗𓂻𓂋𓅯𓄿𓊖𓏏𓏤' // shown instead, once he sees you're bringing the cow
 };
 // shown instead of either line above once the u13 trade is on offer — see
-// npcBubbleText() and u13FromNpcGiven's declaration further down
+// npcAskLine() and u13FromNpcGiven's declaration further down
 const NPC_TRADE_LINE = '𓍋𓃀𓅱𓄑=𓉔𓃀𓍁';
 
 /* ---------- cow ----------
@@ -864,6 +875,18 @@ function onSpacePress(){
   if(boarded) return; // hands are busy steering — can't pick up or drop while aboard
   if(heldItem){ tryDropHeldItem(); return; }
   tryPickup();
+}
+
+// npc interact — split off from space entirely (see the 'e'/Shift keydown
+// handler) so pressing space to feed/pick up near an animal never gets
+// mixed up with talking to a nearby npc; onSpacePress() above is back to
+// being pure pickup/drop. Returns whether it actually found someone to talk
+// to, so the touch double-tap handler below can fall back to onSpacePress()
+// when it didn't (there's no separate interact key on a touchscreen).
+function onInteractPress(){
+  if(editMode) return false;
+  if(boarded) return false;
+  return tryTalkToNpc();
 }
 
 // the boat's pick-from/drop-onto reach — used by both nearestBase() and the
@@ -1055,6 +1078,31 @@ function tryPickup(){
     const dist = Math.hypot((player.x-cow.x)*W, (player.y-cow.y)*H);
     if(dist < Math.min(W,H)*CAPTURE_RANGE) pickUpItem({ kind:'cow' });
   }
+}
+
+// Read-only mirror of tryPickup() above, used only to decide whether the
+// top-center (SPACE) prompt should be up right now — must never mutate
+// anything itself, and has to stay in lockstep with every branch tryPickup()
+// actually acts on (including the wide, boat-only 1.5x reach) or the prompt
+// would show/hide out of sync with what pressing space actually does.
+function wouldShowPickupPrompt(){
+  if(editMode || boarded || heldItem) return false; // same guards as onSpacePress — holding something means space would drop, not pick up
+  const nb = nearestBase();
+  if(nb){
+    const { base, kind } = nb;
+    if(base.items && base.items.length && !base.items[base.items.length-1].petMarker) return true;
+    if(kind === 'boat'){
+      const dist = Math.hypot((player.x-base.x)*W, (player.y-base.y)*H);
+      return dist < Math.min(W,H)*CAPTURE_RANGE*1.5;
+    }
+    if(kind === 'level' && base.pickup) return true;
+    return false;
+  }
+  if(!cow.placed && cow.map === currentMap){
+    const dist = Math.hypot((player.x-cow.x)*W, (player.y-cow.y)*H);
+    if(dist < Math.min(W,H)*CAPTURE_RANGE) return true;
+  }
+  return false;
 }
 
 function pickUpItem(item){
@@ -1434,6 +1482,33 @@ let dictionaryOpen = false;
 let dictFlashT = 0; // seconds remaining on the "new word!" Q-key flash, top-left — see triggerDictionaryFlash()
 const DICT_FLASH_DURATION = 2.6;
 
+// Full controls legend, center screen, shown right as the game first
+// renders (and again after every death — respawnAfterDeath() reloads the
+// page, which re-runs this same top-level init) — see drawSpawnControls().
+// It has no fixed duration: it stays up (keys still animating) until the
+// player presses ANY key, at which point spawnControlsDismissedAt latches
+// to that moment and the card fades out over SPAWN_CONTROLS_FADEOUT seconds.
+// spawnControlsElapsed just counts up every frame from 0 (regardless of
+// pause state, same as dictFlashT), and is what both the fade-in and the
+// keys' own press/idle animation are timed against.
+let spawnControlsElapsed = 0;
+let spawnControlsDismissedAt = null; // null until any key is pressed; then the elapsed value at that moment
+const SPAWN_CONTROLS_FADEOUT = 0.5;
+function spawnControlsVisible(){
+  if(spawnControlsDismissedAt === null) return true;
+  return (spawnControlsElapsed - spawnControlsDismissedAt) < SPAWN_CONTROLS_FADEOUT;
+}
+function dismissSpawnControls(){
+  if(spawnControlsDismissedAt === null) spawnControlsDismissedAt = spawnControlsElapsed;
+}
+
+// Top-center (SPACE) pickup prompt — eased alpha, not a hard show/hide, so
+// stepping in/out of range fades the badge rather than popping it — see
+// drawKeyPrompt() and its call site in render(). (There used to be a
+// matching (E) talk prompt here too; it was removed — the (!) marker over
+// an npc is the only cue for that now.)
+let pickupPromptAlpha = 0;
+
 // Sorted longest-first (by codepoint count, not .length — hieroglyphs are
 // surrogate pairs) so the scan below always prefers the longest matching
 // word at a given position, see the big comment above.
@@ -1745,21 +1820,11 @@ function drawNpc(){
   ctx.restore();
 }
 
-// What the npc's bubble would say right now, or null if he has nothing to
-// say — split out from drawNpc so the render loop can weigh his bubble
-// against every other nearby npc/sign's and only show whichever is closest.
-function npcBubbleText(){
-  // the u13 trade takes over his dialogue entirely while it's on offer —
-  // he forgets the cow line(s) and shows this instead until the golden F18
-  // is actually handed over (see tryGiveF18ToNpc below)
-  if(!u13FromNpcGiven && metAnyLvl2Npc) return NPC_TRADE_LINE;
-  if(cowDelivered){
-    // the second line only shows once his celebration animation has fully played out
-    return npcAnim.phase === 'idle' ? npc.lineWithCow : null;
-  }
-  if(heldItem && (heldItem.kind === 'cow' || (heldItem.kind === 'level' && CATTLE_QUEST_IDS.includes(heldItem.id)))) return null; // carrying one of the 3 cattle but the quest isn't complete yet — no early flash of the second line
-  return npc.line;
-}
+// What the npc's bubble would say right now — split into an "ask" half
+// (only shown on-demand, via the (!) marker + interact-key system further
+// down) and a "completion" half (also interact-gated, see npcCowLineRead) —
+// see npcAskLine()/npcCompletionLine() in the NPC INTERACT SYSTEM block
+// below.
 
 // called from tryDropHeldItem() — handing the npc the golden F18 from the
 // lady's 5-snake quest (lvl -1) while close enough, once he's willing (see
@@ -1866,6 +1931,176 @@ function drawDictionaryFlash(){
   ctx.font = '600 13px system-ui, sans-serif';
   ctx.fillStyle = 'rgba(42,31,20,0.95)';
   ctx.fillText('new word!', x+keySize+8, y+keySize/2+1);
+  ctx.restore();
+}
+
+// Top-center "press X" badge — same key-square-plus-label look as the
+// dictionary flash above, just centered horizontally and given a caller-
+// supplied y (only the (SPACE) pickup prompt uses this now — see
+// pickupPromptAlpha). Unlike the dictionary flash this has no blink: its
+// alpha is eased in render(), so it fades on and off as you step in/out of
+// range instead of either popping instantly or blinking the whole time you
+// stand there.
+function drawKeyPrompt(alpha, keyLabel, text, y){
+  if(alpha <= 0.02) return;
+  const keySize = 30, r = 6;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = '600 14px system-ui, sans-serif';
+  const labelW = ctx.measureText(text).width;
+  const x = W/2 - (keySize+8+labelW)/2;
+
+  ctx.fillStyle = '#e9e0cd';
+  ctx.strokeStyle = 'rgba(40,30,20,0.75)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+keySize,y,x+keySize,y+keySize,r);
+  ctx.arcTo(x+keySize,y+keySize,x,y+keySize,r);
+  ctx.arcTo(x,y+keySize,x,y,r);
+  ctx.arcTo(x,y,x+keySize,y,r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = '#2a1f14';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 15px system-ui, sans-serif';
+  ctx.fillText(keyLabel, x+keySize/2, y+keySize/2+1);
+
+  ctx.textAlign = 'left';
+  ctx.font = '600 14px system-ui, sans-serif';
+  ctx.fillStyle = 'rgba(42,31,20,0.95)';
+  ctx.fillText(text, x+keySize+8, y+keySize/2+1);
+  ctx.restore();
+}
+
+// Shared rounded-rect path helper for the keycap graphics below — the
+// rest of the file's HUD boxes each inline their own short arcTo path, but
+// this one gets reused enough times per frame (2 layers x up to 4 keys x 4
+// rows, every frame the legend is up) that a helper earns its keep here.
+function roundedRectPath(x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+// A single, static, physical-looking keyboard key — flat cap, no relief
+// layer and no drop shadow, just a filled face with a border and its
+// label. (An earlier version had a darker offset base beneath the cap for
+// a 3-D look, plus a press-in/idle-float animation — both removed; the
+// offset base read as a shadow around the key, and the animation wasn't
+// wanted either.)
+function drawKeyCap(x, y, w, h, label, fontPx){
+  const r = 2; // barely-rounded corners — an old mechanical keyboard's square-ish caps, not a modern pill shape
+  ctx.save();
+  // explicitly no shadow on the key itself or its label — drawSpawnControls
+  // turns on a text shadow for its own title/row-label text (legibility
+  // over the game with no backdrop card), and that shadow would otherwise
+  // leak into every fill/stroke/fillText call made here too, since it's
+  // just inherited canvas state until something turns it back off
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+
+  roundedRectPath(x, y, w, h, r);
+  const grad = ctx.createLinearGradient(0, y, 0, y+h);
+  grad.addColorStop(0, '#f5edd9');
+  grad.addColorStop(1, '#d9c9a3');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(40,30,20,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.fillStyle = '#2a1f14';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '700 '+(fontPx||14)+'px system-ui, sans-serif';
+  ctx.fillText(label, x+w/2, y+h/2+1);
+  ctx.restore();
+}
+
+// Full controls legend, dead center, up from the instant the game first
+// renders (see spawnControlsElapsed) until the player presses any key at
+// all — it fades in fast, then holds indefinitely, static (no per-key
+// animation), for as long as nothing's been pressed, then fades out over
+// SPAWN_CONTROLS_FADEOUT once dismissSpawnControls() latches in the
+// keydown handler. No backdrop panel — the keycaps and text just hover
+// directly over the game itself; a soft dark glow behind the title/label
+// text (see the shadow set just below) is what keeps it legible over
+// whatever happens to be on the map underneath, instead of a card.
+function drawSpawnControls(){
+  const elapsed = spawnControlsElapsed;
+  const fadeIn = Math.min(1, elapsed/0.2);
+  let fadeOut = 1;
+  if(spawnControlsDismissedAt !== null){
+    fadeOut = Math.max(0, 1 - (elapsed - spawnControlsDismissedAt)/SPAWN_CONTROLS_FADEOUT);
+  }
+  const alpha = fadeIn * fadeOut;
+  if(alpha <= 0.02) return;
+
+  // Each row's key zone is a fixed-size box (zoneW x zoneH) so every row's
+  // keys line up in the same column no matter how many keys it holds or
+  // what shape they are — an arrow cluster, two side-by-side keys, or one
+  // wide spacebar. dx/dy below position each key within its own row's zone.
+  const zoneW = 130, zoneH = 54, gap = 16, pad = 20, titleH = 32, rowH = zoneH + 10;
+  const rows = [
+    { label: 'move', keys: [
+      { text:'▲', dx:52, dy:2,  w:26, h:24 }, // ▲
+      { text:'◀', dx:24, dy:28, w:26, h:24 }, // ◀
+      { text:'▼', dx:52, dy:28, w:26, h:24 }, // ▼
+      { text:'▶', dx:80, dy:28, w:26, h:24 }, // ▶
+    ]},
+    { label: 'talk', keys: [
+      { text:'E',     dx:18, dy:12, w:28, h:30 },
+      { text:'SHIFT', dx:54, dy:12, w:58, h:30, fontPx:11 },
+    ]},
+    { label: 'pick up / drop', keys: [
+      { text:'SPACE', dx:10, dy:13, w:110, h:28, fontPx:12 },
+    ]},
+    { label: 'dictionary', keys: [
+      { text:'Q', dx:51, dy:13, w:28, h:28 },
+    ]},
+  ];
+
+  ctx.save();
+  ctx.font = '600 13px system-ui, sans-serif';
+  let labelColW = 0;
+  for(const row of rows) labelColW = Math.max(labelColW, ctx.measureText(row.label).width);
+  const cardW = pad*2 + zoneW + gap + labelColW;
+  const cardH = pad*2 + titleH + rows.length*rowH;
+  const cx = W/2 - cardW/2, cy = H/2 - cardH/2;
+
+  ctx.globalAlpha = alpha;
+  // no backdrop panel — just a soft dark glow behind the text itself so it
+  // stays legible hovering directly over the game, whatever's underneath
+  ctx.shadowColor = 'rgba(20,14,8,0.85)';
+  ctx.shadowBlur = 6;
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.font = '700 16px system-ui, sans-serif';
+  ctx.fillStyle = '#f5edd9';
+  ctx.fillText('CONTROLS', cx+cardW/2, cy+pad-2);
+
+  let ry = cy+pad+titleH;
+  for(const row of rows){
+    const zoneX = cx+pad, zoneY = ry;
+    for(const k of row.keys){
+      drawKeyCap(zoneX+k.dx, zoneY+k.dy, k.w, k.h, k.text, k.fontPx);
+    }
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = '600 14px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(42,31,20,0.95)';
+    ctx.fillText(row.label, cx+pad+zoneW+gap, ry+zoneH/2);
+    ry += rowH;
+  }
   ctx.restore();
 }
 
@@ -2203,6 +2438,7 @@ function respawnAfterDeath(){
 
 const keys = {};
 let spaceHeld = false;
+let interactHeld = false; // tracks 'e'/Shift together so holding either doesn't repeat-fire onInteractPress() every frame
 // Android/mobile: tap a spot on the map to walk (or steer the boat) toward
 // it instead of holding a direction key — see touchMoveDir() and the
 // touchend listener below. Touching an actual movement key always wins:
@@ -2213,6 +2449,10 @@ const MOVE_KEYS = ['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d
 window.addEventListener('keydown', e=>{
   const typing = document.activeElement && ['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
   if(typing) return; // let normal typing/editing happen in the panel's fields
+
+  // the spawn controls legend (see drawSpawnControls) stays up until the
+  // very first real keypress, whatever key that is — this is that latch
+  dismissSpawnControls();
 
   if(gameOver){
     // needs a deliberate, fresh press of Enter — not whatever arrow/space
@@ -2230,7 +2470,14 @@ window.addEventListener('keydown', e=>{
     spaceHeld = true;
     onSpacePress();
   }
-  if(k === 'e'){ setEditMode(!editMode); }
+  // interact (talk to a nearby (!) npc) — its own dedicated keys, kept off
+  // space entirely so feeding/picking up near an animal never gets mixed up
+  // with talking to an npc standing nearby
+  if((k === 'e' || k === 'shift') && !interactHeld){
+    interactHeld = true;
+    onInteractPress();
+  }
+  if(k === 'r'){ setEditMode(!editMode); } // moved off 'e' once that became the interact key
   if(k === 'q' && !editMode){
     dictionaryOpen = !dictionaryOpen;
     if(dictionaryOpen) dictFlashT = 0; // opening the panel dismisses the "new word" flash
@@ -2243,6 +2490,8 @@ window.addEventListener('keydown', e=>{
 window.addEventListener('keyup', e=>{
   keys[e.key.toLowerCase()] = false;
   if(e.key === ' ') spaceHeld = false;
+  const k = e.key.toLowerCase();
+  if(k === 'e' || k === 'shift') interactHeld = false;
 });
 
 // Direction (already unit-length, in the same fraction space player.x/y
@@ -2260,7 +2509,9 @@ function touchMoveDir(curX, curY){
 }
 
 // A tap moves you there; a quick second tap near the same spot doubles as
-// the space bar (pick up / drop / whatever onSpacePress does in context).
+// both the space bar (pick up / drop) and the interact key (talk to a
+// nearby (!) npc) rolled into one, since there's no separate 'e'/Shift key
+// on a touchscreen — see the touchend handler below for the priority order.
 // Only wired for touch input — desktop mouse clicks keep their existing
 // meaning (placing signs in the editor, restarting from the game-over
 // screen), untouched by any of this.
@@ -2284,7 +2535,11 @@ canvas.addEventListener('touchend', e=>{
   lastTapX = fx; lastTapY = fy;
 
   touchMoveTarget = { x: fx, y: fy };
-  if(isDoubleTap) onSpacePress();
+  // no separate interact key on a touchscreen — a double-tap tries talking
+  // to a nearby (!) npc first (unless hands are full, in which case space's
+  // own drop always wins, same priority the combined key used to have) and
+  // falls back to onSpacePress()'s pickup/drop when there's nobody to talk to
+  if(isDoubleTap && (heldItem || !onInteractPress())) onSpacePress();
 }, {passive:false});
 canvas.addEventListener('mousedown', ()=>{ if(gameOver) respawnAfterDeath(); }); // "pressing" the game-over screen also restarts
 
@@ -2893,6 +3148,38 @@ function updateCroc(dt){
    it's drawn through the ordinary per-object pass the whole time (pre-tame
    as a normal MAP1_OBJECTS entry, post-tame via the same standalone
    drawList push the cat/goat pets use). */
+
+/* ---------- pets: shared follow-queue order ----------
+   Whichever pet is tamed FIRST rides closest to the player; each one tamed
+   after that queues in further back — by ACQUISITION order, not by which
+   species it is. becomeCatPet()/becomeGoatPet()/becomeSouthCrocPet() each
+   call registerPetFollowOrder() with their own key the moment taming
+   happens; every updatePetX() then reads its own slot's resting distance
+   back via petFollowGapPx() instead of a fixed per-species constant.
+
+   petFollowGapPx() deliberately does NOT use the pet's own obj.scale the
+   way the rest of its drawing/movement does: the goat's sign is drawn at
+   scale 0.65, the south crocodile's at 1.2, and multiplying each one's own
+   (very different) size by its slot's multiplier let a small pet in a
+   LATER slot still end up with a smaller absolute gap than a big pet in
+   an EARLIER one — e.g. tame the crocodile first, then the goat, and the
+   much-smaller goat would settle closer to the player than the crocodile
+   despite following second. Sizing every slot off one shared depth-only
+   reference (LEVEL_OBJ_BASE_MULT * scaleForY(y), no per-species scale
+   factor) keeps the queue ordered purely by acquisition, regardless of
+   how big or small any individual pet's own sprite happens to be. */
+let petFollowOrder = []; // e.g. ['goat','cat'] — filled in taming order, see registerPetFollowOrder()
+const PET_FOLLOW_BASE_GAP_MULT = 2.0; // closest slot — whichever pet was tamed first
+const PET_FOLLOW_GAP_STEP = 0.8; // added per additional pet, by acquisition order
+function registerPetFollowOrder(key){
+  if(!petFollowOrder.includes(key)) petFollowOrder.push(key);
+}
+function petFollowGapPx(key, y){
+  const slot = Math.max(petFollowOrder.indexOf(key), 0); // not-yet-registered defaults to the closest slot rather than erroring
+  const refSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(y); // depth-only reference size — see the comment above for why this can't be obj.scale
+  return refSize * (PET_FOLLOW_BASE_GAP_MULT + PET_FOLLOW_GAP_STEP * slot);
+}
+
 const SOUTH_CROC_ID = 1074;
 const SOUTH_CROC_WAKE_BODY_LENGTHS = 1.5; // wakes and starts chasing once you're within 1.5 of its own on-screen size — see ELEPHANT_WAKE_BODY_LENGTHS
 const SOUTH_CROC_CHASE_BODY_LENGTHS = 1; // only ever strays this many of its own body-lengths from home before giving up
@@ -2900,7 +3187,6 @@ const SOUTH_CROC_SPEED_MULT = 0.45; // wild (untamed) on-land chase/retreat pace
 const CROC_FOOD_IDS = [1101, 1107, 1108]; // the 3 pickup G54 signs on lvl 1 — feeding it all 3 tames it
 const CROC_PET_FEEDS_NEEDED = 3;
 const CROC_FEED_RANGE = 0.12; // fraction of min(W,H) — matches the cat's/goat's own talk-range-doubles-as-feed-range
-const CROC_PET_FOLLOW_GAP_MULT = 2.4; // same family as CAT_PET_FOLLOW_GAP_MULT(2)/GOAT_PET_FOLLOW_GAP_MULT(2.8)
 const CROC_PET_FOLLOW_SPEED = 0.40; // fraction of canvas width/sec at full depth, matches the cat/goat
 let southCrocAwake = false;
 let southCrocRetreating = false;
@@ -2966,6 +3252,7 @@ function becomeSouthCrocPet(){
   southCrocIsPet = true;
   southCrocAwake = false;
   southCrocRetreating = false;
+  registerPetFollowOrder('southCroc'); // claims the next follow-queue slot, in taming order — see the shared comment above
   // no longer a fixed lvl-1 fixture living in MAP1_OBJECTS — pull it out and
   // treat it like the cat/goat from here on: a standalone entity drawn and
   // updated every frame regardless of which map's levelObjects is active
@@ -2978,21 +3265,14 @@ function becomeSouthCrocPet(){
 
 function loadSouthCrocPetOntoBoat(){
   if(!boatOnGround || southCrocOnBoat) return;
-  boatOnGround.items = boatOnGround.items || [];
-  // rides as a peacefully resting passenger, same idle pose its sleeping
-  // siblings use, regardless of whatever pose it was in the instant it
-  // boarded — petMarker/petKind keep it from being yanked off as ordinary
-  // cargo, same as the cat's/goat's own markers
-  boatOnGround.items.push({ kind:'level', glyph: I5, scale: southCrocObj.scale, mirror: southCrocObj.mirror, petMarker: true, petKind: 'southCroc' });
+  // unlike the cat/goat, it doesn't ride stacked on deck as ordinary cargo —
+  // it stays in the water, trailing the boat, drawn by drawSouthCrocInWater()
+  // (see the drawList push in render()) instead of drawStackedItems
   southCrocOnBoat = true;
 }
 
 function unloadSouthCrocPetFromBoat(){
   if(!southCrocOnBoat) return;
-  if(boatOnGround && boatOnGround.items){
-    const idx = boatOnGround.items.findIndex(it => it.petMarker && it.petKind === 'southCroc');
-    if(idx !== -1) boatOnGround.items.splice(idx, 1);
-  }
   southCrocOnBoat = false;
   southCrocObj.x = player.x;
   southCrocObj.y = player.y;
@@ -3000,12 +3280,39 @@ function unloadSouthCrocPetFromBoat(){
   southCrocMoving = false;
 }
 
+// Drawn instead of drawStackedItems while southCrocOnBoat: rather than
+// riding up on deck like the cat/goat, it trails just behind the boat in
+// the water itself, cropped down to SOUTH_CROC_BOAT_VISIBLE_FRAC of its own
+// box (same clipToTopFraction trick drawCroc/drawGroundBoat use for "riding
+// low in the water") so it reads as mostly submerged, just breaking the
+// surface as it's towed along.
+const SOUTH_CROC_BOAT_VISIBLE_FRAC = 0.70; // submerged 15% more than the first pass (0.85) — now rides exactly as low as the boat's own hull (see drawGroundBoat's matching 0.70)
+function drawSouthCrocInWater(){
+  if(!boatOnGround) return;
+  const s = scaleForY(boatOnGround.y);
+  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * s * southCrocObj.scale;
+  const boatSize = Math.min(W,H) * BOAT_SIZE_MULT * s * BOAT_DROP_SCALE;
+  const dir = boatOnGround.facing || 1;
+  const sx = boatOnGround.x*W + dir * (boatSize*0.70 + size*1.0); // trails off the stern — the far end from the bow, so it reads as being towed along behind; pushed back one more of its own body-lengths past the previous pass
+  const sy = boatOnGround.y*H + boatSize*0.12;
+
+  ctx.save();
+  clipToTopFraction(sx, sy, size, SOUTH_CROC_BOAT_VISIBLE_FRAC);
+  ctx.translate(sx, sy);
+  ctx.scale(dir, 1); // faces the same way as the boat, like it's being towed along
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(I5, 0, 0); // always its resting pose while towed — it isn't "moving" itself
+  ctx.restore();
+}
+
 function updatePetSouthCroc(dt){
   if(!southCrocIsPet || boarded) return; // rides passively while boarded — see loadSouthCrocPetOntoBoat
-  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(southCrocObj.y) * southCrocObj.scale;
   const dx = (player.x-southCrocObj.x)*W, dy = (player.y-southCrocObj.y)*H;
   const dist = Math.hypot(dx, dy);
-  const followGap = size * CROC_PET_FOLLOW_GAP_MULT;
+  const followGap = petFollowGapPx('southCroc', southCrocObj.y);
   // a tiny (sub-pixel, imperceptible) epsilon past the gap itself — without
   // it, closing the last fraction of a pixel is subject to floating-point
   // residue that can leave dist forever a hair above followGap, so it never
@@ -3470,7 +3777,6 @@ const GOAT_FEED_REWARD = 5;
 const GOAT_PET_FEEDS_NEEDED = 3;
 const GOAT_SPEECH_DURATION = 5; // seconds it pauses and "talks" after being fed
 const GOAT_SPEECH_LINE = '𓆸';
-const GOAT_PET_FOLLOW_GAP_MULT = 2.8; // a bit further back than the cat's own 2x gap, so a second pet doesn't ride stacked directly on top of the first
 const GOAT_PET_FOLLOW_SPEED = 0.40; // fraction of canvas width/sec at full (foreground) depth, same as the cat
 let goatFedCount = 0;
 let goatIsPet = false;
@@ -3503,6 +3809,7 @@ function tryGiveFlowerToGoat(item){
 function becomeGoatPet(obj){
   goatIsPet = true;
   goatObj = obj;
+  registerPetFollowOrder('goat'); // claims the next follow-queue slot, in taming order — see the shared comment above updateSouthCroc's own section
   // no longer an ordinary pickup living in levelObjects — pulled out and
   // treated like the cat from here on: a standalone entity drawn/updated
   // every frame regardless of which map's levelObjects happens to be active
@@ -3541,10 +3848,9 @@ function updatePetGoat(dt){
     goatSpeechT = Math.max(0, goatSpeechT - dt);
     return;
   }
-  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(goatObj.y) * goatObj.scale;
   const dx = (player.x-goatObj.x)*W, dy = (player.y-goatObj.y)*H;
   const dist = Math.hypot(dx, dy);
-  const followGap = size * GOAT_PET_FOLLOW_GAP_MULT;
+  const followGap = petFollowGapPx('goat', goatObj.y);
   if(dist > followGap){
     const speed = Math.min(W,H) * GOAT_PET_FOLLOW_SPEED * scaleForY(goatObj.y) * dt;
     const step = Math.min(dist-followGap, speed);
@@ -3810,7 +4116,7 @@ function updateGiraffeWalk(dt){
    check) or safely from trading with the npc once he's willing. */
 const M38_WOMAN_ID = 1062;
 const M38_WOMAN_TALK_RANGE = 0.12; // fraction of min(W,H), matches the other lvl-2 quest-givers
-const M38_WOMAN_ASK_LINE = '𓉔𓃀𓍁𓁑𓀸𓄿𓅱𓏴𓂡';
+const M38_WOMAN_ASK_LINE = '𓉔𓃀𓍁';
 const GOLDEN_M38 = String.fromCodePoint(0x131E7); // Gardiner M38, gold — her reward for u13
 let m38WomanMet = false; // counts toward metAnyLvl2Npc (see its own declaration up by cowDelivered), and gates her own quest bubble below
 let m38WomanQuestDone = false;
@@ -3993,7 +4299,6 @@ function tryGiveFishToCat(item){
    down beside the player the instant they disembark — no manual pickup
    needed either way, unlike ordinary cargo. */
 const CAT_PET_FEEDS_NEEDED = 3;
-const CAT_PET_FOLLOW_GAP_MULT = 2; // stays put until it's this many multiples of its own size behind
 const CAT_PET_FOLLOW_SPEED = 0.40; // fraction of canvas width/sec at full (foreground) depth — a bit brisker than the player's own 0.30 base so it can actually catch back up
 let catFishFed = 0;
 let catIsPet = false;
@@ -4001,6 +4306,7 @@ let catOnBoat = false; // true while riding as boat cargo instead of walking/dra
 
 function becomeCatPet(){
   catIsPet = true;
+  registerPetFollowOrder('cat'); // claims the next follow-queue slot, in taming order — see the shared comment above updateSouthCroc's own section
   // it's not a fixed lvl-1 fixture living in levelObjects any more — pull it
   // out and treat it like the elephant/croc from here on: a standalone
   // entity drawn and updated every frame regardless of which map's
@@ -4047,10 +4353,9 @@ function updatePetCat(dt){
     catSpeechT = Math.max(0, catSpeechT - dt);
     return;
   }
-  const size = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(catObj.y) * catObj.scale;
   const dx = (player.x-catObj.x)*W, dy = (player.y-catObj.y)*H;
   const dist = Math.hypot(dx, dy);
-  const followGap = size * CAT_PET_FOLLOW_GAP_MULT;
+  const followGap = petFollowGapPx('cat', catObj.y);
   if(dist > followGap){
     const speed = Math.min(W,H) * CAT_PET_FOLLOW_SPEED * scaleForY(catObj.y) * dt;
     const step = Math.min(dist-followGap, speed);
@@ -4457,6 +4762,7 @@ function update(dt){
   if(gameOver) return;
   if(birdAttack){ updateBirdAttack(dt); return; } // frozen mid-dive until the kick lands
   if(boardCooldown > 0) boardCooldown = Math.max(0, boardCooldown - dt);
+  updateNpcInteractSpeech(dt); // counts down the active (interact-key-triggered) npc ask bubble, boarded or not
 
   if(boarded){
     updateBoardedMovement(dt);
@@ -5308,11 +5614,216 @@ function drawPlantWash(){
   drawPinkFlowerWash();
 }
 
+/* ============================================================
+   NPC INTERACT SYSTEM
+   Every human npc's dialogue used to pop up the moment you walked close
+   enough. Now it's player-initiated: a small (!) floats over anyone who
+   still has something to ask of you — visible from anywhere on the map,
+   not just up close, and gone for good only once that quest (or trade
+   offer) is actually done. Walking up and pressing 'e' or Shift
+   (tryTalkToNpc(), called from onInteractPress() — its own dedicated keys,
+   deliberately kept off space so feeding/picking up near an animal never
+   gets mixed up with talking to a nearby npc) is what actually shows their
+   line, for NPC_INTERACT_SPEECH_DURATION seconds — and for exactly as long
+   as that line is up, that npc's own (!) hides, so you're never looking at
+   both at once.
+
+   computeNpcAsks() below is the single source of truth for "who has an
+   outstanding ask" — it reuses the EXACT quest-chain conditions
+   (including the staffManMet/m38WomanMet/houseManMet/metAnyLvl2Npc side
+   effects, which still only flip once the player's actually walked up to
+   that npc) the old automatic bubbles used, so quest chains still unlock
+   in exactly the same order, at exactly the same moments, as before. Each
+   ask also carries an inRange flag — true only within that npc's own talk
+   range — which is what tryTalkToNpc() gates on, since actually hearing
+   the line still requires walking up; the (!) marker itself does not.
+
+   Everyone else's completion/reward text still shows automatically,
+   exactly as before: the woman's WOMAN_REWARD_LINE, the bowl man's and
+   flower woman's post-feed thank-yous. Those only ever appear once a
+   quest (or a single feeding) is actually finished, and were left alone
+   since nobody asked for them to linger any differently.
+   The npc's OWN two lines are the one exception — see npcAskLine()/
+   npcCompletionLine() just below: both now go through the same (!)+space
+   gate above, one text popping up per press rather than either line just
+   sitting there automatically the whole time its condition holds. Keeps
+   his cow-delivery line from parking itself on screen forever once
+   cowDelivered flips true — same one-shot-per-press behavior as any ask,
+   and holding an item still means space drops it instead of talking, so
+   this only ever fires with empty hands. */
+let activeNpcSpeechKey = null;
+let activeNpcSpeechText = '';
+let activeNpcSpeechT = 0;
+// x/y/size/range captured at the moment space was pressed — the anchor point
+// doesn't drift if the npc itself is stationary, and range is what lets
+// updateNpcInteractSpeech() below clear the bubble early the moment the
+// player walks back out of talk range, instead of always waiting out the
+// full NPC_INTERACT_SPEECH_DURATION.
+let activeNpcSpeechX = 0, activeNpcSpeechY = 0, activeNpcSpeechSize = 0, activeNpcSpeechRange = 0;
+const NPC_INTERACT_SPEECH_DURATION = 5; // seconds an interact-key-triggered line stays up, matches the existing reward-line durations
+
+// split out of the npc's own old combined npcBubbleText(): the ask half
+// and the completion half (npc.lineWithCow), both now interact-gated via
+// computeNpcAsks() below. Precedence matches the original exactly: the u13
+// trade offer pre-empts everything else the instant it's available, same
+// as npcBubbleText() used to.
+function npcAskLine(){
+  if(!u13FromNpcGiven && metAnyLvl2Npc) return NPC_TRADE_LINE;
+  if(cowDelivered) return null; // quest done — nothing left to ask, see npcCompletionLine()
+  if(heldItem && (heldItem.kind === 'cow' || (heldItem.kind === 'level' && CATTLE_QUEST_IDS.includes(heldItem.id)))) return null;
+  return npc.line;
+}
+function npcCompletionLine(){
+  if(!u13FromNpcGiven && metAnyLvl2Npc) return null; // trade ask takes priority, see npcAskLine()
+  // no longer gated on npcCowLineRead — the line itself stays available
+  // forever via space (see computeNpcAsks()'s own npcMarkerHidden below),
+  // only the (!) marker is a one-time thing now
+  if(cowDelivered) return npcAnim.phase === 'idle' ? npc.lineWithCow : null;
+  return null;
+}
+
+function computeNpcAsks(){
+  const asks = {}; // key -> { line, x, y, size, dist, range, inRange, markerHidden }
+  // offer() no longer requires the player to be nearby — the (!) marker it
+  // feeds is meant to show from anywhere on the map as long as the quest
+  // itself hasn't been completed yet. inRange is what tryTalkToNpc() still
+  // gates on, since actually TALKING obviously still needs you to walk up.
+  // markerHidden lets an ask stay talkable via space forever while its own
+  // (!) stops showing — used by the two one-time-marker lines below.
+  function offer(key, obj, range, line, size, markerHidden){
+    if(!obj || !line) return;
+    const dist = Math.hypot((player.x-obj.x)*W, (player.y-obj.y)*H);
+    const rangePx = Math.min(W,H)*range;
+    asks[key] = { line, x: obj.x*W, y: obj.y*H, size, dist, range: rangePx, inRange: dist < rangePx, markerHidden: !!markerHidden };
+  }
+
+  // his cow-delivery completion line goes through the same interact gate as
+  // his ask line — npcAskLine() itself already returns null once
+  // cowDelivered, so at most one of the two is ever non-null here. Its own
+  // (!) is one-time (npcMarkerHidden, once npcCowLineRead — see
+  // tryTalkToNpc()); the initial "bring me the cows" ask keeps showing its
+  // marker normally the whole time it's still relevant.
+  {
+    const npcLine = npcAskLine();
+    const npcCompletion = npcLine ? null : npcCompletionLine();
+    const npcMarkerHidden = !npcLine && !!npcCompletion && npcCowLineRead;
+    if(currentMap === 1) offer('npc', npc, NPC_TALK_RANGE, npcLine || npcCompletion, Math.min(W,H) * NPC_SIZE_MULT * scaleForY(npc.y), npcMarkerHidden);
+  }
+  if(currentMap === 1 && ladyObj && !birdQuestDone){
+    offer('lady', ladyObj, LADY_TALK_RANGE, LADY_QUEST_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(ladyObj.y) * ladyObj.scale);
+  }
+  // riverManLineRead only hides his (!) now — the line itself stays
+  // available via space forever, same one-time-marker idea as the npc above
+  if(currentMap === 1 && riverManObj){
+    offer('riverMan', riverManObj, RIVER_MAN_TALK_RANGE, RIVER_MAN_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(riverManObj.y) * riverManObj.scale, riverManLineRead);
+  }
+  if(currentMap === -1 && manObj && !manQuestDone && !manWalk){
+    offer('man', manObj, MAN_TALK_RANGE, MAN_QUEST_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(manObj.y) * manObj.scale);
+  }
+  if(currentMap === -1 && womanObj && !womanQuestDone){
+    offer('woman', womanObj, WOMAN_TALK_RANGE, WOMAN_QUEST_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(womanObj.y) * womanObj.scale);
+  }
+  if(currentMap === 2 && bowlManObj && bowlManSpeechT <= 0){
+    offer('bowlMan', bowlManObj, BOWL_MAN_TALK_RANGE, BOWL_MAN_ASK_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(bowlManObj.y) * bowlManObj.scale);
+  }
+  if(currentMap === 2 && armsUpManObj && !catQuestDone){
+    offer('armsUpMan', armsUpManObj, ARMS_UP_MAN_TALK_RANGE, ARMS_UP_MAN_ASK_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(armsUpManObj.y) * armsUpManObj.scale);
+  }
+  if(currentMap === 2 && giraffeManObj && !giraffeQuestDone){
+    offer('giraffeMan', giraffeManObj, GIRAFFE_MAN_TALK_RANGE, GIRAFFE_MAN_ASK_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(giraffeManObj.y) * giraffeManObj.scale);
+  }
+  // staffManMet still only flips once the player's actually walked up to him
+  // — only the marker itself no longer needs that proximity to show
+  if(currentMap === 2 && staffManObj && !staffQuestDone){
+    const distStaffMan = Math.hypot((player.x-staffManObj.x)*W, (player.y-staffManObj.y)*H);
+    if(distStaffMan < Math.min(W,H)*STAFF_MAN_TALK_RANGE) staffManMet = true;
+    offer('staffMan', staffManObj, STAFF_MAN_TALK_RANGE, STAFF_MAN_ASK_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(staffManObj.y) * staffManObj.scale);
+  }
+  if(currentMap === 2 && frogKeeperObj && !frogQuestDone && (staffManMet || staffQuestDone)){
+    offer('frogKeeper', frogKeeperObj, FROG_KEEPER_TALK_RANGE, FROG_KEEPER_ASK_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(frogKeeperObj.y) * frogKeeperObj.scale);
+  }
+  // same idea for m38WomanMet/houseManMet just below — the met-flag itself
+  // still needs real proximity, the marker doesn't
+  if(currentMap === 2 && m38WomanObj){
+    const distM38Woman = Math.hypot((player.x-m38WomanObj.x)*W, (player.y-m38WomanObj.y)*H);
+    if(distM38Woman < Math.min(W,H)*M38_WOMAN_TALK_RANGE) m38WomanMet = true;
+    if(!m38WomanQuestDone) offer('m38Woman', m38WomanObj, M38_WOMAN_TALK_RANGE, M38_WOMAN_ASK_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(m38WomanObj.y) * m38WomanObj.scale);
+  }
+  if(currentMap === 2 && houseManObj){
+    const distHouseMan = Math.hypot((player.x-houseManObj.x)*W, (player.y-houseManObj.y)*H);
+    if(distHouseMan < Math.min(W,H)*HOUSE_MAN_TALK_RANGE) houseManMet = true;
+    if(!houseManQuestDone) offer('houseMan', houseManObj, HOUSE_MAN_TALK_RANGE, HOUSE_MAN_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(houseManObj.y) * houseManObj.scale);
+  }
+  return asks;
+}
+
+// called from onInteractPress() — talks to whichever available npc is
+// nearest AND actually in range, if any; returns true if it found someone
+function tryTalkToNpc(){
+  const asks = computeNpcAsks();
+  let closestKey = null, closestDist = Infinity;
+  for(const key in asks){
+    if(asks[key].inRange && asks[key].dist < closestDist){ closestDist = asks[key].dist; closestKey = key; }
+  }
+  if(!closestKey) return false;
+  // the two one-time-marker lines: reading either flips its own "read" flag
+  // right here, so its (!) is gone for good starting the very next frame —
+  // computeNpcAsks() still keeps offering the line itself afterward (just
+  // with markerHidden true), so it's still reachable via space any time,
+  // just silently. The completion line only counts as "read" once
+  // cowDelivered is actually the reason it came up, never the earlier
+  // bring-me-the-cows ask that shares the same 'npc' key.
+  if(closestKey === 'npc' && cowDelivered) npcCowLineRead = true;
+  if(closestKey === 'riverMan') riverManLineRead = true;
+  activeNpcSpeechKey = closestKey;
+  activeNpcSpeechText = asks[closestKey].line;
+  activeNpcSpeechX = asks[closestKey].x;
+  activeNpcSpeechY = asks[closestKey].y;
+  activeNpcSpeechSize = asks[closestKey].size;
+  activeNpcSpeechRange = asks[closestKey].range;
+  activeNpcSpeechT = NPC_INTERACT_SPEECH_DURATION;
+  return true;
+}
+
+function updateNpcInteractSpeech(dt){
+  if(activeNpcSpeechT <= 0) return;
+  // walking back out of talk range clears it immediately, same as walking
+  // away used to hide every automatic bubble before this system existed —
+  // the timer above only otherwise caps how long it can linger while you
+  // stay put nearby
+  const dist = Math.hypot(player.x*W - activeNpcSpeechX, player.y*H - activeNpcSpeechY);
+  if(dist >= activeNpcSpeechRange){
+    activeNpcSpeechT = 0;
+    activeNpcSpeechKey = null;
+    activeNpcSpeechText = '';
+    return;
+  }
+  activeNpcSpeechT = Math.max(0, activeNpcSpeechT - dt);
+}
+
+// the classic floating "!" — marks anyone computeNpcAsks() currently
+// offers a line for, so there's always a visible reason to walk up and
+// press space rather than a silent NPC that might or might not have
+// something new to say
+function drawQuestMarker(x, y, size){
+  ctx.save();
+  const fontSize = Math.max(14, size*0.5);
+  ctx.font = 'bold '+fontSize.toFixed(1)+'px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const my = y - size*1.05;
+  // plain black ink, same tone as the rest of the game's text — no gold fill
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText('!', x, my);
+  ctx.restore();
+}
+
 let t0 = performance.now();
 function render(time){
  try{
   const dt = Math.min(0.05, (time-t0)/1000); t0 = time;
   if(dictFlashT > 0) dictFlashT = Math.max(0, dictFlashT - dt); // runs regardless of pause state, so it never gets stuck mid-flash
+  spawnControlsElapsed += dt; // same idea as dictFlashT — keeps running even while paused/editing, so its fade timings stay wall-clock accurate
   // rebuilt fresh from whichever speech bubbles actually draw this frame —
   // see the comment above hoverableWordBoxes's declaration
   hoverableWordBoxes.length = 0;
@@ -5343,9 +5854,6 @@ function render(time){
   drawPlantWash();
 
   if(fontsReady){
-    const dist = Math.hypot((player.x-npc.x)*W, (player.y-npc.y)*H);
-    const nearNpc = dist < Math.min(W,H)*NPC_TALK_RANGE;
-
     // Every npc/sign that has something to say this frame gets offered up
     // here instead of straight into drawList — once they're all gathered,
     // only the single closest one to the player actually gets its bubble
@@ -5360,13 +5868,9 @@ function render(time){
     const drawList = [];
     if(currentMap === 1){
       drawList.push({ y: npc.y, draw: drawNpc });
-      if(nearNpc){
-        const npcBubble = npcBubbleText();
-        if(npcBubble){
-          const npcSize = Math.min(W,H) * NPC_SIZE_MULT * scaleForY(npc.y);
-          bubbleCandidates.push({ dist, y: npc.y, draw: ()=>drawSpeechBubble(npc.x*W, npc.y*H-npcSize*0.75, npcBubble, BUBBLE_FONT_SIZE, 'npc') });
-        }
-      }
+      // his cow-delivery line is interact-gated too now — see computeNpcAsks()
+      // above, which offers npcCompletionLine() the same way once his ask
+      // line itself has nothing left to say
     }
     // the cow can be carried onto the boat and sailed anywhere, so — unlike
     // the npc, who never leaves lvl 1 — it has to stay visible (and pickable
@@ -5398,10 +5902,12 @@ function render(time){
     // boat cargo instead (drawGroundBoat/drawStackedItems already cover that)
     if(goatIsPet && !boarded) drawList.push({ y: goatObj.y, draw: () => drawLevelObject(goatObj) });
     // the tamed south crocodile follows across every map too, same idea —
-    // see updatePetSouthCroc() — except while boarded, when it rides as
-    // boat cargo instead (drawGroundBoat/drawStackedItems already cover
-    // that). Its glyph (I3 moving / I5 idle) is kept current directly on
-    // southCrocObj by updatePetSouthCroc, so this just draws it plain.
+    // see updatePetSouthCroc() — except while boarded, when it trails
+    // behind the boat in the water instead (drawSouthCrocInWater, pushed
+    // below alongside the boat itself) rather than riding up on deck like
+    // the cat/goat. Its glyph (I3 moving / I5 idle) is kept current
+    // directly on southCrocObj by updatePetSouthCroc, so this just draws
+    // it plain.
     if(southCrocIsPet && !boarded) drawList.push({ y: southCrocObj.y, draw: () => drawLevelObject(southCrocObj) });
     // the man dances in place the moment the 2nd fish is delivered, then
     // walks out to confront the elephant and back again — dynamically
@@ -5411,6 +5917,10 @@ function render(time){
     // the boat (and whatever's stacked on it) travels with you into lvl -1 —
     // only the cow/npc are exclusive to the main map
     if(boatOnGround) drawList.push({ y: boatOnGround.y, draw: drawGroundBoat });
+    // the tamed south crocodile, while riding along, trails in the water
+    // just behind the boat rather than stacking on deck — see
+    // drawSouthCrocInWater()'s own comment for why
+    if(southCrocOnBoat) drawList.push({ y: boatOnGround.y, draw: drawSouthCrocInWater });
     for(const obj of levelObjects){
       if(obj.id === ELEPHANT_OBJ_ID) continue; // drawn dynamically above instead
       if(obj.id === MAN_ID && (manWalk || manAnim.phase !== 'idle')) continue; // mid-walk or mid-dance — drawn dynamically above instead
@@ -5424,22 +5934,9 @@ function render(time){
         drawList.push({ y: obj.y, opaque: obj.opaque === true, draw: ()=>drawLevelObject(obj) });
       }
     }
-    if(currentMap === 1 && ladyObj && !birdQuestDone){
-      const distLady = Math.hypot((player.x-ladyObj.x)*W, (player.y-ladyObj.y)*H);
-      if(distLady < Math.min(W,H)*LADY_TALK_RANGE){
-        const ladySize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(ladyObj.y) * ladyObj.scale;
-        bubbleCandidates.push({ dist: distLady, y: ladyObj.y, draw: ()=>drawSpeechBubble(ladyObj.x*W, ladyObj.y*H-ladySize*0.75, LADY_QUEST_LINE, BUBBLE_FONT_SIZE, 'lady') });
-      }
-    }
-    // the man standing by the riverbank — just talks, no item quest, always
-    // shows the same line while you're in range
-    if(currentMap === 1 && riverManObj){
-      const distRiverMan = Math.hypot((player.x-riverManObj.x)*W, (player.y-riverManObj.y)*H);
-      if(distRiverMan < Math.min(W,H)*RIVER_MAN_TALK_RANGE){
-        const riverManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(riverManObj.y) * riverManObj.scale;
-        bubbleCandidates.push({ dist: distRiverMan, y: riverManObj.y, draw: ()=>drawSpeechBubble(riverManObj.x*W, riverManObj.y*H-riverManSize*0.75, RIVER_MAN_LINE, BUBBLE_FONT_SIZE, 'riverMan') });
-      }
-    }
+    // lady and river man have only an ask-line each (no separate completion
+    // text) — both now interact-gated only, see computeNpcAsks() above; no
+    // automatic bubble left for either.
     // each of the lady's pickup birds is its OWN speaker (keyed by its own
     // id) — same idea as the snakes/cats/cattle: seeing "bird" from any two
     // distinct birds (or from a bird and the lady's own ask-line) is enough
@@ -5454,22 +5951,16 @@ function render(time){
         }
       }
     }
-    if(currentMap === -1 && manObj && !manQuestDone && !manWalk){
-      const distMan = Math.hypot((player.x-manObj.x)*W, (player.y-manObj.y)*H);
-      if(distMan < Math.min(W,H)*MAN_TALK_RANGE){
-        const manSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(manObj.y) * manObj.scale;
-        bubbleCandidates.push({ dist: distMan, y: manObj.y, draw: ()=>drawSpeechBubble(manObj.x*W, manObj.y*H-manSize*0.75, MAN_QUEST_LINE, BUBBLE_FONT_SIZE, 'man') });
-      }
-    }
-    if(currentMap === -1 && womanObj){
+    // man has only an ask-line, no completion text of his own — interact-gated
+    // only now, see computeNpcAsks() above.
+    if(currentMap === -1 && womanObj && womanQuestDone){
+      // her ask-line (WOMAN_QUEST_LINE) is interact-gated now, same as
+      // everyone else — only the golden-F18 reward line, once the 5th snake's
+      // actually been delivered, still shows automatically
       const distWoman = Math.hypot((player.x-womanObj.x)*W, (player.y-womanObj.y)*H);
       if(distWoman < Math.min(W,H)*WOMAN_TALK_RANGE){
         const womanSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(womanObj.y) * womanObj.scale;
-        // her original ask-line stays in place the whole time she's still
-        // after snakes — only switches over to the golden-F18 reward line
-        // once the 5th one's actually been delivered
-        const womanLine = womanQuestDone ? WOMAN_REWARD_LINE : WOMAN_QUEST_LINE;
-        bubbleCandidates.push({ dist: distWoman, y: womanObj.y, draw: ()=>drawSpeechBubble(womanObj.x*W, womanObj.y*H-womanSize*0.75, womanLine, BUBBLE_FONT_SIZE, 'woman') });
+        bubbleCandidates.push({ dist: distWoman, y: womanObj.y, draw: ()=>drawSpeechBubble(womanObj.x*W, womanObj.y*H-womanSize*0.75, WOMAN_REWARD_LINE, BUBBLE_FONT_SIZE, 'woman') });
       }
     }
     // each of the 5 pickup snakes is its OWN speaker (keyed by its own id) —
@@ -5561,85 +6052,34 @@ function render(time){
       const distGoat = Math.hypot((player.x-goatObj.x)*W, (player.y-goatObj.y)*H);
       bubbleCandidates.push({ dist: distGoat, y: goatObj.y, draw: ()=>drawSpeechBubble(goatObj.x*W, goatObj.y*H-goatSize*0.75, GOAT_SPEECH_LINE, BUBBLE_FONT_SIZE, 'goat') });
     }
-    if(currentMap === 2 && bowlManObj){
+    // his ask-line is interact-gated now (see computeNpcAsks() above) — only
+    // his timed reaction line, triggered once he's actually been fed, still
+    // shows automatically
+    if(currentMap === 2 && bowlManObj && bowlManSpeechT > 0){
       const bowlManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(bowlManObj.y) * bowlManObj.scale;
       const distBowlMan = Math.hypot((player.x-bowlManObj.x)*W, (player.y-bowlManObj.y)*H);
-      if(bowlManSpeechT > 0){
-        bubbleCandidates.push({ dist: distBowlMan, y: bowlManObj.y, draw: ()=>drawSpeechBubble(bowlManObj.x*W, bowlManObj.y*H-bowlManSize*0.75, BOWL_MAN_SPEECH_LINE, BUBBLE_FONT_SIZE, 'bowlMan') });
-      } else if(distBowlMan < Math.min(W,H)*BOWL_MAN_TALK_RANGE){
-        bubbleCandidates.push({ dist: distBowlMan, y: bowlManObj.y, draw: ()=>drawSpeechBubble(bowlManObj.x*W, bowlManObj.y*H-bowlManSize*0.75, BOWL_MAN_ASK_LINE, BUBBLE_FONT_SIZE, 'bowlMan') });
-      }
+      bubbleCandidates.push({ dist: distBowlMan, y: bowlManObj.y, draw: ()=>drawSpeechBubble(bowlManObj.x*W, bowlManObj.y*H-bowlManSize*0.75, BOWL_MAN_SPEECH_LINE, BUBBLE_FONT_SIZE, 'bowlMan') });
     }
     // the 3 cats hopping out from the arms-up man to eat the locusts —
     // purely cosmetic, drawn at his position for depth-sorting purposes
     if(currentMap === 2 && catEatJumps.length && armsUpManObj){
       drawList.push({ y: armsUpManObj.y, draw: drawCatEatCutscene });
     }
-    // same always-shown-while-nearby idle line as the bowl man's ask bubble,
-    // just gone for good once each one-time quest is done
-    if(currentMap === 2 && armsUpManObj && !catQuestDone){
-      const distArmsUp = Math.hypot((player.x-armsUpManObj.x)*W, (player.y-armsUpManObj.y)*H);
-      if(distArmsUp < Math.min(W,H)*ARMS_UP_MAN_TALK_RANGE){
-        const armsUpSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(armsUpManObj.y) * armsUpManObj.scale;
-        bubbleCandidates.push({ dist: distArmsUp, y: armsUpManObj.y, draw: ()=>drawSpeechBubble(armsUpManObj.x*W, armsUpManObj.y*H-armsUpSize*0.75, ARMS_UP_MAN_ASK_LINE, BUBBLE_FONT_SIZE, 'armsUpMan') });
-      }
-    }
-    if(currentMap === 2 && giraffeManObj && !giraffeQuestDone){
-      const distGiraffeMan = Math.hypot((player.x-giraffeManObj.x)*W, (player.y-giraffeManObj.y)*H);
-      if(distGiraffeMan < Math.min(W,H)*GIRAFFE_MAN_TALK_RANGE){
-        const giraffeManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(giraffeManObj.y) * giraffeManObj.scale;
-        bubbleCandidates.push({ dist: distGiraffeMan, y: giraffeManObj.y, draw: ()=>drawSpeechBubble(giraffeManObj.x*W, giraffeManObj.y*H-giraffeManSize*0.75, GIRAFFE_MAN_ASK_LINE, BUBBLE_FONT_SIZE, 'giraffeMan') });
-      }
-    }
-    // staff man's own range-check runs first so staffManMet is already
-    // up to date by the time the frog-keeper's gate below checks it
-    if(currentMap === 2 && staffManObj && !staffQuestDone){
-      const distStaffMan = Math.hypot((player.x-staffManObj.x)*W, (player.y-staffManObj.y)*H);
-      if(distStaffMan < Math.min(W,H)*STAFF_MAN_TALK_RANGE){
-        staffManMet = true;
-        const staffManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(staffManObj.y) * staffManObj.scale;
-        bubbleCandidates.push({ dist: distStaffMan, y: staffManObj.y, draw: ()=>drawSpeechBubble(staffManObj.x*W, staffManObj.y*H-staffManSize*0.75, STAFF_MAN_ASK_LINE, BUBBLE_FONT_SIZE, 'staffMan') });
-      }
-    }
-    // gated on staffManMet (or the quest already being done, which implies
-    // he was met) — see the staffManMet comment by its declaration above
-    if(currentMap === 2 && frogKeeperObj && !frogQuestDone && (staffManMet || staffQuestDone)){
-      const distFrogKeeper = Math.hypot((player.x-frogKeeperObj.x)*W, (player.y-frogKeeperObj.y)*H);
-      if(distFrogKeeper < Math.min(W,H)*FROG_KEEPER_TALK_RANGE){
-        const frogKeeperSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(frogKeeperObj.y) * frogKeeperObj.scale;
-        bubbleCandidates.push({ dist: distFrogKeeper, y: frogKeeperObj.y, draw: ()=>drawSpeechBubble(frogKeeperObj.x*W, frogKeeperObj.y*H-frogKeeperSize*0.75, FROG_KEEPER_ASK_LINE, BUBBLE_FONT_SIZE, 'frogKeeper') });
-      }
-    }
+    // arms-up man, giraffe man: ask-line only, no completion text of their
+    // own — interact-gated only now, see computeNpcAsks() above.
+    //
+    // staff man, frog-keeper, m38 woman, house man: same — each also had a
+    // met-flag side effect (staffManMet/m38WomanMet/houseManMet) that used to
+    // be set right here; that's now handled once per frame by the single
+    // computeNpcAsks() call driving the (!) markers just below, so it still
+    // updates every frame regardless of whether their bubble ever shows.
+    //
     // repeatable — only shows for a beat right after she's handed a flower,
     // no idle ask-line the rest of the time
     if(currentMap === 2 && flowerWomanObj && flowerWomanSpeechT > 0){
       const flowerWomanSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(flowerWomanObj.y) * flowerWomanObj.scale;
       const distFlowerWoman = Math.hypot((player.x-flowerWomanObj.x)*W, (player.y-flowerWomanObj.y)*H);
       bubbleCandidates.push({ dist: distFlowerWoman, y: flowerWomanObj.y, draw: ()=>drawSpeechBubble(flowerWomanObj.x*W, flowerWomanObj.y*H-flowerWomanSize*0.75, FLOWER_WOMAN_SPEECH_LINE, BUBBLE_FONT_SIZE, 'flowerWoman') });
-    }
-    // met-flag set unconditionally (not just while her own quest is still
-    // open), same idea as staffManMet above — also counts toward
-    // metAnyLvl2Npc just below
-    if(currentMap === 2 && m38WomanObj){
-      const distM38Woman = Math.hypot((player.x-m38WomanObj.x)*W, (player.y-m38WomanObj.y)*H);
-      if(distM38Woman < Math.min(W,H)*M38_WOMAN_TALK_RANGE){
-        m38WomanMet = true;
-        if(!m38WomanQuestDone){
-          const m38WomanSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(m38WomanObj.y) * m38WomanObj.scale;
-          bubbleCandidates.push({ dist: distM38Woman, y: m38WomanObj.y, draw: ()=>drawSpeechBubble(m38WomanObj.x*W, m38WomanObj.y*H-m38WomanSize*0.75, M38_WOMAN_ASK_LINE, BUBBLE_FONT_SIZE, 'm38Woman') });
-        }
-      }
-    }
-    // same met-flag idea as the woman just above
-    if(currentMap === 2 && houseManObj){
-      const distHouseMan = Math.hypot((player.x-houseManObj.x)*W, (player.y-houseManObj.y)*H);
-      if(distHouseMan < Math.min(W,H)*HOUSE_MAN_TALK_RANGE){
-        houseManMet = true;
-        if(!houseManQuestDone){
-          const houseManSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(houseManObj.y) * houseManObj.scale;
-          bubbleCandidates.push({ dist: distHouseMan, y: houseManObj.y, draw: ()=>drawSpeechBubble(houseManObj.x*W, houseManObj.y*H-houseManSize*0.75, HOUSE_MAN_LINE, BUBBLE_FONT_SIZE, 'houseMan') });
-        }
-      }
     }
     // gate for the npc's own u13 trade back on lvl 1 (see u13FromNpcGiven's
     // declaration up by cowDelivered) — set true the moment the player's
@@ -5662,6 +6102,11 @@ function render(time){
         if(d < Math.min(W,H)*range){ metAnyLvl2Npc = true; break; }
       }
     }
+
+    // single source of truth for the (!) markers below AND for tryTalkToNpc()
+    // — also what keeps staffManMet/m38WomanMet/houseManMet updating every
+    // frame regardless of whether any of their bubbles ever show
+    const npcAsks = computeNpcAsks();
 
     // of everyone with something to say this frame, only the one closest to
     // the player actually gets a bubble — no stacked chatter from a crowd.
@@ -5709,6 +6154,23 @@ function render(time){
     // speech bubbles always last, always on top — see the comment above
     // bubbleCandidates for why they were pulled out of the y-sorted list
     bubbleCandidates.forEach(bc=>bc.draw());
+    // (!) markers — one over every npc npcAsks currently offers a line for —
+    // and the single active space-triggered ask bubble, if its timer hasn't
+    // run out yet. Both drawn last/on-top for the same reason bubbles are.
+    for(const key in npcAsks){
+      const a = npcAsks[key];
+      // markerHidden: the one-time-marker lines (npc's cow line, river man)
+      // stay talkable via space forever, but stop advertising themselves
+      // with a (!) once already read
+      if(a.markerHidden) continue;
+      // hide the marker on whoever's own bubble is currently up — no point
+      // pointing at someone you're already mid-conversation with
+      if(key === activeNpcSpeechKey && activeNpcSpeechT > 0) continue;
+      drawQuestMarker(a.x, a.y, a.size);
+    }
+    if(activeNpcSpeechT > 0 && activeNpcSpeechText){
+      drawSpeechBubble(activeNpcSpeechX, activeNpcSpeechY - activeNpcSpeechSize*0.75, activeNpcSpeechText, BUBBLE_FONT_SIZE, 'npcInteract:'+activeNpcSpeechKey);
+    }
     // on top of literally everything, including the bubbles themselves —
     // hoverableWordBoxes was just rebuilt by the drawSpeechBubble calls above
     const hoveredWord = hoverableWordBoxes.find(b => mouseX >= b.x && mouseX <= b.x+b.w && mouseY >= b.y && mouseY <= b.y+b.h);
@@ -5738,9 +6200,23 @@ function render(time){
       ctx.restore();
     }
 
+    // Top-center (SPACE) pickup prompt — only once the spawn controls
+    // legend itself is fully gone, so the two never compete for the same
+    // stretch of screen. Eased toward 1/0 every frame rather than snapped,
+    // so the badge fades in/out as you step in and out of range instead of
+    // popping — see drawKeyPrompt(). There's no equivalent (E) prompt for
+    // talking to an npc any more — the (!) marker alone is the cue for that.
+    if(!spawnControlsVisible()){
+      const pickupWanted = wouldShowPickupPrompt() ? 1 : 0;
+      pickupPromptAlpha += (pickupWanted - pickupPromptAlpha) * Math.min(1, dt*10);
+      if(pickupPromptAlpha < 0.01) pickupPromptAlpha = 0;
+      if(pickupPromptAlpha > 0) drawKeyPrompt(pickupPromptAlpha, 'SPACE', 'pick up', 50);
+    }
+
     if(dictFlashT > 0 && !dictionaryOpen) drawDictionaryFlash();
     if(dictionaryOpen && !gameOver) drawDictionaryPanel();
     if(gameOver) drawGameOver();
+    if(spawnControlsVisible() && !dictionaryOpen && !gameOver) drawSpawnControls();
   }
  }catch(err){
   // A bug anywhere in a single frame's update/draw code must never be able
