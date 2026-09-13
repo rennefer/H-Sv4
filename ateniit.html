@@ -108,8 +108,9 @@
     <button id="mapNeg1Btn">Lvl -1</button>
     <button id="map2Btn">Lvl 2</button>
     <button id="newLvlBtn">+ New Lvl</button>
+    <button id="combatLvlBtn">Combat Arena</button>
   </div>
-  <p class="hint">"+ New Lvl" is a standing scratch level — always here to place objects on, saved to this browser automatically as you edit, no internet needed. Export its JSON above and send it over whenever you'd like it turned into a real level.</p>
+  <p class="hint">"+ New Lvl" is a standing scratch level — always here to place objects on, saved to this browser automatically as you edit, no internet needed. Export its JSON above and send it over whenever you'd like it turned into a real level. "Combat Arena" is the same idea but for the combat word-challenge's own backdrop — selecting it freezes a live preview of the real combat scene (word, slots, timer, crocodile, letters) so you can decorate right behind it and see exactly where everything lands, the same way any other level is decorated.</p>
   <div class="row">
     <input type="checkbox" id="debugCheck">
     <label style="margin:0; text-transform:none; letter-spacing:0; font-size:13px;" for="debugCheck">Show hitboxes</label>
@@ -209,7 +210,14 @@ const G24 = String.fromCodePoint(0x1315B); // vulture-type bird — dive-bombs a
 const K3 = String.fromCodePoint(0x1319F); // tilapia — same fish glyph as the level's 3 pickups
 const N6 = String.fromCodePoint(0x131F4); // sun disk — the lady's reward, rendered in gold
 
-let W = 0, H = 0, DPR = 1;
+// The game renders at this FIXED internal resolution during normal play,
+// regardless of the actual window size or display -- see the big comment on
+// resize() below for the full reasoning. 1917x889 matches the wide-window
+// screenshot the game's aspect ratio (LOCKED_ASPECT) was originally locked
+// to, and is what every W/H-based draw call below is really measured
+// against now, whatever size the canvas is actually being displayed at.
+const BASE_W = 1917, BASE_H = 889;
+let W = BASE_W, H = BASE_H, DPR = 1;
 let fontsReady = false;
 // canvas-space mouse position, tracked unconditionally (not just in edit
 // mode, unlike the drag listeners further below) — used to hover-highlight
@@ -454,6 +462,14 @@ let npcCowLineRead = false;
 let u13FromNpcGiven = false;
 let metAnyLvl2Npc = false;
 let boatRewarded = false; // true once the boat prize has been handed out — only ever happens once
+// who actually completed the cattle quest — captured the instant cowDelivered
+// flips true (see registerCattleDelivery()), reading the same actingAsP2 flag
+// withPlayer2Context() sets for the duration of a player2-driven drop (same
+// pattern as registerPetOwner()/petOwnerPlayer() above the pet-taming code).
+// The boat reward (see updateNpcAnim()'s celebration-finish branch) reads
+// this to hand the boat to whichever player actually delivered the winning
+// cow/bull, instead of always defaulting to player1's own hands/feet.
+let boatRewardIsP2 = false;
 
 /* ---------- cow/bull delivery quest ----------
    There are 3 cattle in the world now: the original free-roaming cow, plus
@@ -462,7 +478,7 @@ let boatRewarded = false; // true once the boat prize has been handed out — on
    need all three. 'cow' stands in for the original cow's id here since it's
    a special singleton rather than a levelObjects entry. */
 const CATTLE_QUEST_IDS = ['cow', 810, 829];
-const COW_TALK_RANGE = 0.03; // fraction of min(W,H) — narrowed again (0.12 → 0.06 → 0.03): only gates the ambient "cow" speech bubble, not any pickup/delivery interaction, so it's safe to shrink on its own
+const COW_TALK_RANGE = 0.06; // fraction of min(W,H) — 0.03 → 0.042 (widened 40%) → 0.06 (widened again, per "still struggles to trigger" follow-up); only gates the ambient "cow" speech bubble, not any pickup/delivery interaction, so it's safe to resize on its own
 const COW_SPEECH_LINE = '𓇋𓎛𓏏𓃒'; // "cow" — shown by whichever of the 3 cattle is currently closest
 const CATTLE_QUEST_NEEDED = 2;
 const deliveredCattle = new Set(); // which of CATTLE_QUEST_IDS have reached the npc at least once
@@ -513,7 +529,7 @@ const CROC_SPEED_MULT = 1.5; // the crocodile chases at 1.5x the player's own pa
 const SPAWN_DISTANCE_DIAMETERS = 2.5; // 50% closer than its original 5-diameter spawn distance
 const CROC_SPEECH_LINE = '𓅓𓊃𓎛𓆊'; // "crocodile" — spoken by the static basking crocodiles below, not this section's chasing river hazard (that one's just called `croc`/I3 and never talks)
 const CROCODILE_IDS = [1071, 1072, 1073]; // the purely decorative 𓆌 crocodile signs on lvl 1 — unrelated to the single chasing river hazard above. The 4th (SOUTH_CROC_ID, 1074, the southernmost) is excluded: it's a hazard-then-pet (see below) with a wake radius bigger than this ambient talk range, so it's always already awake (and no longer talking) by the time you'd be close enough to hear it — its own dictionary sightings still come from these other 3 alone, any 2 of which satisfy the "2 different speakers" rule
-const CROCODILE_TALK_RANGE = 0.06; // fraction of min(W,H) — widened from the standard 0.03 other ambient animals use (per request), since these are purely decorative statics with no pickup/hazard interaction to protect
+const CROCODILE_TALK_RANGE = 0.12; // fraction of min(W,H) — 0.06 → 0.084 (widened 40%) → 0.12 (widened again, per "still struggles to trigger" follow-up); kept at ~2x the standard ambient range since these are purely decorative statics with no pickup/hazard interaction to protect
 let boarded = false; // true while the one shared boat has ANY pilot aboard — see boatPilot for who
 let boatPilot = null; // 1 or 2 — whichever player is actually steering; only meaningful while boarded. Either player can board it first (see tryAutoBoard()/tryAutoBoard2()) and becomes the pilot.
 let boatPassenger = null; // 1 or 2 — the OTHER player, once he's also climbed aboard the same boat (see tryAutoBoard()/tryAutoBoard2()'s own "already has a pilot" branch); only meaningful while boarded. Doesn't steer — just rides along, safe from hazards same as the pilot — but his presence is what lets tryMoveBoatTo() actually cross into another level instead of just running the boat up against that edge.
@@ -797,8 +813,14 @@ function setMap(mapId){
   // now rather than only relying on render()'s periodic autosave, so a
   // switch straight to another map never loses whatever was just placed
   if(currentMap === NEW_LVL_ID) saveNewLvlObjects();
+  // same idea leaving the "Combat Arena" decorating slot — plus drop the
+  // frozen preview combat instance enterCombatLvlPreview() set up below, so
+  // whatever comes next (a real map, or update() resuming once edit mode
+  // ends — see setEditMode()'s own guard) never sees a stale, un-driven
+  // combatActive left on with nothing to ever resolve it
+  if(currentMap === COMBAT_LVL_ID){ saveCombatLvlObjects(); combatActive = false; }
   currentMap = mapId;
-  levelObjects = mapId === -1 ? MAP_NEG1_OBJECTS : mapId === 2 ? MAP2_OBJECTS : mapId === NEW_LVL_ID ? NEW_LVL_OBJECTS : MAP1_OBJECTS;
+  levelObjects = mapId === -1 ? MAP_NEG1_OBJECTS : mapId === 2 ? MAP2_OBJECTS : mapId === NEW_LVL_ID ? NEW_LVL_OBJECTS : mapId === COMBAT_LVL_ID ? COMBAT_LVL_OBJECTS : MAP1_OBJECTS;
   // the fish-jump ambient scene is lvl -1 only and shouldn't linger mid-flight
   // across a map change in either direction — it'll just replay naturally
   // next time the player gets close again
@@ -807,6 +829,7 @@ function setMap(mapId){
   fishJumpCooldownT = 0;
   if(mapId === -1) arriveAtMapNeg1();
   if(mapId === 2) arriveAtMap2();
+  if(mapId === COMBAT_LVL_ID) enterCombatLvlPreview();
   // the sun's guardian mid-carry shouldn't linger across a map change either
   // way — same idea as the fish-jump scene above
   sunGuardian = null;
@@ -963,11 +986,46 @@ function saveNewLvlObjects(){
 }
 let NEW_LVL_OBJECTS = loadNewLvlObjects();
 
+/* ---------- "Combat Arena" scratch level — decorating the combat
+   challenge's own backdrop ----------
+   A second scratch map slot, same idea as "+ New Lvl" above, but for
+   dressing up the combat word-challenge scene (see drawCombatScene()) with
+   its own scenery instead of the plain papyrus fill it always used to
+   have. Selecting it in the editor (see enterCombatLvlPreview() below,
+   called from setMap()) freezes a live, real preview of the actual combat
+   scene right there — word, MDC slots, timer, crocodile, scattered letter
+   tiles, everything — so signs placed here show up exactly where they'll
+   really sit, with no separate preview mode to imagine your way through.
+   It's never a real walkable map (there's nothing to walk ON, just the
+   combat overlay) — editMode already skips update() entirely (see its own
+   call site above render()'s pipeline split), so nothing about the frozen
+   preview combat instance ever ticks down or resolves while decorating;
+   see setMap()'s and setEditMode()'s own comments for how it's torn back
+   down again on the way out. Persisted the same way as NEW_LVL_OBJECTS —
+   this browser's own localStorage — and exported/imported through the same
+   JSON box, since everything the editor does already just reads and writes
+   whatever levelObjects currently points to. */
+const COMBAT_LVL_ID = 4;
+const COMBAT_LVL_STORAGE_KEY = 'depthWalkCombatLvlObjects_v1';
+function loadCombatLvlObjects(){
+  try{
+    const raw = localStorage.getItem(COMBAT_LVL_STORAGE_KEY);
+    if(!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  }catch(e){ return []; } // corrupt/blocked storage — just start from a blank arena rather than fail to load
+}
+function saveCombatLvlObjects(){
+  try{ localStorage.setItem(COMBAT_LVL_STORAGE_KEY, JSON.stringify(COMBAT_LVL_OBJECTS)); }catch(e){}
+}
+let COMBAT_LVL_OBJECTS = loadCombatLvlObjects();
+
 let nextObjId = 1 + Math.max(0,
   ...MAP1_OBJECTS.map(o=>o.id),
   ...MAP_NEG1_OBJECTS.map(o=>o.id),
   ...MAP2_OBJECTS.map(o=>o.id),
-  ...NEW_LVL_OBJECTS.map(o=>o.id)
+  ...NEW_LVL_OBJECTS.map(o=>o.id),
+  ...COMBAT_LVL_OBJECTS.map(o=>o.id)
 );
 let selectedObjId = null;
 let placeGlyph = A1;   // currently chosen palette sign, for the next placement
@@ -1037,7 +1095,7 @@ const BIRD_IDS = [6, 152, 155, 157, 158, 774, 775]; // every pickup-bird sign th
 const BIRDS_NEEDED = 5; // how many of the above she actually asks for
 const LADY_TALK_RANGE = 0.15; // fraction of min(W,H) — matches the main npc's; narrowed from 0.24 so it's less likely to overlap with another npc's own range at once
 const LADY_QUEST_LINE = '𓅠𓅓𓏛𓏤5𓄿𓊪𓂧𓅯';
-const BIRD_TALK_RANGE = 0.03; // fraction of min(W,H) — narrowed again (0.12 → 0.06 → 0.03): only gates the ambient "bird" speech bubble, not the pickup itself (that's CAPTURE_RANGE) or the lady's own delivery range (LADY_TALK_RANGE)
+const BIRD_TALK_RANGE = 0.06; // fraction of min(W,H) — 0.03 → 0.042 (widened 40%) → 0.06 (widened again, per "still struggles to trigger" follow-up); only gates the ambient "bird" speech bubble, not the pickup itself (that's CAPTURE_RANGE) or the lady's own delivery range (LADY_TALK_RANGE)
 const BIRD_SPEECH_LINE = '𓄿𓊪𓂧𓅯'; // "bird" — each of the pickup birds is its own distinct dictionary speaker, same idea as the snakes/cats/cattle
 let birdsDelivered = 0;
 let birdQuestDone = false;
@@ -1444,6 +1502,7 @@ function registerCattleDelivery(id){
   if(!cowDelivered && deliveredCattle.size >= CATTLE_QUEST_NEEDED){
     score += 5; // completing the quest only pays out the first time
     cowDelivered = true; // quest complete — retires the "go find them" line for good
+    boatRewardIsP2 = actingAsP2; // whoever's drop just tipped the quest over the line gets the boat — see boatRewardIsP2's own comment
   }
 }
 
@@ -1646,11 +1705,22 @@ function updateNpcAnim(dt){
         npcAnim.phase = 'idle';
         npcAnim.facing = 1;
         // he dances for every single delivery, but the boat only comes out
-        // once the quest itself is actually done — 2 of the 3 cattle in hand
+        // once the quest itself is actually done — 2 of the 3 cattle in hand.
+        // Goes to whoever actually completed it (boatRewardIsP2, captured at
+        // the moment cowDelivered flipped true in registerCattleDelivery) —
+        // this used to always check/grant player1's own heldItem/position no
+        // matter which player made the delivering drop, so it would lock
+        // onto player1's hands even when player2 was the one who finished
+        // the quest.
         if(cowDelivered && !boatRewarded){
           boatRewarded = true; // the reward for completing the quest — only granted the first time
-          if(!heldItem) heldItem = { kind:'boat' }; // hands free — wear it
-          else boatOnGround = { x: player.x, y: player.y, items: [] }; // hands full — it waits for you on the ground instead
+          if(boatRewardIsP2){
+            if(!heldItem2) heldItem2 = { kind:'boat' }; // player2's hands free — wear it
+            else boatOnGround = { x: player2.x, y: player2.y, items: [] }; // player2's hands full — it waits for him on the ground instead
+          } else {
+            if(!heldItem) heldItem = { kind:'boat' }; // player1's hands free — wear it
+            else boatOnGround = { x: player.x, y: player.y, items: [] }; // player1's hands full — it waits for him on the ground instead
+          }
         }
       }
     }
@@ -1711,8 +1781,9 @@ const BUBBLE_FONT_SIZE = 22; // reverted back to original size — the smaller b
    just started seeing this text", whether for the first time ever or after
    having walked away and back), and records speakerKey (the same short id
    drawSpeechBubble is called with elsewhere — 'npc', 'lady', 'goat', etc.)
-   against every matching word. A word only unlocks in the dictionary panel
-   once it's been heard from 2 DIFFERENT speakers — hearing the same npc
+   against every matching word. A word only becomes eligible for the combat
+   challenge (see COMBAT_ELIGIBLE_SIGHTINGS below) once it's been heard from
+   3 DIFFERENT speakers — hearing the same npc
    repeat the same line (or two different lines) never counts twice on its
    own, since that's still only one entry in the set below. A word
    appearing twice within the SAME line (e.g. 𓊃 in the flower woman's line)
@@ -1726,7 +1797,25 @@ const BUBBLE_FONT_SIZE = 22; // reverted back to original size — the smaller b
    Scanning greedily consumes the longest match at each position (checked
    longest-entry-first) before moving on, so "find" swallows its own 𓅓
    whole and "in" only ever registers where 𓅓 genuinely stands alone (e.g.
-   BOWL_MAN_ASK_LINE). Same idea covers 𓂋 ("towards") vs 𓂋𓂋 ("towards"). */
+   BOWL_MAN_ASK_LINE). Same idea covers 𓂋 ("towards") vs 𓂋𓂋 ("towards").
+
+   Optional `segs` field (see the 'cow' entry below for the first one): a
+   per-glyph MDC breakdown used ONLY by the combat arena's slot layout
+   (drawCombatScene) to line each MDC letter tile up under the specific sign
+   it actually transliterates. One array entry per codepoint of `e`, in the
+   same order — each entry is either the substring of `t` that glyph covers
+   (commonly one letter, but a single biliteral/triliteral sign can cover
+   more than one — e.g. a sign meaning "Hr" all by itself would get segs
+   entry 'Hr', not 'H' and 'r' split across two glyphs), or null for a
+   determinative/phonetic-complement glyph with no MDC letter of its own at
+   all (drawn in the word but skipped entirely in the slot row beneath it).
+   The non-null entries concatenated, in order, must equal `t` exactly. This
+   can only be filled in from real per-word Egyptological knowledge (never
+   guessed/positionally assumed — a biliteral sign breaks any simple "one
+   glyph, one letter" heuristic), so it's only added as entries are actually
+   confirmed; anything without it falls back to a direct 1:1 layout when `e`
+   and `t` happen to have the same length, or a plain centered row
+   otherwise — see drawCombatScene. */
 const EGYPT_DICTIONARY = [
   { e:'𓅠𓅓𓏛', t:'gm',   m:'find' },
   { e:'𓈖𓄿',   t:'nA',   m:'the' },
@@ -1747,15 +1836,25 @@ const EGYPT_DICTIONARY = [
   { e:'𓂋',     t:'r',    m:'towards' },
   { e:'𓈗',     t:'mw',   m:'water' },
   { e:'𓊖𓏏𓏤', t:'niwt', m:'city' },
-  { e:'𓎛𓆑𓄫𓆚', t:'HfA',  m:'snake', alts:['𓎛𓆑𓄫𓅱𓆙'] }, // alts: the plural spelling ("HfAw" — the root plus a "w" plural marker plus a different snake-determinative variant) used inside the lady's own WOMAN_QUEST_LINE — same word, so it pools into this same entry instead of going unrecognized
+  { e:'𓎛𓆑𓄫𓅱𓆙', t:'HfAw', m:'snake', segs:['H','f','A','w',null], alts:['𓎛𓆑𓄫𓆚'] }, // primary spelling switched to the fuller one seen in the lady's own WOMAN_QUEST_LINE, which actually spells all 4 MDC letters out (𓅱=w) — the shorter ambient form used by each of the 5 wild snakes (SNAKE_SPEECH_LINE) is now the alt, still pooling into this same wordSeenBy entry. segs: 𓎛=H, 𓆑=f, 𓄫=A, 𓅱=w, and 𓆙 is a determinative with no MDC letter of its own (null) — same pattern as the 'cow' entry's own segs above. Previously the shorter 3-letter spelling was always primary, so the combat challenge always quizzed/displayed "HfA" and silently dropped the word's real final "w" no matter which spelling actually triggered it
   { e:'𓏇𓇋𓅱𓄜', t:'miw',  m:'cat' },
-  { e:'𓇋𓎛𓏏𓃒', t:'iHt',  m:'cow' },
+  { e:'𓇋𓎛𓏏𓃒', t:'iHt',  m:'cow', segs:['i','H','t',null] }, // segs: per-glyph MDC breakdown for the combat arena's slot alignment (see the big comment above EGYPT_DICTIONARY and drawCombatScene) — confirmed by the user: 𓇋=i, 𓎛=H, 𓏏=t, and 𓃒 is a determinative with no MDC letter of its own (null)
   { e:'𓈎𓂋𓂋𓆏', t:'qrr',  m:'frog' },
   { e:'𓏎𓇋',   t:'ini',  m:'bring' },
   { e:'𓄿𓊪𓂧𓅯', t:'Apd',  m:'bird' },
   { e:'𓅓𓊃𓎛𓆊', t:'msH',  m:'crocodile' },
 ];
-const wordSeenBy = new Map(); // dictionary entry's "e" string -> Set of speaker keys ('npc','lady','goat',...) who have shown it — needs 2 DIFFERENT speakers to unlock, not the same one twice
+const COMBAT_ELIGIBLE_SIGHTINGS = 3; // distinct speakers needed before a word is eligible to trigger the combat challenge
+const wordSeenBy = new Map(); // dictionary entry's "e" string -> Set of speaker keys ('npc','lady','goat',...) who have shown it — needs COMBAT_ELIGIBLE_SIGHTINGS DIFFERENT speakers before the word is even ELIGIBLE (see wordsLearned below — hearing it twice used to be enough on its own, now it's just the gate that lets the combat challenge start)
+// A word only actually counts as known once it's been WON in the combat
+// challenge (see enterCombatForWord() and the big COMBAT section below) —
+// wordSeenBy alone (hearing it from enough distinct speakers) used to be
+// enough by itself, back when that just triggered the "new word!" flash directly.
+// Everything that used to gate on wordSeenBy's own threshold (the
+// dictionary panel, the speech-bubble hover annotation) now checks this
+// set instead; wordSeenBy itself still exists purely to decide when a word
+// is first ELIGIBLE to attempt.
+const wordsLearned = new Set();
 let dictionaryOpen = false;
 let dictFlashT = 0; // seconds remaining on the "new word!" Q-key flash, top-left — see triggerDictionaryFlash()
 const DICT_FLASH_DURATION = 2.6;
@@ -1829,22 +1928,557 @@ function registerWordsSeen(text, speakerKey){
   for(const key of wordsInText(text)){
     let seenBy = wordSeenBy.get(key);
     if(!seenBy){ seenBy = new Set(); wordSeenBy.set(key, seenBy); }
-    const wasKnown = seenBy.size >= 2;
     seenBy.add(speakerKey);
-    if(!wasKnown && seenBy.size >= 2) triggerDictionaryFlash();
+    // eligible (heard from COMBAT_ELIGIBLE_SIGHTINGS distinct speakers) and
+    // not already learned — try to actually learn it via the combat
+    // challenge instead of just flashing "new word!" outright; see
+    // enterCombatForWord() in the big COMBAT section below. Retriable by
+    // design: this fires again every time the word comes up in dialogue
+    // again, for as long as it stays out of wordsLearned, so losing the
+    // challenge just means try again next time someone says it. The
+    // !combatActive && !zoomTransition guard stops a second word in the
+    // very same line of dialogue from starting a second attempt on top of
+    // the first (zoomTransition flips truthy synchronously the instant
+    // enterCombatForWord below actually starts one).
+    if(seenBy.size >= COMBAT_ELIGIBLE_SIGHTINGS && !wordsLearned.has(key) && !combatActive && !zoomTransition){
+      enterCombatForWord(key);
+    }
   }
 }
 
+/* ---------- teleport zoom transition ----------
+   A whole-screen zoom used purely for the cut into/out of the combat
+   challenge below — a CSS transform on the <canvas> element itself
+   (updateCanvasZoomStyle(), called every frame from render()), not a canvas
+   2D context transform, deliberately: it means this never has to touch or
+   risk breaking any of render()'s own huge existing drawing code, since the
+   zoom is layered on completely from the outside. originXPct/originYPct are
+   just the character's own x/y (already a 0..1 fraction of the canvas in
+   both the normal world and the combat arena — see player.x/y and
+   combatPlayerX/Y), which map directly onto a CSS transform-origin
+   percentage with no extra math.
+   The zoom scales up to ZOOM_MAX exactly at the transition's midpoint, and
+   that's also exactly when onSwap() fires (see updateZoomTransition) — the
+   scene change happens hidden behind the tightest part of the zoom, the
+   same way a whip-pan disguises a hard cut. So one call handles both
+   directions: startZoomTransition(player.x, player.y, () => actually enter
+   combat) going in, startZoomTransition(combatPlayerX, combatPlayerY, () =>
+   actually leave combat) coming back out. */
+const ZOOM_DURATION = 0.7; // seconds for the full in-then-out transition
+const ZOOM_MAX = 2.4; // how far in the zoom pushes at its tightest point
+let zoomTransition = null; // { t, originXPct, originYPct, swapped, onSwap }
+
+function startZoomTransition(originXFrac, originYFrac, onSwap){
+  zoomTransition = { t: 0, originXPct: originXFrac, originYPct: originYFrac, swapped: false, onSwap };
+}
+
+function updateZoomTransition(dt){
+  if(!zoomTransition) return;
+  zoomTransition.t += dt / ZOOM_DURATION;
+  if(!zoomTransition.swapped && zoomTransition.t >= 0.5){
+    zoomTransition.swapped = true;
+    zoomTransition.onSwap();
+  }
+  if(zoomTransition.t >= 1) zoomTransition = null;
+}
+
+// 1 at rest, rising to ZOOM_MAX exactly at the midpoint and back to 1 by the
+// end — a triangle wave eased at both ends so it doesn't snap
+function currentZoomScale(){
+  if(!zoomTransition) return 1;
+  const t = Math.min(1, zoomTransition.t);
+  const tri = t < 0.5 ? t/0.5 : (1-t)/0.5; // 0..1..0
+  return 1 + (ZOOM_MAX-1) * Math.sin(tri * Math.PI/2);
+}
+
+function updateCanvasZoomStyle(){
+  if(!zoomTransition){
+    if(canvas.style.transform){ canvas.style.transform = ''; canvas.style.transformOrigin = ''; }
+    return;
+  }
+  canvas.style.transformOrigin = (zoomTransition.originXPct*100).toFixed(2)+'% '+(zoomTransition.originYPct*100).toFixed(2)+'%';
+  canvas.style.transform = 'scale('+currentZoomScale().toFixed(3)+')';
+}
+
+/* ============================================================
+   COMBAT — the "learn a word" challenge that replaces the old instant
+   dictionary flash (see registerWordsSeen above). Hearing a word from
+   COMBAT_ELIGIBLE_SIGHTINGS distinct speakers teleports you into a small
+   separate arena where you have to spell it out in MDC (its transliteration
+   — EGYPT_DICTIONARY's own `t` field) before a 20-second timer runs out,
+   visualized as a crocodile creeping across the top toward a goat. Winning
+   adds the word to wordsLearned (see above) and plays the familiar "new
+   word!" flash — now a reward for winning, not an announcement of merely
+   hearing it. Losing (dropping a letter in the wrong slot, or the timer
+   reaching 0) just sends you back empty-handed; the word stays eligible and
+   registerWordsSeen's own guard fires the exact same challenge again next
+   time anyone says it, so nothing is ever permanently missed.
+
+   Deliberately a fully separate, self-contained little world: it never
+   touches player.x/currentMap/heldItem or anything else belonging to the
+   real map, so "teleporting back" is just switching combatActive off again
+   — there's nothing whatsoever to restore.
+
+   In 2-player mode BOTH players get teleported in together and can help —
+   either one can run down a scattered letter and place it, using their own
+   normal control scheme (WASD + Space for player1, arrows + Shift/Ctrl for
+   player2 — see updateCombat()/onCombatSpacePress2() below), same as the
+   real world's split key sets. combatPlayer2X/Y and combatHeldIdx2 mirror
+   player1's own combatPlayerX/Y/combatHeldIdx one-for-one and are simply
+   never touched/drawn while numPlayers===1. In solo mode player1 keeps the
+   original either-WASD-or-arrows convention (matching numPlayers===1's own
+   real on-foot movement block), since there's no player2 to claim arrows. */
+const COMBAT_DURATION = 20; // seconds on the clock
+const COMBAT_PICKUP_RANGE = 0.05; // fraction of min(W,H)
+const COMBAT_PLAYER_SPEED = 0.35; // fraction of canvas width/sec, flat — no depth/water in this arena
+const COMBAT_SLOT_Y = 0.30; // fraction of H where the word + its empty MDC slots sit — 0.24 → 0.27 → 0.30 (moved down still further, per request) so the word clears the timer/crocodile animations creeping across the top of the arena; the scattered letter tiles' own spawn range was pushed down to match (see its own comment below)
+const COMBAT_CROC_Y = 0.08; // fraction of H — same row the goat sits on, across the top
+const COMBAT_GOAT_X = 0.92; // fraction of W
+const COMBAT_RESULT_BEAT = 1.2; // seconds the "learned it!"/"not this time" message holds before the exit zoom fires
+// The word-reveal phase: right after the entering zoom-transition finishes
+// teleporting you into the arena (its own separate CSS-transform zoom — see
+// startZoomTransition above), the new word itself zooms in and holds on
+// screen for a beat before actual gameplay (the timer, the letters, the
+// crocodile, movement, pickup/placement) begins. Three phases, all driven by
+// combatRevealElapsed counting up from 0 each time combat is entered:
+// ramp-in (font size 1x -> COMBAT_REVEAL_ZOOM), hold (COMBAT_REVEAL_HOLD
+// seconds at full zoom), ramp-out (back to 1x). The word is drawn at the
+// exact same anchor (wordY, centered on W/2) it occupies during real
+// gameplay -- only its font size changes -- so it reads as the same word
+// growing then settling into place, not a separate screen.
+const COMBAT_REVEAL_RAMP = 0.4; // seconds for each of the zoom-in/zoom-out ramps
+const COMBAT_REVEAL_HOLD = 5; // seconds the word holds at full zoom (per request: "hold... for 5 sec")
+const COMBAT_REVEAL_TOTAL = COMBAT_REVEAL_RAMP*2 + COMBAT_REVEAL_HOLD; // total reveal duration
+const COMBAT_REVEAL_ZOOM = 1.9; // font-size multiplier at the peak of the hold
+let combatActive = false;
+let combatWord = null; // the full EGYPT_DICTIONARY entry currently being fought over
+let combatLetters = []; // [{ char, x, y, collected }] — one tile per character of combatWord.t, shared — either player can grab any uncollected one
+let combatSlots = []; // combatSlots[i] — the char once correctly placed there, else null
+let combatHeldIdx = null; // player1's own index into combatLetters currently being carried, or null
+let combatHeldIdx2 = null; // player2's own — see the big comment above; unused/ignored while numPlayers===1
+let combatTimer = 0;
+let combatPlayerX = 0.5, combatPlayerY = 0.8;
+let combatPlayer2X = 0.6, combatPlayer2Y = 0.8; // only meaningful/drawn while numPlayers===2
+let combatResultT = 0; // counts down COMBAT_RESULT_BEAT before the exit transition fires; 0 means no result showing yet
+let combatResultWon = false;
+let combatRevealElapsed = 0; // counts UP from 0 to COMBAT_REVEAL_TOTAL each time combat is entered -- see the big comment above COMBAT_REVEAL_RAMP
+
+// the reveal phase's font-size multiplier at the current moment -- ramps
+// 1 -> COMBAT_REVEAL_ZOOM -> 1 across its three phases (see the comment
+// above COMBAT_REVEAL_RAMP). Once the reveal is over this always returns 1,
+// so it's safe to multiply into the word's font size unconditionally.
+function combatRevealScale(){
+  const t = combatRevealElapsed;
+  if(t >= COMBAT_REVEAL_TOTAL) return 1;
+  if(t < COMBAT_REVEAL_RAMP) return 1 + (COMBAT_REVEAL_ZOOM-1) * (t/COMBAT_REVEAL_RAMP);
+  if(t < COMBAT_REVEAL_RAMP + COMBAT_REVEAL_HOLD) return COMBAT_REVEAL_ZOOM;
+  const outT = t - COMBAT_REVEAL_RAMP - COMBAT_REVEAL_HOLD;
+  return COMBAT_REVEAL_ZOOM - (COMBAT_REVEAL_ZOOM-1) * Math.min(1, outT/COMBAT_REVEAL_RAMP);
+}
+
+// called from registerWordsSeen the instant a word becomes eligible — looks
+// up its full dictionary entry and starts the zoom-in that leads into it
+function enterCombatForWord(key){
+  const entry = EGYPT_DICTIONARY.find(e => e.e === key);
+  if(!entry) return; // defensive only — key always comes from EGYPT_DICT_SCAN, which is built from this same array
+  startZoomTransition(player.x, player.y, () => actuallyEnterCombat(entry));
+}
+
+// fires at the entering transition's midpoint (see startZoomTransition's
+// own comment) — this is the actual "teleport", hidden behind the zoom
+function actuallyEnterCombat(entry){
+  combatActive = true;
+  combatWord = entry;
+  combatTimer = COMBAT_DURATION;
+  combatResultT = 0;
+  combatRevealElapsed = 0; // start the word-reveal hold fresh every time -- see COMBAT_REVEAL_RAMP above
+  combatHeldIdx = null;
+  combatHeldIdx2 = null;
+  combatPlayerX = 0.5; combatPlayerY = 0.85;
+  // player2 is teleported in right alongside player1 whenever a 2nd player
+  // is actually in the game — see the big comment above for why both get to
+  // help. Harmless to set even in solo mode: combatPlayer2X/Y just never
+  // gets read/drawn while numPlayers===1.
+  combatPlayer2X = 0.6; combatPlayer2Y = 0.85;
+  combatSlots = new Array(entry.t.length).fill(null);
+  combatLetters = [];
+  const placed = []; // avoids stacking tiles right on top of each other
+  for(let i=0;i<entry.t.length;i++){
+    let x, y, tries = 0;
+    do{
+      x = 0.12 + Math.random()*0.76;
+      y = 0.40 + Math.random()*0.46; // 0.36 raised to 0.40 (same 0.86 top end) so the tiles keep clear of the word/slot row now that COMBAT_SLOT_Y sits lower (see its own comment)
+      tries++;
+    } while(placed.some(p => Math.hypot(p.x-x, p.y-y) < 0.12) && tries < 30);
+    placed.push({x,y});
+    combatLetters.push({ char: entry.t[i], x, y, collected: false });
+  }
+}
+
+// Called from setMap() whenever the editor's "Combat Arena" scratch level
+// (see COMBAT_LVL_ID's own comment) becomes the active map — sets up a real
+// combat instance via actuallyEnterCombat() itself, exactly like a genuine
+// encounter would, but calling it directly here (instead of going through
+// enterCombatForWord()'s startZoomTransition) means there's no zoom-in cut
+// to sit through, and skipping straight to the reveal's end shows the full
+// scene (word, slots, timer, crocodile, letters) immediately. Which word
+// shows is arbitrary — this is purely a backdrop-decorating aid, not a real
+// challenge — so the first dictionary entry does fine. Since editMode
+// always skips update() entirely (see its own call site above render()'s
+// pipeline split), none of this ever actually ticks down or resolves while
+// the editor is open; it just sits frozen as a real, live backdrop to
+// decorate against. Torn back down by setMap()'s own leaving-hook and
+// setEditMode()'s guard, both right alongside this.
+function enterCombatLvlPreview(){
+  actuallyEnterCombat(EGYPT_DICTIONARY[0]);
+  combatRevealElapsed = COMBAT_REVEAL_TOTAL; // skip the reveal hold — show the finished scene right away
+}
+
+function updateCombat(dt){
+  if(combatRevealElapsed < COMBAT_REVEAL_TOTAL){
+    // holding on the new word -- nothing moves, nothing ticks down, no
+    // pickup/placement is possible yet (see the guard at the top of
+    // combatSpaceAction) until the reveal finishes playing out
+    combatRevealElapsed = Math.min(COMBAT_REVEAL_TOTAL, combatRevealElapsed + dt);
+    return;
+  }
+  if(combatResultT > 0){
+    combatResultT = Math.max(0, combatResultT - dt);
+    if(combatResultT === 0) startZoomTransition(combatPlayerX, combatPlayerY, actuallyExitCombat);
+    return; // frozen on the result beat — no more moving or ticking down
+  }
+
+  // player1: WASD only once a real player2 is around to claim the arrow
+  // keys (matching his own real on-foot movement split), otherwise either
+  // WASD or arrows — same either-key-set convention numPlayers===1 already
+  // uses on the real map.
+  let dx=0, dy=0;
+  if(keys['a'] || (numPlayers===1 && keys['arrowleft'])) dx -= 1;
+  if(keys['d'] || (numPlayers===1 && keys['arrowright'])) dx += 1;
+  if(keys['w'] || (numPlayers===1 && keys['arrowup'])) dy -= 1;
+  if(keys['s'] || (numPlayers===1 && keys['arrowdown'])) dy += 1;
+  if(dx && dy){ dx *= 0.7071; dy *= 0.7071; }
+  combatPlayerX = Math.max(0.03, Math.min(0.97, combatPlayerX + dx*COMBAT_PLAYER_SPEED*dt));
+  combatPlayerY = Math.max(0.32, Math.min(0.95, combatPlayerY + dy*COMBAT_PLAYER_SPEED*dt));
+
+  // player2: arrow keys only, same as his real on-foot movement — see the
+  // big comment above this whole COMBAT section
+  if(numPlayers === 2){
+    let dx2=0, dy2=0;
+    if(keys['arrowleft']) dx2 -= 1;
+    if(keys['arrowright']) dx2 += 1;
+    if(keys['arrowup']) dy2 -= 1;
+    if(keys['arrowdown']) dy2 += 1;
+    if(dx2 && dy2){ dx2 *= 0.7071; dy2 *= 0.7071; }
+    combatPlayer2X = Math.max(0.03, Math.min(0.97, combatPlayer2X + dx2*COMBAT_PLAYER_SPEED*dt));
+    combatPlayer2Y = Math.max(0.32, Math.min(0.95, combatPlayer2Y + dy2*COMBAT_PLAYER_SPEED*dt));
+  }
+
+  combatTimer -= dt;
+  if(combatTimer <= 0){
+    combatTimer = 0;
+    resolveCombat(false);
+  }
+}
+
+// the space bar (player1) / Shift+Ctrl (player2) while combatActive — wired
+// in the keydown handler alongside each one's ordinary onSpacePress()/
+// onSpacePress2() call. Picks up the nearest uncollected letter in reach
+// when empty-handed; drops the held one into the next empty slot when close
+// enough to the word itself. Shared by both players via combatSpaceAction()
+// below — either one can grab any still-uncollected tile and either one can
+// place whatever they're currently holding, so the two of you can split up
+// and race the clock together.
+function onCombatSpacePress(){ combatSpaceAction(false); }
+function onCombatSpacePress2(){ if(numPlayers !== 2) return; combatSpaceAction(true); }
+
+function combatSpaceAction(isP2){
+  if(combatRevealElapsed < COMBAT_REVEAL_TOTAL) return; // still holding on the word -- gameplay hasn't started yet
+  if(combatResultT > 0) return; // result beat showing — nothing to do but wait for the exit transition
+  const px = isP2 ? combatPlayer2X : combatPlayerX;
+  const py = isP2 ? combatPlayer2Y : combatPlayerY;
+  const heldIdx = isP2 ? combatHeldIdx2 : combatHeldIdx;
+  if(heldIdx === null){
+    let best = -1, bestDist = Infinity;
+    for(let i=0;i<combatLetters.length;i++){
+      const L = combatLetters[i];
+      if(L.collected) continue;
+      const d = Math.hypot(L.x-px, L.y-py);
+      if(d < bestDist){ bestDist = d; best = i; }
+    }
+    if(best !== -1 && bestDist < COMBAT_PICKUP_RANGE){
+      combatLetters[best].collected = true;
+      if(isP2) combatHeldIdx2 = best; else combatHeldIdx = best;
+    }
+    return;
+  }
+  if(py > COMBAT_SLOT_Y + 0.12) return; // has to actually walk up to the word to place a letter
+  if(combatSlots.every(s => s !== null)) return; // shouldn't happen — winning already clears combatActive
+  const dropped = combatLetters[heldIdx];
+  // Placement order doesn't matter any more — only correct placement does.
+  // Any still-empty slot whose own required letter matches whatever you're
+  // holding accepts it, not just the leftmost empty one, so you (or the two
+  // of you together) can grab letters in whatever order you find them and
+  // still win, as long as every letter ends up SOMEWHERE it's actually
+  // needed. Only a genuinely wrong letter — one no remaining empty slot
+  // wants at all (repeats included) — is still an immediate loss.
+  const targetIdx = combatSlots.findIndex((s,i) => s === null && combatWord.t[i] === dropped.char);
+  if(targetIdx !== -1){
+    combatSlots[targetIdx] = dropped.char;
+    if(isP2) combatHeldIdx2 = null; else combatHeldIdx = null;
+    if(combatSlots.every(s => s !== null)) resolveCombat(true);
+  } else {
+    resolveCombat(false); // no empty slot needs this letter (wrong letter, or every slot that wanted it is already filled) — immediate "wrong", not just a miss
+  }
+}
+
+function resolveCombat(won){
+  combatResultWon = won;
+  combatResultT = COMBAT_RESULT_BEAT; // a short beat to actually read the outcome before teleporting back out
+}
+
+// fires at the exiting transition's midpoint — the actual "teleport back";
+// see startZoomTransition's own call site in updateCombat above
+function actuallyExitCombat(){
+  if(combatResultWon && combatWord){
+    wordsLearned.add(combatWord.e);
+    triggerDictionaryFlash(); // the familiar "new word!" flash — a reward now, not an announcement
+  }
+  combatActive = false;
+  combatWord = null;
+  combatLetters = [];
+  combatSlots = [];
+  combatHeldIdx = null;
+  combatHeldIdx2 = null;
+}
+
+// Where the combat word's own hieroglyphs actually get drawn, vertically.
+// Pulled out of drawCombatScene() itself so a test can call it directly
+// without rendering a whole frame. Normally this is just wordY (a fixed
+// fraction of H) -- see the reveal-phase comment below for the one case
+// where it moves.
+function combatWordVerticalMetrics(){
+  const wordY = H*COMBAT_SLOT_Y - Math.min(W,H)*0.10;
+  const wordFontPx = Math.min(W,H)*0.14*combatRevealScale();
+  const wordChars = [...combatWord.e];
+  ctx.font = wordFontPx.toFixed(1)+'px '+HIERO_FONT;
+
+  // The reveal zooms the word's font size up around its own vertical anchor
+  // (textBaseline is 'middle', so it grows equally up and down from wordY) —
+  // at the full reveal zoom that pushes the top of the glyphs way off the
+  // top of the canvas, since wordY already sits fairly close to the top edge
+  // to leave room for the slots/gameplay below it. A fixed fraction-of-font
+  // size margin used to approximate this and still let it clip — this
+  // hieroglyph font's own ascenders reach much higher above its vertical
+  // center than a normal text face's, so guessing at the margin from the
+  // font size alone kept coming up short. Measuring the REAL rendered
+  // ascent of these exact glyphs at the current zoomed size removes the
+  // guesswork entirely: the anchor only ever gets pushed down exactly as
+  // far as this glyph set's own actual ink requires, plus a small fixed
+  // gutter. At rest (scale 1, true both at the very start and very end of
+  // the reveal, and always true once real gameplay begins) this reduces
+  // back to the exact same wordY gameplay itself draws at, so there's no
+  // visible jump handing off into real play.
+  let measuredAscent = 0;
+  for(const c of wordChars){
+    const m = ctx.measureText(c);
+    if(m.actualBoundingBoxAscent) measuredAscent = Math.max(measuredAscent, m.actualBoundingBoxAscent);
+  }
+  if(!measuredAscent) measuredAscent = wordFontPx*0.7; // fallback for a browser that doesn't support the metric
+  const revealTopGutter = Math.min(W,H)*0.02;
+  const revealing = combatRevealElapsed < COMBAT_REVEAL_TOTAL;
+  const drawWordY = revealing ? Math.max(wordY, revealTopGutter + measuredAscent) : wordY;
+  return { drawWordY, wordFontPx, measuredAscent };
+}
+
+function drawCombatScene(){
+  ctx.save();
+  // same papyrus background as the real world (see the identical fill in
+  // render()'s own normal-pipeline branch) — the arena is still part of the
+  // same "paper" the whole game is drawn on, just a focused close-up of it,
+  // not a separate dark void. Text/ink colors below were flipped from a
+  // light-on-dark scheme to the game's own dark-ink-on-papyrus scheme to
+  // match (see e.g. drawSpeechBubble's own '#2a1f14' text on '#e9e0cd').
+  ctx.fillStyle = papyrusPattern || '#e9e4d8';
+  ctx.fillRect(0, 0, W, H);
+
+  // Purely decorative scenery for the arena — placed via the level editor's
+  // own "Combat Arena" scratch slot (see COMBAT_LVL_ID's own comment and
+  // enterCombatLvlPreview()), completely independent of whatever real map
+  // the player was actually standing on when this encounter triggered.
+  // Drawn with the exact same drawLevelObject() every ordinary placed sign
+  // uses (same x/y-as-fraction-of-canvas convention, same size/mirror/
+  // reveal/opaque handling, same editor selection ring when editMode is on)
+  // so decorating this feels identical to decorating any other level — just
+  // background dressing, drawn before the word/slots/timer/crocodile/
+  // letters/players below so none of those ever end up hidden behind it.
+  for(const obj of COMBAT_LVL_OBJECTS) drawLevelObject(obj);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const slotSize = Math.min(W,H)*0.075, slotGap = 8;
+  const slotsY = H*COMBAT_SLOT_Y;
+
+  // The word's own hieroglyphs and the MDC letter slots beneath it. Three
+  // ways to lay this out, most-precise first — see the `segs` doc comment
+  // above EGYPT_DICTIONARY for the full explanation of why a simple glyph
+  // count can't always be trusted:
+  //  1. combatWord.segs, when present and internally consistent (same
+  //     length as the glyph string, its non-null entries concatenating back
+  //     to exactly combatWord.t) — the real per-word Egyptological mapping,
+  //     confirmed sign by sign: a determinative gets no slot at all, and a
+  //     single glyph covering more than one MDC letter (a biliteral sign
+  //     like one meaning "Hr" all by itself) gets that many slots clustered
+  //     together right under it.
+  //  2. no segs, but the word happens to have exactly as many hieroglyphs as
+  //     MDC letters (e.g. 𓏇𓇋 "mi") — assume one sign per letter, in order.
+  //     A real but unconfirmed guess, so only used when segs isn't there.
+  //  3. neither of the above (unequal counts and no confirmed breakdown) —
+  //     can't be mapped sign-for-sign at all without guessing, so the word
+  //     draws as a single string and the slots just sit centered beneath it.
+  const revealing = combatRevealElapsed < COMBAT_REVEAL_TOTAL; // still holding on the word (see the big comment above COMBAT_REVEAL_RAMP)? everything below except the word itself stays hidden until this ends
+  const wordChars = [...combatWord.e];
+  let segs = combatWord.segs;
+  if(segs && (segs.length !== wordChars.length || segs.filter(s=>s).join('') !== combatWord.t)) segs = null; // defensive only — a malformed segs entry falls back rather than misdrawing
+  const perGlyph = !!segs || wordChars.length === combatSlots.length;
+  const { drawWordY, wordFontPx } = combatWordVerticalMetrics();
+  ctx.fillStyle = '#2a1f14';
+  ctx.font = wordFontPx.toFixed(1)+'px '+HIERO_FONT;
+
+  let slotCenters;
+  if(perGlyph){
+    const widths = wordChars.map(c => ctx.measureText(c).width);
+    const totalW = widths.reduce((a,b)=>a+b, 0);
+    let cursor = W/2 - totalW/2;
+    const glyphCenters = [];
+    for(let i=0;i<wordChars.length;i++){
+      const cx = cursor + widths[i]/2;
+      glyphCenters.push(cx);
+      ctx.fillText(wordChars[i], cx, drawWordY);
+      cursor += widths[i];
+    }
+    if(segs){
+      slotCenters = [];
+      for(let i=0;i<wordChars.length;i++){
+        const seg = segs[i];
+        if(!seg) continue; // determinative/phonetic complement -- no MDC slot beneath it at all
+        // this one glyph covers seg.length consecutive MDC letters -- cluster
+        // that many slots centered under the glyph's own x (almost always
+        // just 1, but a biliteral/triliteral sign needs more than one)
+        const n = seg.length;
+        const clusterW = n*slotSize + (n-1)*slotGap;
+        const sx0 = glyphCenters[i] - clusterW/2 + slotSize/2;
+        for(let k=0;k<n;k++) slotCenters.push(sx0 + k*(slotSize+slotGap));
+      }
+    } else {
+      slotCenters = glyphCenters;
+    }
+  } else {
+    ctx.fillText(combatWord.e, W/2, drawWordY);
+    const totalSlotsW = combatSlots.length*slotSize + (combatSlots.length-1)*slotGap;
+    const slotsX0 = W/2 - totalSlotsW/2;
+    slotCenters = combatSlots.map((_,i) => slotsX0 + i*(slotSize+slotGap) + slotSize/2);
+  }
+
+  // everything below (slots, timer, crocodile, scattered letters, players,
+  // result beat) is real gameplay -- stays hidden while still revealing the
+  // word (see the big comment above COMBAT_REVEAL_RAMP)
+  if(!revealing){
+  for(let i=0;i<combatSlots.length;i++){
+    const sx = slotCenters[i] - slotSize/2;
+    roundedRectPath(sx, slotsY, slotSize, slotSize, 4);
+    ctx.fillStyle = combatSlots[i] ? '#e9e0cd' : 'rgba(42,31,20,0.10)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(42,31,20,0.55)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    if(combatSlots[i]){
+      ctx.fillStyle = '#2a1f14';
+      ctx.font = '700 '+(slotSize*0.55).toFixed(1)+'px system-ui, sans-serif';
+      ctx.fillText(combatSlots[i], slotCenters[i], slotsY+slotSize/2);
+    }
+  }
+
+  // timer, top-right — reddens once it's getting close
+  ctx.font = '700 '+(Math.min(W,H)*0.05).toFixed(1)+'px system-ui, sans-serif';
+  ctx.fillStyle = combatTimer < 5 ? '#c23b3b' : '#2a1f14';
+  ctx.fillText(Math.ceil(combatTimer).toString(), W*0.92, H*0.06);
+
+  // the crocodile creeping toward the goat across the top — a purely visual
+  // clock, not a hazard: it reaches the goat exactly when the timer hits 0
+  const crocProgress = Math.max(0, Math.min(1, 1 - (combatTimer/COMBAT_DURATION)));
+  const crocX = 0.06 + (COMBAT_GOAT_X - 0.10) * crocProgress;
+  ctx.font = (Math.min(W,H)*0.06).toFixed(1)+'px '+HIERO_FONT;
+  ctx.fillStyle = '#2a1f14';
+  ctx.save();
+  ctx.translate(crocX*W, COMBAT_CROC_Y*H);
+  ctx.scale(-1,1); // I3 faces left by default — mirror so it visibly faces/moves rightward, toward the goat
+  ctx.fillText(I3, 0, 0);
+  ctx.restore();
+  ctx.fillText('𓃶', COMBAT_GOAT_X*W, COMBAT_CROC_Y*H);
+
+  // scattered letter tiles still waiting to be picked up
+  for(const L of combatLetters){
+    if(L.collected) continue;
+    const lx = L.x*W, ly = L.y*H;
+    roundedRectPath(lx-slotSize/2, ly-slotSize/2, slotSize, slotSize, 4);
+    ctx.fillStyle = '#e9e0cd';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(42,31,20,0.7)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#2a1f14';
+    ctx.font = '700 '+(slotSize*0.55).toFixed(1)+'px system-ui, sans-serif';
+    ctx.fillText(L.char, lx, ly);
+  }
+
+  // the player(s), and whichever letter (if any) each is currently carrying
+  const pSize = Math.min(W,H)*0.09;
+  ctx.font = pSize.toFixed(1)+'px '+HIERO_FONT;
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(currentGlyph(), combatPlayerX*W, combatPlayerY*H);
+  if(combatHeldIdx !== null){
+    ctx.font = '700 '+(pSize*0.4).toFixed(1)+'px system-ui, sans-serif';
+    ctx.fillStyle = '#2a1f14';
+    ctx.fillText(combatLetters[combatHeldIdx].char, combatPlayerX*W, combatPlayerY*H - pSize*0.62);
+  }
+  // player2 gets teleported in right alongside player1 in 2-player mode —
+  // see the big comment above this whole COMBAT section
+  if(numPlayers === 2){
+    ctx.font = pSize.toFixed(1)+'px '+HIERO_FONT;
+    ctx.fillStyle = '#2a1f14';
+    ctx.fillText(player2Glyph, combatPlayer2X*W, combatPlayer2Y*H);
+    if(combatHeldIdx2 !== null){
+      ctx.font = '700 '+(pSize*0.4).toFixed(1)+'px system-ui, sans-serif';
+      ctx.fillStyle = '#2a1f14';
+      ctx.fillText(combatLetters[combatHeldIdx2].char, combatPlayer2X*W, combatPlayer2Y*H - pSize*0.62);
+    }
+  }
+
+  // brief "learned it!" / "not this time" beat, right before teleporting back
+  if(combatResultT > 0){
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.font = '700 '+(Math.min(W,H)*0.05).toFixed(1)+'px system-ui, sans-serif';
+    ctx.fillStyle = combatResultWon ? '#9be89b' : '#ff8a8a';
+    ctx.fillText(combatResultWon ? 'learned it!' : 'not this time — try again later', W/2, H/2);
+  }
+  } // end !revealing
+
+  ctx.restore();
+}
+
 /* ---------- hovering a known word inside a speech bubble ----------
-   Once a word has been seen from 2 different speakers (unlocked in the Q
+   Once a word has actually been WON in the combat challenge (unlocked in the Q
    panel), drawSpeechBubble also draws a small dotted underline beneath it
    wherever it appears in NPC quest text, and mousing over that underline
    pops up its dictionary entry (transliteration + meaning) right by the
    cursor.
 
    Only actual npc dialogue gets this treatment — the ambient animals
-   (birds, snakes, cats, cattle, the frog, the goat) just say a single
-   vocabulary word to teach it, that's not "quest text", so their own
+   (birds, snakes, cats, cattle, the frog, the goat, the hippo) just say a
+   single vocabulary word to teach it, that's not "quest text", so their own
    speech bubbles are excluded even once the word they say is known. See
    isAnimalSpeaker() and its call in drawSpeechBubble below.
 
@@ -1856,12 +2490,12 @@ let hoverableWordBoxes = []; // { x, y, w, h, entry } in canvas pixel space
 
 // speaker keys for the game's animals — see the big comment just above.
 // Matched by exact key for the ones with no per-individual suffix ('cat' is
-// the lvl1 pet cat, 'frog' the one pickup frog, 'goat' the goat), and by
-// prefix for the ones keyed per-individual-id ('bird'+id, 'snake'+id,
-// 'lvl2cat'+id, 'cowMain'/'cow'+id) — note 'frogKeeper' is a human npc and
-// must NOT match the 'frog' entry, which is why that one is an exact match
-// rather than a prefix.
-const ANIMAL_SPEAKER_EXACT = new Set(['cat', 'frog', 'goat']);
+// the lvl1 pet cat, 'frog' the one pickup frog, 'goat' the goat, 'hippo' the
+// hippo), and by prefix for the ones keyed per-individual-id ('bird'+id,
+// 'snake'+id, 'lvl2cat'+id, 'cowMain'/'cow'+id) — note 'frogKeeper' is a
+// human npc and must NOT match the 'frog' entry, which is why that one is
+// an exact match rather than a prefix.
+const ANIMAL_SPEAKER_EXACT = new Set(['cat', 'frog', 'goat', 'hippo']);
 const ANIMAL_SPEAKER_PREFIXES = ['bird', 'snake', 'lvl2cat', 'cow', 'crocodile'];
 function isAnimalSpeaker(key){
   if(ANIMAL_SPEAKER_EXACT.has(key)) return true;
@@ -1873,7 +2507,7 @@ function isAnimalSpeaker(key){
 // straddle a different boundary than the one the dictionary actually
 // credited) — but this version keeps each match's start/end codepoint
 // index, and only emits spans for entries that are actually unlocked yet
-// (seen from 2 distinct speakers already) — a still-unknown word never
+// (won in the combat challenge already) — a still-unknown word never
 // gets an annotation or a tooltip.
 function knownWordSpansInText(text){
   const chars = [...text];
@@ -1889,8 +2523,7 @@ function knownWordSpansInText(text){
       if(ok){ matched = cand; break; }
     }
     if(matched){
-      const seenBy = wordSeenBy.get(matched.entry.e);
-      if(seenBy && seenBy.size >= 2) spans.push({ start:i, end:i+matched.chars.length, entry: matched.entry });
+      if(wordsLearned.has(matched.entry.e)) spans.push({ start:i, end:i+matched.chars.length, entry: matched.entry });
       i += matched.chars.length;
     } else i++;
   }
@@ -2382,6 +3015,7 @@ function mapLabel(mapId){
   if(mapId === -1) return 'lvl -1';
   if(mapId === 2) return 'lvl 2';
   if(mapId === NEW_LVL_ID) return 'the scratch map';
+  if(mapId === COMBAT_LVL_ID) return 'the combat arena'; // unreachable in practice — see COMBAT_LVL_ID's own comment — but keeps this honest rather than silently mislabeling it "lvl 1"
   return 'lvl 1';
 }
 
@@ -2687,7 +3321,7 @@ function drawSpawnControls(){
 }
 
 function drawDictionaryPanel(){
-  const known = EGYPT_DICTIONARY.filter(entry => (wordSeenBy.get(entry.e)?.size||0) >= 2);
+  const known = EGYPT_DICTIONARY.filter(entry => wordsLearned.has(entry.e));
 
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
@@ -3285,7 +3919,7 @@ window.addEventListener('keydown', e=>{
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault();
   if(e.key === ' ' && !spaceHeld){
     spaceHeld = true;
-    onSpacePress();
+    if(combatActive) onCombatSpacePress(); else onSpacePress();
   }
   // interact (talk to a nearby (!) npc) — its own dedicated keys, kept off
   // space entirely so feeding/picking up near an animal never gets mixed up
@@ -3300,11 +3934,11 @@ window.addEventListener('keydown', e=>{
   // chosen at the start menu
   if(numPlayers === 2 && k === 'shift' && !pickup2ShiftHeld){
     pickup2ShiftHeld = true;
-    onSpacePress2();
+    if(combatActive) onCombatSpacePress2(); else onSpacePress2();
   }
   if(numPlayers === 2 && k === 'control' && !pickup2Held){
     pickup2Held = true;
-    onSpacePress2();
+    if(combatActive) onCombatSpacePress2(); else onSpacePress2();
   }
   if(numPlayers === 2 && k === '-' && !interact2Held){
     interact2Held = true;
@@ -3448,8 +4082,13 @@ canvas.addEventListener('mousedown', e=>{
 // the cursor is sitting over one of this frame's hoverableWordBoxes
 canvas.addEventListener('mousemove', e=>{
   const rect = canvas.getBoundingClientRect();
-  mouseX = e.clientX - rect.left;
-  mouseY = e.clientY - rect.top;
+  // hoverableWordBoxes (and everything drawWordTooltip compares mouseX/mouseY
+  // against) live in canvas pixel space (W/H), which is no longer the same
+  // as the CSS display size now that the canvas renders at a fixed internal
+  // resolution (see BASE_W/BASE_H + resize() above) — convert through the
+  // displayed-box fraction like every other canvas pointer handler does.
+  mouseX = (e.clientX - rect.left) / rect.width * W;
+  mouseY = (e.clientY - rect.top) / rect.height * H;
 });
 canvas.addEventListener('mouseleave', ()=>{ mouseX = -1; mouseY = -1; });
 
@@ -3480,11 +4119,13 @@ const map1Btn = document.getElementById('map1Btn');
 const mapNeg1Btn = document.getElementById('mapNeg1Btn');
 const map2Btn = document.getElementById('map2Btn');
 const newLvlBtn = document.getElementById('newLvlBtn');
+const combatLvlBtn = document.getElementById('combatLvlBtn');
 function updateMapButtons(){
   map1Btn.disabled = currentMap === 1;
   mapNeg1Btn.disabled = currentMap === -1;
   map2Btn.disabled = currentMap === 2;
   newLvlBtn.disabled = currentMap === NEW_LVL_ID;
+  combatLvlBtn.disabled = currentMap === COMBAT_LVL_ID;
   // keep the river-target dropdown honest about which map is on screen —
   // e.g. never leave "Lvl -1 pond" selected while lvl 1 is showing
   if(typeof riverTargetSelect !== 'undefined'){
@@ -3614,6 +4255,15 @@ canvas.addEventListener('contextmenu', e=>{
 });
 
 function setEditMode(on){
+  if(!on && currentMap === COMBAT_LVL_ID){
+    // there's no real "walk around" version of the Combat Arena's frozen
+    // preview (see enterCombatLvlPreview()) — leaving the editor while still
+    // parked on it should land on an actual playable map instead of letting
+    // update() resume (see its own editMode gate) with combatActive stuck
+    // on and nothing left to ever resolve it. setMap()'s own leaving-hook
+    // does the actual save + combatActive=false.
+    setMap(1);
+  }
   editMode = on;
   editorPanel.hidden = !on;
   gameWrap.classList.toggle('editing', on); // narrows the scroll viewport, not the map itself
@@ -3740,10 +4390,15 @@ map1Btn.addEventListener('click', ()=> setMap(1));
 mapNeg1Btn.addEventListener('click', ()=> setMap(-1));
 map2Btn.addEventListener('click', ()=> setMap(2));
 newLvlBtn.addEventListener('click', ()=> setMap(NEW_LVL_ID));
+combatLvlBtn.addEventListener('click', ()=> setMap(COMBAT_LVL_ID));
 // belt-and-suspenders alongside setMap()'s own save-on-leave and render()'s
 // periodic autosave below — catches a tab/window closed outright while still
-// sitting on the scratch level, with no map switch to trigger the other two
-window.addEventListener('beforeunload', ()=>{ if(currentMap === NEW_LVL_ID) saveNewLvlObjects(); });
+// sitting on one of the scratch levels, with no map switch to trigger the
+// other two
+window.addEventListener('beforeunload', ()=>{
+  if(currentMap === NEW_LVL_ID) saveNewLvlObjects();
+  if(currentMap === COMBAT_LVL_ID) saveCombatLvlObjects();
+});
 updateMapButtons();
 
 document.getElementById('exportBtn').addEventListener('click', ()=>{
@@ -3999,6 +4654,25 @@ function onFootPlayers(){
   if(!isPlayerAboard(1)) list.push({ num:1, x: player.x, y: player.y });
   if(numPlayers === 2 && !isPlayerAboard(2)) list.push({ num:2, x: player2.x, y: player2.y });
   return list;
+}
+
+// same idea, for the ambient animals (bird/snake/crocodile/frog/lvl2 cats/
+// cow) whose speech bubble is purely proximity-gated rather than triggered
+// by an explicit interact/feed action. Those checks used to read player.x/y
+// only, so in 2-player mode an animal right next to player2 (with player1
+// off elsewhere on the map) would never show its bubble at all — a real bug
+// (not the feed-triggered goat/hippo/cat lines, which have no distance gate
+// on the bubble itself and already worked for whichever player fed them via
+// withPlayer2Context's own player.x/y substitution). This just takes
+// whichever player is actually closest, boarded or not — an ambient bubble
+// doesn't care who's currently piloting the boat, only who's standing near.
+function nearestPlayerDistPx(ox, oy){
+  let d = Math.hypot((player.x-ox)*W, (player.y-oy)*H);
+  if(numPlayers === 2){
+    const d2 = Math.hypot((player2.x-ox)*W, (player2.y-oy)*H);
+    if(d2 < d) d = d2;
+  }
+  return d;
 }
 function nearestOnFootPlayer(hx, hy){
   const list = onFootPlayers();
@@ -4618,7 +5292,7 @@ function updateCatFollowLocust(dt){
    on another map picks a fresh resting spot right there and it keeps
    hopping whenever you're close by, on whichever map that turns out to be. */
 const FROG_ID = 503;
-const FROG_TALK_RANGE = 0.03; // fraction of min(W,H) — narrowed again (0.12 → 0.06 → 0.03): only gates the ambient "frog" speech bubble, not the pickup itself (CAPTURE_RANGE) or the frog-keeper's own delivery range (FROG_KEEPER_TALK_RANGE)
+const FROG_TALK_RANGE = 0.06; // fraction of min(W,H) — 0.03 → 0.042 (widened 40%) → 0.06 (widened again, per "still struggles to trigger" follow-up); only gates the ambient "frog" speech bubble, not the pickup itself (CAPTURE_RANGE) or the frog-keeper's own delivery range (FROG_KEEPER_TALK_RANGE)
 const FROG_SPEECH_LINE = '𓈎𓂋𓂋𓆏'; // "frog" — same text as FROG_KEEPER_ASK_LINE, shown by the frog itself before it's delivered to him
 const FROG_HOP_LEN = 2; // "lengths" forward, in multiples of its own on-screen size
 const FROG_JUMP_RANGE = 2; // only hops while the player is within this many of its own lengths
@@ -5067,7 +5741,7 @@ const ARMS_UP_MAN_ID = 545;
 const ARMS_UP_MAN_TALK_RANGE = 0.12; // fraction of min(W,H) — narrowed from 0.20, see LADY_TALK_RANGE
 const ARMS_UP_MAN_ASK_LINE = '𓊃𓈞𓐝𓆧𓏥';
 const CAT_IDS = [526, 548, 605]; // lvl 2's 3 pickup cat signs
-const LVL2_CAT_TALK_RANGE = 0.03; // fraction of min(W,H) — narrowed again (0.06 → 0.03); only gates the ambient "cat" speech bubble, kept separate from CAT_TALK_RANGE (the lvl-1 cat's fish-feed interaction range) so shrinking one never touches the other
+const LVL2_CAT_TALK_RANGE = 0.06; // fraction of min(W,H) — 0.03 → 0.042 (widened 40%) → 0.06 (widened again, per "still struggles to trigger" follow-up); only gates the ambient "cat" speech bubble, kept separate from CAT_TALK_RANGE (the lvl-1 cat's fish-feed interaction range) so resizing one never touches the other
 const LVL2_CAT_SPEECH_LINE = '𓏇𓇋𓅱𓄜'; // "cat" — shown by whichever of these 3 is still around, before it's delivered to the arms-up man
 const CAT_GLYPH = String.fromCodePoint(0x130E0); // same cat sign as lvl 1's npc
 const GOLDEN_BARREL = String.fromCodePoint(0x1333D); // jar/barrel sign — his reward, rendered in gold (lvl 2 already has plain, non-golden ones placed as scenery)
@@ -5538,7 +6212,7 @@ const WOMAN_TALK_RANGE = 0.15; // fraction of min(W,H) — matches the lady's/ma
 const WOMAN_QUEST_LINE = '𓏎𓇋5𓎛𓆑𓄫𓅱𓆙';
 const WOMAN_REWARD_LINE = '𓍋𓃀𓅱𓄑'; // shown instead, once the 5th snake is delivered — see the bubbleCandidates block below
 const SNAKE_IDS = [332, 402, 403, 406, 409]; // the level's 5 pickup snake signs
-const SNAKE_TALK_RANGE = 0.03; // fraction of min(W,H) — narrowed again (0.12 → 0.06 → 0.03): only gates the ambient "snake" speech bubble, not the pickup itself (CAPTURE_RANGE) or the lady's own delivery range (LADY_TALK_RANGE)
+const SNAKE_TALK_RANGE = 0.06; // fraction of min(W,H) — 0.03 → 0.042 (widened 40%) → 0.06 (widened again, per "still struggles to trigger" follow-up); only gates the ambient "snake" speech bubble, not the pickup itself (CAPTURE_RANGE) or the lady's own delivery range (LADY_TALK_RANGE)
 const SNAKE_SPEECH_LINE = '𓎛𓆑𓄫𓆚'; // "snake" — each of the 5 snakes is its own distinct dictionary speaker, see the per-id bubbleCandidates entries below
 const F18_GLYPH = String.fromCodePoint(0x13111); // Gardiner F18 — the woman's reward, rendered in gold, spent on the npc's u13 trade
 let snakesDelivered = 0;
@@ -6012,6 +6686,18 @@ function updateBoardedMovement(dt){
 
 function update(dt){
   if(gameOver) return;
+  // The combat overlay is a fully separate state machine from the normal
+  // on-foot world (see the COMBAT system section above, right after
+  // registerWordsSeen) — it never touches player.x/y/currentMap/heldItem,
+  // so "teleporting back" is just combatActive=false with nothing to
+  // restore. While it's active, none of the normal world update logic
+  // below should run at all (no movement, no hazards, no npc timers) —
+  // the world is simply frozen behind it. While a zoom transition is
+  // playing (entering OR leaving combat), everything is frozen too, so the
+  // world holds perfectly still under the zoom instead of visibly moving
+  // during the cut.
+  if(combatActive){ if(!zoomTransition) updateCombat(dt); return; }
+  if(zoomTransition) return;
   if(birdAttack){ updateBirdAttack(dt); return; } // frozen mid-dive until the kick lands
   if(boardCooldown > 0) boardCooldown = Math.max(0, boardCooldown - dt);
   updateNpcInteractSpeech(dt); // counts down the active (interact-key-triggered) npc ask bubble, boarded or not
@@ -6182,36 +6868,31 @@ function update(dt){
 /* ============================================================
    RESIZE / RENDER LOOP
    ============================================================ */
-const LOCKED_ASPECT = 1917/889; // ~2.156:1 — matches the wide-window screenshot
-                             // the aspect ratio was locked to; leftover window
-                             // space becomes black letterbox/pillarbox bars
-                             // (see #gameWrap's black background above)
+const LOCKED_ASPECT = BASE_W/BASE_H; // ~2.156:1 — leftover window space becomes black letterbox/pillarbox bars (see #gameWrap's black background above)
+
+// Sets up the canvas's actual backing store (its real pixel buffer, as
+// opposed to canvas.style.width/height below, which is just how big that
+// buffer is displayed on screen — see resize()'s own comment for the full
+// story). pixelW/pixelH are the FINAL real device-pixel dimensions to
+// allocate; transformScale is how many of those device pixels one W/H
+// (virtual game-coordinate) unit covers — every offscreen wash/fade canvas
+// and device-pixel calc elsewhere in the file (search for `*DPR`) shares
+// this same DPR value for exactly that reason, so they stay pixel-aligned
+// with whatever the main canvas is actually doing right now.
+function setCanvasBackingStore(pixelW, pixelH, transformScale){
+  DPR = transformScale;
+  canvas.width = pixelW;
+  canvas.height = pixelH;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
 function resize(){
   // A window can legitimately report 0 for innerWidth/innerHeight for a
   // moment -- minimized, a backgrounded/hidden tab, or a PWA window still
-  // being sized by the OS right after launch. Fitting LOCKED_ASPECT against
-  // that would compute gameW/gameH (and then canvas.width/height) as 0, and
-  // that 0x0 size doesn't just flash by harmlessly: getWaterWashCtx() and
-  // getRiverFadeCtx() each cache their own offscreen canvas at whatever
-  // canvas.width/height happened to be, and a canvas that's already 0x0
-  // "matches" a 0x0 target forever after (0 === 0), so nothing ever
-  // triggers them to resize back to something valid on their own. Every
-  // frame after that, drawWaterWash()'s ctx.drawImage(waterWashCanvas,0,0)
-  // throws InvalidStateError ("width or height of 0") -- and because
-  // render()'s own try/catch (see there) exists specifically so one bad
-  // frame can't freeze the whole game, that exception gets silently caught
-  // and the loop just keeps going... but the ctx.restore() a few lines below
-  // that throw never runs, so the canvas's own save stack leaks one level
-  // deeper on literally every subsequent frame, forever. That's the actual
-  // mechanism behind "the game gradually gets slower and slower and never
-  // recovers on its own" -- and exactly why an unrelated real resize event
-  // (which finally gives canvas.width/height a real, non-zero value again,
-  // invalidating the poisoned wash caches) or a death (full page reload)
-  // were the only two things that ever fixed it. The actual fix is simply
-  // never letting W/H go to 0 in the first place: bail out here and leave
-  // whatever the last good size was in place instead.
+  // being sized by the OS right after launch. There's nothing to fit
+  // against in that case, so just leave the current display size alone
+  // until it reports something real again.
   if(window.innerWidth <= 0 || window.innerHeight <= 0) return;
-  DPR = Math.min(window.devicePixelRatio||1, 2);
   // While editing, the fit is computed against the space actually left over
   // once the 440px side panel is accounted for — not the full window — so
   // the WHOLE map is visible, letterboxed with the same black bars as
@@ -6250,10 +6931,69 @@ function resize(){
     gameW *= editorZoom;
     gameH *= editorZoom;
   }
-  W = gameW;
-  H = gameH;
-  canvas.style.width = W+'px';
-  canvas.style.height = H+'px';
+
+  const rawDpr = Math.min(window.devicePixelRatio||1, 2);
+
+  if(editMode){
+    // The level editor still ties its OWN backing-store resolution (and its
+    // own W/H, 1:1 with the fitted/zoomed CSS box) to the actual window,
+    // same as the whole game used to: editorZoom needs real extra backing
+    // pixels to place signs and river points precisely, and editing is
+    // occasional and not performance-sensitive the way normal play is, so
+    // paying for a full canvas reset (see setCanvasBackingStore's own
+    // comment) on every resize while editing is a non-issue.
+    W = gameW; H = gameH;
+    setCanvasBackingStore(Math.round(gameW*rawDpr), Math.round(gameH*rawDpr), rawDpr);
+  } else {
+    // Normal play: W/H are ALWAYS BASE_W/BASE_H, completely fixed regardless
+    // of the window's actual size or DPR -- every draw call, hitbox and
+    // threshold in the game is written purely in terms of these, so nothing
+    // about game logic or layout ever has to react to a resize at all.
+    //
+    // The canvas's actual backing store — how many real pixels the browser
+    // has to rasterize every frame — is a SEPARATE thing, and deliberately
+    // still tracks the window's real on-screen size (like it always did):
+    // the first version of this fixed-resolution approach kept the backing
+    // store pinned to BASE_W/BASE_H's full pixel count even in a small
+    // window and let the browser's own CSS image-scaling stretch it to fit
+    // — which sounded free but wasn't: it forced every frame's Canvas2D
+    // work (hieroglyph fillText above all) to run at ~1917x889 (times DPR)
+    // worth of rasterization even when the window only had a fraction of
+    // that many pixels on screen, which is what actually made things crawl.
+    // Instead, the backing store is sized to the real fitted/DPR pixel
+    // count, and DPR here is repurposed as the single transform-scale
+    // factor mapping BASE_W/BASE_H virtual units onto however many real
+    // pixels that backing store happens to have right now (see
+    // setCanvasBackingStore's own comment) — the classic "virtual
+    // resolution" pattern: fixed coordinate system, but real rasterization
+    // cost still shrinks and grows with the actual window like it should.
+    W = BASE_W; H = BASE_H;
+    const backingW = Math.max(1, Math.round(gameW*rawDpr));
+    const backingH = Math.max(1, Math.round(gameH*rawDpr));
+    if(canvas.width !== backingW || canvas.height !== backingH){
+      // Only touch the backing store (and reset the whole 2D context — see
+      // setCanvasBackingStore's own comment for why that isn't free) when
+      // the actual allocated pixel count needs to change — a real window
+      // resize, or moving to a different-DPI display — never on the idle
+      // self-heal polls below when nothing's actually different. The
+      // transform scale is derived from the ACTUAL rounded backingW instead
+      // of the raw gameW*rawDpr float, so it always matches the real
+      // backing store exactly — no 1px black seam from a rounding remainder.
+      setCanvasBackingStore(backingW, backingH, backingW/BASE_W);
+    }
+  }
+
+  // Only the on-screen DISPLAY size changes with the window from here on --
+  // plain CSS, completely separate from the canvas's own backing store/2D
+  // context above. The browser scales the backing-store image up or down by
+  // whatever the DPR/transform-scale ratio is to fill this box crisply (the
+  // same way any HiDPI canvas does), which is also why every pointer/touch
+  // handler below converts through getBoundingClientRect() as a FRACTION of
+  // this box (fx = (clientX-rect.left)/rect.width) rather than assuming it
+  // lines up 1:1 with canvas.width: it hasn't, on purpose, since W/H were
+  // decoupled from the window's own size.
+  canvas.style.width = gameW+'px';
+  canvas.style.height = gameH+'px';
   if(gameW <= availW && gameH <= winH){
     // fits within the panel: center it, same as the non-zoomed view
     canvas.style.left = ((availW - gameW)/2)+'px';
@@ -6265,22 +7005,36 @@ function resize(){
     canvas.style.left = '0px';
     canvas.style.top = '0px';
   }
-  canvas.width = W*DPR;
-  canvas.height = H*DPR;
-  ctx.setTransform(DPR,0,0,DPR,0,0);
 }
+// No separate eager seed call needed here any more: the canvas's browser
+// default backing store (300x150) never matches what resize()'s own
+// change-detection computes on this first real call, so it always
+// allocates the real backing store itself the first time through.
 window.addEventListener('resize', resize);
 resize();
-// Self-heal: devicePixelRatio/window layout can occasionally still be
-// settling right at page-load time (extra monitor, OS display-scaling
-// negotiation, a background/inactive tab finishing layout, etc.), leaving
-// the canvas backing buffer sized against a stale reading for the rest of
-// the session -- until something forces a real resize() call again.
-// Re-running resize() a couple of times shortly after load re-checks DPR
-// and the fitted dimensions for free and self-corrects if anything was off,
-// same effect as manually resizing the window, without asking for it.
+// Self-heal: window layout can occasionally still be settling right at
+// page-load time (extra monitor, OS display-scaling negotiation, a
+// background/inactive tab finishing layout, etc.), leaving the on-screen
+// DISPLAY size fitted against a stale window reading for the rest of the
+// session -- until something forces a real resize() call again. Re-running
+// resize() a couple of times shortly after load re-fits the display box for
+// free and self-corrects if anything was off, same effect as manually
+// resizing the window, without asking for it. None of this touches the
+// canvas's own fixed backing resolution any more (see setCanvasBackingStore
+// above) -- it was never the display fit that needed the manual nudge to
+// begin with, just the thing that happened to trigger alongside it.
 setTimeout(resize, 150);
 setTimeout(resize, 1500);
+// The same drift the two setTimeouts above catch right after load can also
+// creep back in well into an actual play session -- dragging the window to
+// a different monitor, an OS display-scale change, or the tab being
+// backgrounded and coming back -- and none of those reliably fire a real
+// 'resize' event on their own. Re-fitting the display box on tab-visibility
+// and every few seconds regardless costs nothing (plain CSS, no canvas
+// reset) now that resize() no longer touches the backing store on every
+// call the way it used to.
+document.addEventListener('visibilitychange', () => { if(!document.hidden) resize(); });
+setInterval(resize, 3000);
 
 /* ============================================================
    DEBUG OVERLAY — toggled from the Level Editor panel ("Show
@@ -7221,17 +7975,28 @@ let newLvlAutosaveT = 0; // seconds since the scratch level was last flushed to 
 function render(time){
  try{
   const dt = Math.min(0.05, (time-t0)/1000); t0 = time;
+  // the zoom transition (entering/leaving combat) and the CSS transform it
+  // drives on the actual <canvas> element run every frame regardless of
+  // anything else below — see the zoom-transition system above, right
+  // after registerWordsSeen
+  updateZoomTransition(dt);
+  updateCanvasZoomStyle();
   if(dictFlashT > 0) dictFlashT = Math.max(0, dictFlashT - dt); // runs regardless of pause state, so it never gets stuck mid-flash
-  // periodic autosave while actively editing the "+ New Lvl" scratch slot —
-  // runs regardless of editMode's own update(dt) gate just below, same as
-  // dictFlashT/spawnControlsElapsed above, since editing IS what happens
-  // while editMode is true. setMap()'s own save-on-leave and the
-  // beforeunload handler cover the other two ways this level stops being
-  // the active one; this just means a long editing session left sitting on
-  // it also gets saved along the way, not only at the very end.
-  if(editMode && currentMap === NEW_LVL_ID){
+  // periodic autosave while actively editing either scratch slot ("+ New
+  // Lvl" or "Combat Arena") — runs regardless of editMode's own update(dt)
+  // gate just below, same as dictFlashT/spawnControlsElapsed above, since
+  // editing IS what happens while editMode is true. setMap()'s own
+  // save-on-leave and the beforeunload handler cover the other two ways a
+  // scratch level stops being the active one; this just means a long
+  // editing session left sitting on one also gets saved along the way, not
+  // only at the very end. Only one of the two can ever be active at once,
+  // so sharing a single timer between them is safe.
+  if(editMode && (currentMap === NEW_LVL_ID || currentMap === COMBAT_LVL_ID)){
     newLvlAutosaveT += dt;
-    if(newLvlAutosaveT > 1.5){ newLvlAutosaveT = 0; saveNewLvlObjects(); }
+    if(newLvlAutosaveT > 1.5){
+      newLvlAutosaveT = 0;
+      if(currentMap === NEW_LVL_ID) saveNewLvlObjects(); else saveCombatLvlObjects();
+    }
   }
   // the controls legend only starts its own fade-in/timer once the start
   // menu has actually been dismissed — see gameStarted/startGame()
@@ -7255,6 +8020,15 @@ function render(time){
       updateDuck(dt);
     }
   }
+
+  // The combat overlay draws its own entire scene and skips the normal
+  // world pipeline below completely — see drawCombatScene() above, right
+  // after registerWordsSeen. This deliberately wraps the pre-existing
+  // drawing pipeline rather than touching anything inside it, so combat
+  // can never interact badly with the world's own huge draw logic.
+  if(combatActive){
+    drawCombatScene();
+  } else {
 
   // every map shares the same papyrus texture as its default background —
   // lvl -1 (and any other non-main map) is still otherwise blank: no
@@ -7360,7 +8134,7 @@ function render(time){
       for(const id of BIRD_IDS){
         const birdObj = levelObjects.find(o => o.id === id);
         if(!birdObj) continue; // already delivered
-        const distBird = Math.hypot((player.x-birdObj.x)*W, (player.y-birdObj.y)*H);
+        const distBird = nearestPlayerDistPx(birdObj.x, birdObj.y);
         if(distBird < Math.min(W,H)*BIRD_TALK_RANGE){
           const birdSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(birdObj.y) * birdObj.scale;
           bubbleCandidates.push({ dist: distBird, y: birdObj.y, draw: ()=>drawSpeechBubble(birdObj.x*W, birdObj.y*H-birdSize*0.75, BIRD_SPEECH_LINE, BUBBLE_FONT_SIZE, 'bird'+id) });
@@ -7387,14 +8161,19 @@ function render(time){
       for(const id of SNAKE_IDS){
         const snakeObj = levelObjects.find(o => o.id === id);
         if(!snakeObj) continue; // already delivered
-        const distSnake = Math.hypot((player.x-snakeObj.x)*W, (player.y-snakeObj.y)*H);
+        const distSnake = nearestPlayerDistPx(snakeObj.x, snakeObj.y);
         if(distSnake < Math.min(W,H)*SNAKE_TALK_RANGE){
           const snakeSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(snakeObj.y) * snakeObj.scale;
           bubbleCandidates.push({ dist: distSnake, y: snakeObj.y, draw: ()=>drawSpeechBubble(snakeObj.x*W, snakeObj.y*H-snakeSize*0.75, SNAKE_SPEECH_LINE, BUBBLE_FONT_SIZE, 'snake'+id) });
         }
       }
     }
-    if(currentMap === 1 && catObj && catSpeechT > 0){
+    // no currentMap gate here (fixed — see tryGiveFishToCat's own comment:
+    // once tamed the cat roams every map with you, so feeding it on lvl -1
+    // or lvl 2 used to set catSpeechT with no way to ever actually show the
+    // "thank you" bubble for it, same bug the goat/hippo never had since
+    // their own bubbles were never map-gated to begin with)
+    if(catObj && catSpeechT > 0){
       const catSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(catObj.y) * catObj.scale;
       const distCat = Math.hypot((player.x-catObj.x)*W, (player.y-catObj.y)*H);
       bubbleCandidates.push({ dist: distCat, y: catObj.y, draw: ()=>drawSpeechBubble(catObj.x*W, catObj.y*H-catSize*0.75, CAT_SPEECH_LINE, BUBBLE_FONT_SIZE, 'cat') });
@@ -7406,7 +8185,7 @@ function render(time){
       for(const id of CAT_IDS){
         const lvl2CatObj = levelObjects.find(o => o.id === id);
         if(!lvl2CatObj) continue; // already delivered
-        const distLvl2Cat = Math.hypot((player.x-lvl2CatObj.x)*W, (player.y-lvl2CatObj.y)*H);
+        const distLvl2Cat = nearestPlayerDistPx(lvl2CatObj.x, lvl2CatObj.y);
         if(distLvl2Cat < Math.min(W,H)*LVL2_CAT_TALK_RANGE){
           const lvl2CatSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(lvl2CatObj.y) * lvl2CatObj.scale;
           bubbleCandidates.push({ dist: distLvl2Cat, y: lvl2CatObj.y, draw: ()=>drawSpeechBubble(lvl2CatObj.x*W, lvl2CatObj.y*H-lvl2CatSize*0.75, LVL2_CAT_SPEECH_LINE, BUBBLE_FONT_SIZE, 'lvl2cat'+id) });
@@ -7417,7 +8196,7 @@ function render(time){
     // speaker, same idea as the snakes/cats above. Follows whichever map
     // it's actually on, portable pickup either way, same as the goat.
     if(!cow.carried && !cow.placed && cow.map === currentMap){
-      const distCowMain = Math.hypot((player.x-cow.x)*W, (player.y-cow.y)*H);
+      const distCowMain = nearestPlayerDistPx(cow.x, cow.y);
       if(distCowMain < Math.min(W,H)*COW_TALK_RANGE){
         const cowMainSize = Math.min(W,H) * COW_SIZE_MULT * scaleForY(cow.y);
         bubbleCandidates.push({ dist: distCowMain, y: cow.y, draw: ()=>drawSpeechBubble(cow.x*W, cow.y*H-cowMainSize*0.75, COW_SPEECH_LINE, BUBBLE_FONT_SIZE, 'cowMain') });
@@ -7426,7 +8205,7 @@ function render(time){
     for(const id of GRAZING_CATTLE_IDS){
       const grazingObj = levelObjects.find(o => o.id === id);
       if(!grazingObj) continue; // currently being carried, or on a different map
-      const distGrazing = Math.hypot((player.x-grazingObj.x)*W, (player.y-grazingObj.y)*H);
+      const distGrazing = nearestPlayerDistPx(grazingObj.x, grazingObj.y);
       if(distGrazing < Math.min(W,H)*COW_TALK_RANGE){
         const grazingSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(grazingObj.y) * grazingObj.scale;
         bubbleCandidates.push({ dist: distGrazing, y: grazingObj.y, draw: ()=>drawSpeechBubble(grazingObj.x*W, grazingObj.y*H-grazingSize*0.75, COW_SPEECH_LINE, BUBBLE_FONT_SIZE, 'cow'+id) });
@@ -7442,7 +8221,7 @@ function render(time){
       for(const id of CROCODILE_IDS){
         const crocodileObj = levelObjects.find(o => o.id === id);
         if(!crocodileObj) continue;
-        const distCrocodile = Math.hypot((player.x-crocodileObj.x)*W, (player.y-crocodileObj.y)*H);
+        const distCrocodile = nearestPlayerDistPx(crocodileObj.x, crocodileObj.y);
         if(distCrocodile < Math.min(W,H)*CROCODILE_TALK_RANGE){
           const crocodileSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(crocodileObj.y) * crocodileObj.scale;
           bubbleCandidates.push({ dist: distCrocodile, y: crocodileObj.y, draw: ()=>drawSpeechBubble(crocodileObj.x*W, crocodileObj.y*H-crocodileSize*0.75, CROC_SPEECH_LINE, BUBBLE_FONT_SIZE, 'crocodile'+id) });
@@ -7453,7 +8232,7 @@ function render(time){
     if(currentMap === 2){
       const frogObj = levelObjects.find(o => o.id === FROG_ID);
       if(frogObj){
-        const distFrog = Math.hypot((player.x-frogObj.x)*W, (player.y-frogObj.y)*H);
+        const distFrog = nearestPlayerDistPx(frogObj.x, frogObj.y);
         if(distFrog < Math.min(W,H)*FROG_TALK_RANGE){
           const frogSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(frogObj.y) * frogObj.scale;
           bubbleCandidates.push({ dist: distFrog, y: frogObj.y, draw: ()=>drawSpeechBubble(frogObj.x*W, frogObj.y*H-frogSize*0.75, FROG_SPEECH_LINE, BUBBLE_FONT_SIZE, 'frog') });
@@ -7467,6 +8246,17 @@ function render(time){
       const goatSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(goatObj.y) * goatObj.scale;
       const distGoat = Math.hypot((player.x-goatObj.x)*W, (player.y-goatObj.y)*H);
       bubbleCandidates.push({ dist: distGoat, y: goatObj.y, draw: ()=>drawSpeechBubble(goatObj.x*W, goatObj.y*H-goatSize*0.75, GOAT_SPEECH_LINE, BUBBLE_FONT_SIZE, 'goat') });
+    }
+    // the hippo — same idea as the goat right above (fed on lvl -1 or,
+    // once tamed, wherever it's roamed to). This bubble was simply never
+    // added when the hippo's own feed/speech system was built (hippoSpeechT
+    // ticked down every time exactly like the goat's, but nothing ever
+    // actually drew its "thank you" line) — a real bug, not a per-player
+    // one: it never spoke for EITHER player, root-caused and fixed here.
+    if(hippoObj && hippoSpeechT > 0){
+      const hippoSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(hippoObj.y) * hippoObj.scale;
+      const distHippo = Math.hypot((player.x-hippoObj.x)*W, (player.y-hippoObj.y)*H);
+      bubbleCandidates.push({ dist: distHippo, y: hippoObj.y, draw: ()=>drawSpeechBubble(hippoObj.x*W, hippoObj.y*H-hippoSize*0.75, HIPPO_PET_SPEECH_LINE, BUBBLE_FONT_SIZE, 'hippo') });
     }
     // his ask-line is interact-gated now (see computeNpcAsks() above) — only
     // his timed reaction line, triggered once he's actually been fed, still
@@ -7670,6 +8460,7 @@ function render(time){
     // locked in a sign
     if(!gameStarted){ if(pickingCharacters) drawCharSelect(); else drawStartMenu(); }
   }
+  } // end of the (!combatActive) branch opened above, right before the papyrus background fill
  }catch(err){
   // A bug anywhere in a single frame's update/draw code must never be able
   // to silently kill the whole game. Before this, requestAnimationFrame(render)
