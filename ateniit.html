@@ -872,6 +872,20 @@ function arriveAtMapNeg1(){
   if(numPlayers === 2 && freshArrival){ player2.x = Math.min(BOUNDS.xMax, MAP_NEG1_SPAWN.x + 0.05); player2.y = MAP_NEG1_SPAWN.y; }
   boatOnGround = { x: MAP_NEG1_SPAWN.x, y: MAP_NEG1_SPAWN.y, items: boatOnGround ? boatOnGround.items : [] };
   boarded = true;
+  // A death respawn (or the level editor's direct map jump) forces boarded
+  // straight to true here, bypassing tryAutoBoard()/tryAutoBoard2() — the
+  // only other place pets normally get moved onto the boat's cargo. Any pet
+  // already tamed and following on foot (not boarded) the moment that
+  // happened would otherwise be stranded: updatePetX() bails out entirely
+  // while boarded, and the draw call right beside it is also gated on
+  // !boarded, so it just freezes in place and vanishes until you happen to
+  // disembark — this call catches it up right away instead. Each load*
+  // function already no-ops if that pet is already riding, so this is safe
+  // to call unconditionally on every arrival, fresh or continuing.
+  if(catIsPet) loadCatPetOntoBoat();
+  if(goatIsPet) loadGoatPetOntoBoat();
+  if(southCrocIsPet) loadSouthCrocPetOntoBoat();
+  if(hippoIsPet) loadHippoPetOntoBoat();
   if(freshArrival){ boatPilot = 1; boatPassenger = null; }
   boardCooldown = 0;
   // quest progress (the elephant chased off, fish/snake deliveries,
@@ -897,6 +911,16 @@ function arriveAtMap2(){
   if(numPlayers === 2 && freshArrival){ player2.x = Math.min(BOUNDS.xMax, MAP2_WEST_SPAWN.x + 0.05); player2.y = MAP2_WEST_SPAWN.y; }
   boatOnGround = { x: MAP2_WEST_SPAWN.x, y: MAP2_WEST_SPAWN.y, items: boatOnGround ? boatOnGround.items : [] };
   boarded = true;
+  // see the matching comment in arriveAtMapNeg1() above — a forced arrival
+  // here (death respawn, or the editor's direct map jump) bypasses
+  // tryAutoBoard()'s own pet-loading, which otherwise leaves any pet
+  // already tamed and following on foot stranded (frozen and undrawn)
+  // until you next disembark. Safe to call unconditionally: each load*
+  // function already no-ops once that pet is riding.
+  if(catIsPet) loadCatPetOntoBoat();
+  if(goatIsPet) loadGoatPetOntoBoat();
+  if(southCrocIsPet) loadSouthCrocPetOntoBoat();
+  if(hippoIsPet) loadHippoPetOntoBoat();
   if(freshArrival){ boatPilot = 1; boatPassenger = null; }
   boardCooldown = 0;
 }
@@ -1817,32 +1841,30 @@ const BUBBLE_FONT_SIZE = 22; // reverted back to original size — the smaller b
    and `t` happen to have the same length, or a plain centered row
    otherwise — see drawCombatScene. */
 const EGYPT_DICTIONARY = [
-  { e:'𓅠𓅓𓏛', t:'gm',   m:'find' },
-  { e:'𓈖𓄿',   t:'nA',   m:'the' },
-  { e:'𓅯𓄿',   t:'pA',   m:'the' },
-  { e:'𓊃',     t:'s',    m:'her' },
-  { e:'𓁷𓏤',   t:'Hr',   m:'upon' },
-  { e:'𓏏𓏲𓎡', t:'twk',  m:'you' },
-  { e:'𓅓',     t:'m',    m:'in' },
-  { e:'𓂝',     t:'a',    m:'of, part' },
-  { e:'𓂻',     t:'iw',   m:'go, travel' },
-  { e:'𓐟𓏤',   t:'sA',   m:'after' },
-  { e:'𓏶𓅓𓏭𓀁', t:'wnm', m:'eat' },
-  { e:'𓂋𓂋',   t:'rr',   m:'towards' },
-  { e:'𓋴',     t:'s',    m:'it, she' },
-  { e:'𓏇𓇋',   t:'mi',   m:'like' },
-  { e:'𓆑',     t:'f',    m:'he' },
-  { e:'𓏪',     t:'w',    m:'they' },
-  { e:'𓂋',     t:'r',    m:'towards' },
-  { e:'𓈗',     t:'mw',   m:'water' },
-  { e:'𓊖𓏏𓏤', t:'niwt', m:'city' },
+  { e:'𓅠𓅓𓏛', t:'gm', m:'find', segs:['gm',null,null] },
+  { e:'𓈖𓄿', t:'nA', m:'the', segs:['n','A'] },
+  { e:'𓅯𓄿', t:'pA', m:'the', segs:['pA',null] },
+  { e:'𓁷𓏤', t:'Hr', m:'upon', segs:['Hr',null] },
+  { e:'𓏏𓏲𓎡', t:'twk', m:'you', segs:['t','w','k'] },
+  { e:'𓂻', t:'iw', m:'go, travel', segs:['iw'] },
+  { e:'𓏶𓅓𓏭𓀁', t:'wnm', m:'eat', segs:['wnm',null,null,null] },
+  { e:'𓊖𓏏𓏤', t:'niwt', m:'city', segs:['niwt',null,null] },
   { e:'𓎛𓆑𓄫𓅱𓆙', t:'HfAw', m:'snake', segs:['H','f','A','w',null], alts:['𓎛𓆑𓄫𓆚'] }, // primary spelling switched to the fuller one seen in the lady's own WOMAN_QUEST_LINE, which actually spells all 4 MDC letters out (𓅱=w) — the shorter ambient form used by each of the 5 wild snakes (SNAKE_SPEECH_LINE) is now the alt, still pooling into this same wordSeenBy entry. segs: 𓎛=H, 𓆑=f, 𓄫=A, 𓅱=w, and 𓆙 is a determinative with no MDC letter of its own (null) — same pattern as the 'cow' entry's own segs above. Previously the shorter 3-letter spelling was always primary, so the combat challenge always quizzed/displayed "HfA" and silently dropped the word's real final "w" no matter which spelling actually triggered it
-  { e:'𓏇𓇋𓅱𓄜', t:'miw',  m:'cat' },
-  { e:'𓇋𓎛𓏏𓃒', t:'iHt',  m:'cow', segs:['i','H','t',null] }, // segs: per-glyph MDC breakdown for the combat arena's slot alignment (see the big comment above EGYPT_DICTIONARY and drawCombatScene) — confirmed by the user: 𓇋=i, 𓎛=H, 𓏏=t, and 𓃒 is a determinative with no MDC letter of its own (null)
-  { e:'𓈎𓂋𓂋𓆏', t:'qrr',  m:'frog' },
-  { e:'𓏎𓇋',   t:'ini',  m:'bring' },
-  { e:'𓄿𓊪𓂧𓅯', t:'Apd',  m:'bird' },
-  { e:'𓅓𓊃𓎛𓆊', t:'msH',  m:'crocodile' },
+  { e:'𓏇𓇋𓅱𓄜', t:'miw', m:'cat', segs:['mi',null,'w',null] },
+  { e:'𓇋𓎛𓏏𓃒', t:'iHt', m:'cow', segs:['i','H','t',null] }, // segs: per-glyph MDC breakdown for the combat arena's slot alignment (see the big comment above EGYPT_DICTIONARY and drawCombatScene) — confirmed by the user: 𓇋=i, 𓎛=H, 𓏏=t, and 𓃒 is a determinative with no MDC letter of its own (null)
+  { e:'𓈎𓂋𓂋𓆏', t:'qrr', m:'frog', segs:['q','r','r',null] },
+  { e:'𓏎𓇋', t:'ini', m:'bring', segs:['in','i'] },
+  { e:'𓄿𓊪𓂧𓅯', t:'Apd', m:'bird', segs:['A','p','d',null] },
+  { e:'𓅓𓊃𓎛𓆊', t:'msH', m:'crocodile', segs:['m','s','H',null] },
+  { e:'𓎛𓏏𓂋𓃗', t:'Htr', m:'horse', segs:['H','t','r',null] }, // segs: 𓎛=H, 𓏏=t, 𓂋=r, and 𓃗 is a determinative with no MDC letter of its own (null) — same pattern as the 'cow'/'snake' entries above. Spoken ambiently by each of the 4 running lvl-2 "horse" signs — see HORSE_SPEECH_LINE/FAST_RUNNER_IDS
+  // --- new entries added 2026-09-13 from user-confirmed MDC/meaning data in the Speech Ledger ---
+  { e:'𓇋𓏏𓂋𓏲𓈗', t:'itrw', m:'river', segs:['i','t','r','w',null] },
+  { e:'𓍋𓃀𓅱𓄑', t:'Abw', m:'ivory', segs:['Ab',null,'w',null] },
+  { e:'𓉔𓃀𓍁', t:'hb', m:'plow', segs:['h','b',null] },
+  { e:'𓋴𓂝𓅓𓄈𓀁', t:'sam', m:'medicine', segs:['s','a','m',null,null] },
+  { e:'𓊃𓈙𓊃𓈙𓆰', t:'sSsS', m:'flower', segs:['s','S','s','S',null] },
+  { e:'𓊃𓈞𓐝𓆧𓏥', t:'snHm', m:'grasshopper', segs:['s','Hm','m',null,null] }, // segs recorded exactly as the user confirmed it (s / Hm / m / -- / --); it does NOT satisfy the usual concat===t check (spells "sHmm", not "snHm") because the user says the 'n' belongs to a different/alternate spelling of this word -- kept as-is per their explicit instruction. drawCombatScene()'s own validation harmlessly falls back to a default slot layout for this entry since the concat check fails; nothing crashes.
+  { e:'𓆞', t:'mr', m:'fish', segs:['mr'] },
 ];
 const COMBAT_ELIGIBLE_SIGHTINGS = 3; // distinct speakers needed before a word is eligible to trigger the combat challenge
 const wordSeenBy = new Map(); // dictionary entry's "e" string -> Set of speaker keys ('npc','lady','goat',...) who have shown it — needs COMBAT_ELIGIBLE_SIGHTINGS DIFFERENT speakers before the word is even ELIGIBLE (see wordsLearned below — hearing it twice used to be enough on its own, now it's just the gate that lets the combat challenge start)
@@ -2028,12 +2050,13 @@ function updateCanvasZoomStyle(){
    never touched/drawn while numPlayers===1. In solo mode player1 keeps the
    original either-WASD-or-arrows convention (matching numPlayers===1's own
    real on-foot movement block), since there's no player2 to claim arrows. */
-const COMBAT_DURATION = 20; // seconds on the clock
+const COMBAT_DURATION = 30; // seconds on the clock — 20 → 30, per request (more time to find/place the letters)
 const COMBAT_PICKUP_RANGE = 0.05; // fraction of min(W,H)
 const COMBAT_PLAYER_SPEED = 0.35; // fraction of canvas width/sec, flat — no depth/water in this arena
 const COMBAT_SLOT_Y = 0.30; // fraction of H where the word + its empty MDC slots sit — 0.24 → 0.27 → 0.30 (moved down still further, per request) so the word clears the timer/crocodile animations creeping across the top of the arena; the scattered letter tiles' own spawn range was pushed down to match (see its own comment below)
 const COMBAT_CROC_Y = 0.08; // fraction of H — same row the goat sits on, across the top
 const COMBAT_GOAT_X = 0.92; // fraction of W
+const COMBAT_TIMER_Y = 0.16; // fraction of H where the numeric countdown sits — moved down from 0.06 (which put it right on top of the goat at COMBAT_CROC_Y/COMBAT_GOAT_X, same x=0.92 column) per request; still well clear of the word/slot row at COMBAT_SLOT_Y (0.30)
 const COMBAT_RESULT_BEAT = 1.2; // seconds the "learned it!"/"not this time" message holds before the exit zoom fires
 // The word-reveal phase: right after the entering zoom-transition finishes
 // teleporting you into the arena (its own separate CSS-transform zoom — see
@@ -2400,10 +2423,12 @@ function drawCombatScene(){
     }
   }
 
-  // timer, top-right — reddens once it's getting close
+  // timer, top-right — reddens once it's getting close. Sits below the
+  // goat/crocodile row (COMBAT_CROC_Y) at its own COMBAT_TIMER_Y so the two
+  // no longer draw on top of each other.
   ctx.font = '700 '+(Math.min(W,H)*0.05).toFixed(1)+'px system-ui, sans-serif';
   ctx.fillStyle = combatTimer < 5 ? '#c23b3b' : '#2a1f14';
-  ctx.fillText(Math.ceil(combatTimer).toString(), W*0.92, H*0.06);
+  ctx.fillText(Math.ceil(combatTimer).toString(), W*0.92, H*COMBAT_TIMER_Y);
 
   // the crocodile creeping toward the goat across the top — a purely visual
   // clock, not a hazard: it reaches the goat exactly when the timer hits 0
@@ -5571,23 +5596,28 @@ let goatSpeechT = 0;
 let goatObj = null;
 
 // called from tryDropHeldItem() — handing it one of the 3 flower signs while
-// close enough consumes it instead of just setting it down; returns true if so
+// close enough consumes it instead of just setting it down; returns true if so.
+// Once it's already a pet it stops taking flowers at all (unlike the cat's
+// fish or the hippo's own flowers, which both stay repeatable snacks even
+// after taming) — returning false here lets tryDropHeldItem() fall through
+// to whatever else the flower can still be used for (feeding the hippo,
+// the lvl-2 woman, or just setting it down) instead of it vanishing into an
+// already-tamed goat for no further reward.
 function tryGiveFlowerToGoat(item){
+  if(goatIsPet) return false;
   if(item.kind !== 'level' || !FLOWER_GLYPHS.includes(item.glyph)) return false;
-  // once it's a pet, goatObj IS the standalone entity; before that, it's
-  // wherever GOAT_ID currently rests on the active map (it can't be fed
-  // while the player is the one holding it — nothing to walk up to yet)
-  const obj = goatIsPet ? goatObj : levelObjects.find(o => o.id === GOAT_ID);
+  // not a pet yet, so this is always wherever GOAT_ID currently rests on
+  // the active map (it can't be fed while the player is the one holding it
+  // — nothing to walk up to yet)
+  const obj = levelObjects.find(o => o.id === GOAT_ID);
   if(!obj) return false;
   const dist = Math.hypot((player.x-obj.x)*W, (player.y-obj.y)*H);
   if(dist >= Math.min(W,H)*GOAT_TALK_RANGE) return false;
   goatObj = obj;
   score += GOAT_FEED_REWARD;
   goatSpeechT = GOAT_SPEECH_DURATION; // freezes its wander/follow and shows its line for a beat
-  if(!goatIsPet){
-    goatFedCount++;
-    if(goatFedCount >= GOAT_PET_FEEDS_NEEDED) becomeGoatPet(obj);
-  }
+  goatFedCount++;
+  if(goatFedCount >= GOAT_PET_FEEDS_NEEDED) becomeGoatPet(obj);
   return true;
 }
 
@@ -5647,7 +5677,8 @@ function updatePetGoat(dt){
   }
 }
 
-/* ---------- the 4 running figures (level object ids 757/758/759/760, U+130D7) ----------
+/* ---------- the 4 running figures ("horses", level object ids
+   757/758/759/760, U+130D7) ----------
    A fast, continuous back-and-forth run, no pause at either end (unlike
    the locusts' hop): 8 of their own body-lengths forward while climbing
    1 length higher, then the same 8 lengths back while dropping 1 length
@@ -5656,8 +5687,13 @@ function updatePetGoat(dt){
    items too, and start out on lvl 2, but there's no map check here: this
    just walks whatever's currently in levelObjects, so one carried off and
    dropped on another map picks a fresh resting spot right there and keeps
-   running its lap, on whichever map that turns out to be. */
+   running its lap, on whichever map that turns out to be. Ambient "horse"
+   speech (see the bubbleCandidates loop in render(), same pattern as the
+   snakes/lvl-2 cats above) is gated to lvl 2 though, same as where they
+   actually start out. */
 const FAST_RUNNER_IDS = [757, 758, 759, 760];
+const HORSE_TALK_RANGE = 0.06; // fraction of min(W,H), matching the other ambient wild critters' own widened range
+const HORSE_SPEECH_LINE = '𓎛𓏏𓂋𓃗'; // "horse" — each of the 4 running figures is its own distinct dictionary speaker, see the per-id bubbleCandidates entry below
 const FAST_RUN_DIST_X = 8; // forward/back travel, in multiples of the runner's own size
 const FAST_RUN_DIST_Y = 1; // climbs this much higher on the forward leg, drops back down on the return leg
 const FAST_RUN_LEG_DURATION = 1.2; // seconds per 8-length leg — fast
@@ -8189,6 +8225,21 @@ function render(time){
         if(distLvl2Cat < Math.min(W,H)*LVL2_CAT_TALK_RANGE){
           const lvl2CatSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(lvl2CatObj.y) * lvl2CatObj.scale;
           bubbleCandidates.push({ dist: distLvl2Cat, y: lvl2CatObj.y, draw: ()=>drawSpeechBubble(lvl2CatObj.x*W, lvl2CatObj.y*H-lvl2CatSize*0.75, LVL2_CAT_SPEECH_LINE, BUBBLE_FONT_SIZE, 'lvl2cat'+id) });
+        }
+      }
+    }
+    // lvl 2's 4 running "horse" figures (see FAST_RUNNER_IDS/updateFastRunners
+    // above) — each its own speaker, same idea as the snakes/cats above; one
+    // picked up and carried off simply drops out of levelObjects here like
+    // any other pickup item
+    if(currentMap === 2){
+      for(const id of FAST_RUNNER_IDS){
+        const horseObj = levelObjects.find(o => o.id === id);
+        if(!horseObj) continue; // picked up and carried off
+        const distHorse = nearestPlayerDistPx(horseObj.x, horseObj.y);
+        if(distHorse < Math.min(W,H)*HORSE_TALK_RANGE){
+          const horseSize = Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(horseObj.y) * horseObj.scale;
+          bubbleCandidates.push({ dist: distHorse, y: horseObj.y, draw: ()=>drawSpeechBubble(horseObj.x*W, horseObj.y*H-horseSize*0.75, HORSE_SPEECH_LINE, BUBBLE_FONT_SIZE, 'horse'+id) });
         }
       }
     }
