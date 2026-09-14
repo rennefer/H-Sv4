@@ -2051,7 +2051,10 @@ function updateCanvasZoomStyle(){
    original either-WASD-or-arrows convention (matching numPlayers===1's own
    real on-foot movement block), since there's no player2 to claim arrows. */
 const COMBAT_DURATION = 30; // seconds on the clock — 20 → 30, per request (more time to find/place the letters)
-const COMBAT_PICKUP_RANGE = 0.05; // fraction of min(W,H)
+const COMBAT_PICKUP_RANGE = 0.08; // fraction of min(W,H) — 0.05 raised to 0.08 (per request) so players don't have to stand right on top of a letter tile to grab it; still comfortably under half the 0.12 minimum spacing between spawned tiles, so nearby tiles never both come into range at once
+const COMBAT_SLOT_DROP_RANGE = 0.08; // fraction of min(W,H) — kept matching COMBAT_PICKUP_RANGE (see above): how close you actually have to stand to a specific empty slot to drop a letter into it (see combatSpaceAction's own comment — placing no longer accepts any matching slot anywhere in the word, only the one you're physically at)
+const COMBAT_SLOT_GAP = 8; // px between adjacent MDC slot boxes (and between clustered slots under one biliteral/triliteral sign) — shared by drawCombatScene's own slot boxes and computeCombatWordLayout()'s hit-test geometry, so the two can never drift out of sync
+function combatSlotSize(){ return Math.min(W,H)*0.075; } // side length of one MDC slot box, in px — same sharing reason as COMBAT_SLOT_GAP above
 const COMBAT_PLAYER_SPEED = 0.35; // fraction of canvas width/sec, flat — no depth/water in this arena
 const COMBAT_SLOT_Y = 0.30; // fraction of H where the word + its empty MDC slots sit — 0.24 → 0.27 → 0.30 (moved down still further, per request) so the word clears the timer/crocodile animations creeping across the top of the arena; the scattered letter tiles' own spawn range was pushed down to match (see its own comment below)
 const COMBAT_CROC_Y = 0.08; // fraction of H — same row the goat sits on, across the top
@@ -2238,20 +2241,35 @@ function combatSpaceAction(isP2){
   if(py > COMBAT_SLOT_Y + 0.12) return; // has to actually walk up to the word to place a letter
   if(combatSlots.every(s => s !== null)) return; // shouldn't happen — winning already clears combatActive
   const dropped = combatLetters[heldIdx];
-  // Placement order doesn't matter any more — only correct placement does.
-  // Any still-empty slot whose own required letter matches whatever you're
-  // holding accepts it, not just the leftmost empty one, so you (or the two
-  // of you together) can grab letters in whatever order you find them and
-  // still win, as long as every letter ends up SOMEWHERE it's actually
-  // needed. Only a genuinely wrong letter — one no remaining empty slot
-  // wants at all (repeats included) — is still an immediate loss.
-  const targetIdx = combatSlots.findIndex((s,i) => s === null && combatWord.t[i] === dropped.char);
-  if(targetIdx !== -1){
-    combatSlots[targetIdx] = dropped.char;
+  // Placement is now position-accurate: only the specific empty slot you're
+  // actually standing at can take the letter. It used to be that ANY empty
+  // slot anywhere in the word whose required letter matched what you were
+  // holding would accept it, regardless of where you physically dropped it
+  // (e.g. holding 'm' and dropping while standing at the 'H' slot would
+  // silently jump the letter over into the distant 'm' slot) — reported as
+  // a bug ("the character m landed in the m boks when dropt in H box") and
+  // removed. Find the nearest still-empty slot to where you're standing;
+  // if none is close enough, nothing happens (you haven't walked up to an
+  // empty slot yet); if one is close enough, dropping there only succeeds
+  // if it's actually the slot that wants this letter — otherwise it's a
+  // wrong placement (immediate loss), even though the letter you're
+  // holding would have been correct somewhere else in the word.
+  const { slotCenters } = computeCombatWordLayout();
+  const pxPix = px*W;
+  let nearestIdx = -1, nearestDist = Infinity;
+  for(let i=0;i<combatSlots.length;i++){
+    if(combatSlots[i] !== null) continue;
+    const d = Math.abs(slotCenters[i] - pxPix);
+    if(d < nearestDist){ nearestDist = d; nearestIdx = i; }
+  }
+  const dropRangePx = Math.min(W,H)*COMBAT_SLOT_DROP_RANGE;
+  if(nearestIdx === -1 || nearestDist > dropRangePx) return; // not actually standing at any empty slot yet
+  if(combatWord.t[nearestIdx] === dropped.char){
+    combatSlots[nearestIdx] = dropped.char;
     if(isP2) combatHeldIdx2 = null; else combatHeldIdx = null;
     if(combatSlots.every(s => s !== null)) resolveCombat(true);
   } else {
-    resolveCombat(false); // no empty slot needs this letter (wrong letter, or every slot that wanted it is already filled) — immediate "wrong", not just a miss
+    resolveCombat(false); // wrong letter for the specific slot you're standing at — immediate "wrong", not just a miss
   }
 }
 
@@ -2314,6 +2332,95 @@ function combatWordVerticalMetrics(){
   return { drawWordY, wordFontPx, measuredAscent };
 }
 
+// Pure geometry for the word's own hieroglyphs and their MDC slot centers —
+// factored out of drawCombatScene() itself so combatSpaceAction() can
+// hit-test a placement against the EXACT same x positions the word is
+// actually drawn at, without rendering (or measuring twice with different
+// numbers). Returns { wordChars, perGlyph, glyphCenters, slotCenters } in
+// the same canvas-pixel x-coordinate space drawCombatScene draws in;
+// glyphCenters is null in the centered-fallback case (no per-glyph mapping
+// at all). Mirrors drawCombatScene's own three-tier layout exactly (segs >
+// equal-count fallback > centered fallback) — see the `segs` doc comment
+// above EGYPT_DICTIONARY for the full explanation of why a simple glyph
+// count can't always be trusted.
+function computeCombatWordLayout(){
+  const slotSize = combatSlotSize(), slotGap = COMBAT_SLOT_GAP;
+  const wordChars = [...combatWord.e];
+  let segs = combatWord.segs;
+  if(segs && (segs.length !== wordChars.length || segs.filter(s=>s).join('') !== combatWord.t)) segs = null; // defensive only — a malformed segs entry falls back rather than misdrawing
+  const perGlyph = !!segs || wordChars.length === combatSlots.length;
+  const { wordFontPx } = combatWordVerticalMetrics();
+  ctx.font = wordFontPx.toFixed(1)+'px '+HIERO_FONT;
+
+  let glyphCenters = null, slotCenters;
+  if(perGlyph){
+    const widths = wordChars.map(c => ctx.measureText(c).width);
+    const totalW = widths.reduce((a,b)=>a+b, 0);
+    let cursor = W/2 - totalW/2;
+    glyphCenters = [];
+    for(let i=0;i<wordChars.length;i++){
+      glyphCenters.push(cursor + widths[i]/2);
+      cursor += widths[i];
+    }
+    if(segs){
+      slotCenters = [];
+      for(let i=0;i<wordChars.length;i++){
+        const seg = segs[i];
+        if(!seg) continue; // determinative/phonetic complement -- no MDC slot beneath it at all
+        // this one glyph covers seg.length consecutive MDC letters -- cluster
+        // that many slots centered under the glyph's own x (almost always
+        // just 1, but a biliteral/triliteral sign needs more than one)
+        const n = seg.length;
+        const clusterW = n*slotSize + (n-1)*slotGap;
+        const sx0 = glyphCenters[i] - clusterW/2 + slotSize/2;
+        for(let k=0;k<n;k++) slotCenters.push(sx0 + k*(slotSize+slotGap));
+      }
+    } else {
+      slotCenters = glyphCenters;
+    }
+  } else {
+    const totalSlotsW = combatSlots.length*slotSize + (combatSlots.length-1)*slotGap;
+    const slotsX0 = W/2 - totalSlotsW/2;
+    slotCenters = combatSlots.map((_,i) => slotsX0 + i*(slotSize+slotGap) + slotSize/2);
+  }
+  return { wordChars, perGlyph, glyphCenters, slotCenters };
+}
+
+// Quick-reference strip drawn along the bottom of the combat arena: every
+// common uniliteral sign and its own MDC letter, verbatim from the user's
+// own reference list (never hand-typed/retyped — see the big glyph-safety
+// comment above EGYPT_DICTIONARY). Two signs both transliterate to 'w'
+// (𓅱 and 𓏲) and are both kept, exactly as given — Egyptian genuinely has
+// more than one sign for some sounds, same idea as the dictionary's own
+// two different 's' signs (𓋴/𓊃). Drawn by drawCombatScene() itself, see
+// the comment right above that call site.
+const COMBAT_ALPHABET_REFERENCE = [
+  { g:'𓄿', l:'A' },
+  { g:'𓇋', l:'i' },
+  { g:'𓏭', l:'y' },
+  { g:'𓂝', l:'a' },
+  { g:'𓅱', l:'w' },
+  { g:'𓏲', l:'w' },
+  { g:'𓃀', l:'b' },
+  { g:'𓊪', l:'p' },
+  { g:'𓆑', l:'f' },
+  { g:'𓅓', l:'m' },
+  { g:'𓈖', l:'n' },
+  { g:'𓂋', l:'r' },
+  { g:'𓉔', l:'h' },
+  { g:'𓎛', l:'H' },
+  { g:'𓐍', l:'x' },
+  { g:'𓄡', l:'X' },
+  { g:'𓋴', l:'s' },
+  { g:'𓈎', l:'q' },
+  { g:'𓎡', l:'k' },
+  { g:'𓎼', l:'g' },
+  { g:'𓏏', l:'t' },
+  { g:'𓍿', l:'T' },
+  { g:'𓂧', l:'d' },
+  { g:'𓆓', l:'D' },
+];
+
 function drawCombatScene(){
   ctx.save();
   // same papyrus background as the real world (see the identical fill in
@@ -2340,7 +2447,7 @@ function drawCombatScene(){
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const slotSize = Math.min(W,H)*0.075, slotGap = 8;
+  const slotSize = combatSlotSize(), slotGap = COMBAT_SLOT_GAP;
   const slotsY = H*COMBAT_SLOT_Y;
 
   // The word's own hieroglyphs and the MDC letter slots beneath it. Three
@@ -2361,47 +2468,34 @@ function drawCombatScene(){
   //     can't be mapped sign-for-sign at all without guessing, so the word
   //     draws as a single string and the slots just sit centered beneath it.
   const revealing = combatRevealElapsed < COMBAT_REVEAL_TOTAL; // still holding on the word (see the big comment above COMBAT_REVEAL_RAMP)? everything below except the word itself stays hidden until this ends
-  const wordChars = [...combatWord.e];
-  let segs = combatWord.segs;
-  if(segs && (segs.length !== wordChars.length || segs.filter(s=>s).join('') !== combatWord.t)) segs = null; // defensive only — a malformed segs entry falls back rather than misdrawing
-  const perGlyph = !!segs || wordChars.length === combatSlots.length;
   const { drawWordY, wordFontPx } = combatWordVerticalMetrics();
-  ctx.fillStyle = '#2a1f14';
+  // the result is now shown by flashing the sign itself green (won) or red
+  // (lost) right before teleporting back out, instead of a dark overlay with
+  // "learned it!"/"not this time" text (removed per request) — same beat
+  // (COMBAT_RESULT_BEAT), just reusing the word's own ink color
+  ctx.fillStyle = combatResultT > 0 ? (combatResultWon ? '#2f8f3f' : '#c23b3b') : '#2a1f14';
   ctx.font = wordFontPx.toFixed(1)+'px '+HIERO_FONT;
 
-  let slotCenters;
+  // on a WRONG result the word also shakes side to side for the same beat,
+  // on top of flashing red — a fast horizontal wobble whose amplitude fades
+  // out as combatResultT counts down to 0, so it settles right before the
+  // exit zoom fires. Wins don't shake, just flash green.
+  let wordShakeX = 0;
+  if(combatResultT > 0 && !combatResultWon){
+    const shakeAmp = Math.min(W,H)*0.018 * (combatResultT/COMBAT_RESULT_BEAT);
+    wordShakeX = Math.sin(combatResultT*40) * shakeAmp;
+  }
+
+  // slot x positions come from the shared computeCombatWordLayout() (see its
+  // own big comment) so combatSpaceAction() hit-tests placement against
+  // exactly the same geometry this draws with — drawing itself just walks
+  // that same layout to paint each glyph (or the whole word as one string,
+  // in the no-per-glyph-mapping fallback) and the slot boxes/timer/etc below
+  const { wordChars, perGlyph, slotCenters, glyphCenters } = computeCombatWordLayout();
   if(perGlyph){
-    const widths = wordChars.map(c => ctx.measureText(c).width);
-    const totalW = widths.reduce((a,b)=>a+b, 0);
-    let cursor = W/2 - totalW/2;
-    const glyphCenters = [];
-    for(let i=0;i<wordChars.length;i++){
-      const cx = cursor + widths[i]/2;
-      glyphCenters.push(cx);
-      ctx.fillText(wordChars[i], cx, drawWordY);
-      cursor += widths[i];
-    }
-    if(segs){
-      slotCenters = [];
-      for(let i=0;i<wordChars.length;i++){
-        const seg = segs[i];
-        if(!seg) continue; // determinative/phonetic complement -- no MDC slot beneath it at all
-        // this one glyph covers seg.length consecutive MDC letters -- cluster
-        // that many slots centered under the glyph's own x (almost always
-        // just 1, but a biliteral/triliteral sign needs more than one)
-        const n = seg.length;
-        const clusterW = n*slotSize + (n-1)*slotGap;
-        const sx0 = glyphCenters[i] - clusterW/2 + slotSize/2;
-        for(let k=0;k<n;k++) slotCenters.push(sx0 + k*(slotSize+slotGap));
-      }
-    } else {
-      slotCenters = glyphCenters;
-    }
+    for(let i=0;i<wordChars.length;i++) ctx.fillText(wordChars[i], glyphCenters[i]+wordShakeX, drawWordY);
   } else {
-    ctx.fillText(combatWord.e, W/2, drawWordY);
-    const totalSlotsW = combatSlots.length*slotSize + (combatSlots.length-1)*slotGap;
-    const slotsX0 = W/2 - totalSlotsW/2;
-    slotCenters = combatSlots.map((_,i) => slotsX0 + i*(slotSize+slotGap) + slotSize/2);
+    ctx.fillText(combatWord.e, W/2+wordShakeX, drawWordY);
   }
 
   // everything below (slots, timer, crocodile, scattered letters, players,
@@ -2481,15 +2575,52 @@ function drawCombatScene(){
     }
   }
 
-  // brief "learned it!" / "not this time" beat, right before teleporting back
-  if(combatResultT > 0){
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(0, 0, W, H);
-    ctx.font = '700 '+(Math.min(W,H)*0.05).toFixed(1)+'px system-ui, sans-serif';
-    ctx.fillStyle = combatResultWon ? '#9be89b' : '#ff8a8a';
-    ctx.fillText(combatResultWon ? 'learned it!' : 'not this time — try again later', W/2, H/2);
-  }
   } // end !revealing
+
+  // bottom-of-arena quick reference: every common uniliteral sign and its
+  // own MDC letter (COMBAT_ALPHABET_REFERENCE, above), glyph stacked right
+  // over its own letter so the pairing is unambiguous, spaced evenly across
+  // one full row. Drawn unconditionally (even during the reveal hold and
+  // the win/lose beat's dark overlay) so it's available as a cheat-sheet
+  // for the whole encounter, not just once real gameplay starts.
+  //
+  // This used to box each pair individually in the exact same solid style
+  // as the real pickable letter tiles/empty slots above, which made the
+  // whole strip look like more pickable signs scattered around the arena
+  // (reported as confusing). Now it's a SINGLE translucent panel around the
+  // entire row instead -- one shape, clearly a background reference sheet,
+  // and see-through enough that it doesn't visually compete with anything
+  // behind it, rather than 24 look-alike opaque tiles.
+  {
+    const refCount = COMBAT_ALPHABET_REFERENCE.length;
+    const refMarginX = W*0.02;
+    const refColW = (W - refMarginX*2) / refCount;
+    const refGlyphFontPx = Math.min(W,H)*0.032;
+    const refLetterFontPx = Math.min(W,H)*0.020;
+    const refGlyphY = H*0.925;
+    const refLetterY = H*0.975;
+    const refBoxTop = refGlyphY - refGlyphFontPx*0.65;
+    const refBoxBottom = refLetterY + refLetterFontPx*0.65;
+    const refPanelPadX = refColW*0.25;
+    const refPanelPadY = (refBoxBottom-refBoxTop)*0.22;
+    roundedRectPath(refMarginX-refPanelPadX, refBoxTop-refPanelPadY, W-refMarginX*2+refPanelPadX*2, (refBoxBottom-refBoxTop)+refPanelPadY*2, 8);
+    ctx.fillStyle = 'rgba(233,224,205,0.35)'; // translucent -- the arena behind it stays visible
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(42,31,20,0.4)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for(let i=0;i<refCount;i++){
+      const entry = COMBAT_ALPHABET_REFERENCE[i];
+      const cx = refMarginX + (i+0.5)*refColW;
+      ctx.font = refGlyphFontPx.toFixed(1)+'px '+HIERO_FONT;
+      ctx.fillStyle = '#2a1f14';
+      ctx.fillText(entry.g, cx, refGlyphY);
+      ctx.font = '700 '+refLetterFontPx.toFixed(1)+'px system-ui, sans-serif';
+      ctx.fillText(entry.l, cx, refLetterY);
+    }
+  }
 
   ctx.restore();
 }
