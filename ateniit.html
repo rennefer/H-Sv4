@@ -8364,7 +8364,12 @@ function debugRecordFrame(rawMs){
   if(debugFrameTimes.length > DEBUG_FRAME_WINDOW) debugFrameTimes.shift();
   if(rawMs > DEBUG_DROP_THRESHOLD_MS) debugDroppedTotal++;
 }
-function drawDebugOverlay(){
+// Named drawPerfOverlay (not drawDebugOverlay) -- that name was already
+// taken by the pre-existing showDebug hitbox/water-polygon visualizer
+// further up; two `function drawDebugOverlay(){...}` declarations at the
+// same scope would silently let this one win everywhere, permanently
+// disabling that older overlay the instant this file loaded.
+function drawPerfOverlay(){
   if(!debugOverlayOn || debugFrameTimes.length === 0) return;
   const n = debugFrameTimes.length;
   const avg = debugFrameTimes.reduce((a,b)=>a+b,0)/n;
@@ -8377,13 +8382,15 @@ function drawDebugOverlay(){
     'fps: '+(1000/avg).toFixed(1)+'  avg: '+avg.toFixed(1)+'ms  p95: '+p95.toFixed(1)+'ms  max: '+max.toFixed(1)+'ms',
     'dropped(>'+DEBUG_DROP_THRESHOLD_MS+'ms) last '+windowSec.toFixed(1)+'s: '+debugFrameTimes.filter(t=>t>DEBUG_DROP_THRESHOLD_MS).length+'/'+n+'   total since toggled on: '+debugDroppedTotal,
     'canvas backing store: '+canvas.width+'x'+canvas.height+'  DPR/transform: '+DPR.toFixed(3)+'  window: '+window.innerWidth+'x'+window.innerHeight,
+    'last frame breakdown:',
+    ...debugLastPhaseMarks.map(([label, ms]) => '  '+ms.toFixed(1)+'ms  '+label),
   ];
   ctx.save();
   ctx.font = '600 12px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   const pad = 6, lineH = 15;
-  const boxW = 430, boxH = pad*2 + lineH*lines.length;
+  const boxW = 480, boxH = pad*2 + lineH*lines.length;
   ctx.fillStyle = 'rgba(0,0,0,0.62)';
   ctx.fillRect(4, 4, boxW, boxH);
   ctx.fillStyle = '#7CFC00';
@@ -8393,9 +8400,24 @@ function drawDebugOverlay(){
 window.addEventListener('keydown', e => {
   if(e.key === 'F3'){ debugOverlayOn = !debugOverlayOn; debugDroppedTotal = 0; debugFrameTimes = []; e.preventDefault(); }
 });
+// Phase breakdown for the overlay above: which part of a frame the time
+// actually goes to (background/wash/sun-glow, building the draw list,
+// drawing the world's level objects, drawing the player, everything else)
+// -- only kept warm while the overlay is on, so it costs nothing normally.
+let debugPhaseMarks = null;
+let debugPhaseLast = 0;
+function debugMark(label){
+  if(!debugPhaseMarks) return;
+  const now = performance.now();
+  debugPhaseMarks.push([label, now - debugPhaseLast]);
+  debugPhaseLast = now;
+}
+let debugLastPhaseMarks = [];
+
 function render(time){
  debugRecordFrame(time - debugLastFrameTime);
  debugLastFrameTime = time;
+ if(debugOverlayOn){ debugPhaseMarks = []; debugPhaseLast = time; } else { debugPhaseMarks = null; }
  try{
   const dt = Math.min(0.05, (time-t0)/1000); t0 = time;
   // the zoom transition (entering/leaving combat) and the CSS transform it
@@ -8462,6 +8484,7 @@ function render(time){
   drawWaterWash();
   drawPlantWash();
   drawSunLight(); // lvl -1 / lvl 1 only, see its own big comment — drawn before every depth-sorted object below so it reads as light behind the scene, not an overlay on top of it
+  debugMark('background/washes/sun');
 
   if(fontsReady){
     // Every npc/sign that has something to say this frame gets offered up
@@ -8817,6 +8840,7 @@ function render(time){
     // player (obj.y > player.y) draws AFTER the player instead, occluding
     // him with its backing plate exactly like it already occludes whatever
     // else is drawn behind it in the z-order.
+    debugMark('build drawList ('+drawList.length+' entries)');
     const behindPlayer = [], occludingPlayer = [];
     for(const e of drawList){
       if(e.opaque && e.y > player.y) occludingPlayer.push(e);
@@ -8824,8 +8848,10 @@ function render(time){
     }
     behindPlayer.sort((a,b)=> a.y-b.y);
     behindPlayer.forEach(e=>e.draw());
+    debugMark('draw '+behindPlayer.length+' behind-player objects');
     drawPlayer();
     if(numPlayers === 2) drawPlayer2(); // same "never hidden by ordinary scenery" treatment as player1, right next to him in the draw order
+    debugMark('draw player(s)');
     occludingPlayer.sort((a,b)=> a.y-b.y);
     occludingPlayer.forEach(e=>e.draw());
     // speech bubbles always last, always on top — see the comment above
@@ -8944,7 +8970,9 @@ function render(time){
    }
  }catch(e3){}
 
- try{ drawDebugOverlay(); }catch(e4){}
+ debugMark('rest of frame (bubbles/markers/HUD/dictionary/etc)');
+ if(debugPhaseMarks) debugLastPhaseMarks = debugPhaseMarks;
+ try{ drawPerfOverlay(); }catch(e4){}
 
   requestAnimationFrame(render);
 }
