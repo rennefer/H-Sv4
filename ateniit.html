@@ -1323,6 +1323,18 @@ const LVL2_SUN_OBJ_ID = 1070;
 // to sell it as an actual light source. Never ctx.filter (standing rule) —
 // both passes use only globalCompositeOperation + radial gradients.
 const SUN_LIGHT_OBJ_ID_BY_MAP = { '-1': SUN_OBJ_ID, '1': LVL1_SUN_OBJ_ID, '2': LVL2_SUN_OBJ_ID };
+// Every one of these three gradients is fully determined by the sun's own
+// (fixed, during normal play) position and W/H -- which are themselves
+// pinned to BASE_W/BASE_H outside the editor -- so none of it actually
+// needs recomputing frame to frame. Building 3 new CanvasGradients (each
+// with several addColorStop calls) from scratch every single frame was
+// pure waste on every map with a sun active, and allocation churn exactly
+// like that is a classic cause of the small, periodic, easy-to-miss
+// dropped-frame stutter this was reported as -- so cache the built
+// gradients and only rebuild them when the key they depend on actually
+// changes (moving the sun in the editor, or the sun object disappearing
+// and a different one becoming active).
+let sunLightGradientCache = null; // { key, wash, radiant, core } | null
 function drawSunLight(){
   const sunObjId = SUN_LIGHT_OBJ_ID_BY_MAP[String(currentMap)];
   if(sunObjId === undefined) return;
@@ -1331,39 +1343,45 @@ function drawSunLight(){
   const cx = sun.x*W, cy = sun.y*H;
   const R = Math.min(W,H) * 1.05; // wide, gradual falloff -- reads as ambient light filling the sky, not a localized graphic
 
+  const key = sunObjId+'|'+cx+'|'+cy+'|'+R;
+  let g = sunLightGradientCache && sunLightGradientCache.key === key ? sunLightGradientCache : null;
+  if(!g){
+    // wide soft wash, blended INTO the papyrus texture rather than over it
+    const wash = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+    wash.addColorStop(0, 'rgba(255,228,170,1)');
+    wash.addColorStop(0.3, 'rgba(255,214,140,0.7)');
+    wash.addColorStop(0.65, 'rgba(255,214,140,0.25)');
+    wash.addColorStop(1, 'rgba(255,214,140,0)');
+
+    // a wider radiant glow layered on top of the wash, still additive
+    // ('lighter') so it actually brightens rather than just recoloring —
+    // this is the bit that makes the sun itself read as genuinely radiant,
+    // not just a warmer patch of paper (per request: "need some more
+    // radiant glow as well")
+    const radiant = ctx.createRadialGradient(cx, cy, 0, cx, cy, R*0.42);
+    radiant.addColorStop(0, 'rgba(255,241,205,0.5)');
+    radiant.addColorStop(0.4, 'rgba(255,229,170,0.26)');
+    radiant.addColorStop(1, 'rgba(255,229,170,0)');
+
+    // small real-brightness core right at the disk, so it still reads as an
+    // actual light source up close rather than just a warmer patch of paper
+    const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, R*0.16);
+    core.addColorStop(0, 'rgba(255,250,230,0.55)');
+    core.addColorStop(1, 'rgba(255,250,230,0)');
+
+    g = { key, wash, radiant, core };
+    sunLightGradientCache = g;
+  }
+
   ctx.save();
-
-  // wide soft wash, blended INTO the papyrus texture rather than over it
   ctx.globalCompositeOperation = 'soft-light';
-  const wash = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
-  wash.addColorStop(0, 'rgba(255,228,170,1)');
-  wash.addColorStop(0.3, 'rgba(255,214,140,0.7)');
-  wash.addColorStop(0.65, 'rgba(255,214,140,0.25)');
-  wash.addColorStop(1, 'rgba(255,214,140,0)');
-  ctx.fillStyle = wash;
+  ctx.fillStyle = g.wash;
   ctx.fillRect(0, 0, W, H);
-
-  // a wider radiant glow layered on top of the wash, still additive
-  // ('lighter') so it actually brightens rather than just recoloring —
-  // this is the bit that makes the sun itself read as genuinely radiant,
-  // not just a warmer patch of paper (per request: "need some more
-  // radiant glow as well")
   ctx.globalCompositeOperation = 'lighter';
-  const radiant = ctx.createRadialGradient(cx, cy, 0, cx, cy, R*0.42);
-  radiant.addColorStop(0, 'rgba(255,241,205,0.5)');
-  radiant.addColorStop(0.4, 'rgba(255,229,170,0.26)');
-  radiant.addColorStop(1, 'rgba(255,229,170,0)');
-  ctx.fillStyle = radiant;
+  ctx.fillStyle = g.radiant;
   ctx.fillRect(cx-R*0.42, cy-R*0.42, R*0.84, R*0.84);
-
-  // small real-brightness core right at the disk, so it still reads as an
-  // actual light source up close rather than just a warmer patch of paper
-  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, R*0.16);
-  core.addColorStop(0, 'rgba(255,250,230,0.55)');
-  core.addColorStop(1, 'rgba(255,250,230,0)');
-  ctx.fillStyle = core;
+  ctx.fillStyle = g.core;
   ctx.fillRect(cx-R*0.16, cy-R*0.16, R*0.32, R*0.32);
-
   ctx.restore();
 }
 
@@ -8326,7 +8344,58 @@ function drawQuestMarker(x, y, size, golden){
 
 let t0 = performance.now();
 let newLvlAutosaveT = 0; // seconds since the scratch level was last flushed to localStorage — see saveNewLvlObjects()
+// ---------- debug perf overlay (F3 to toggle) ----------
+// A small on-screen FPS/frame-time readout, entirely separate from the
+// game's own dt (which gets clamped to 0.05s for physics — see just below —
+// so it hides exactly the kind of hitch this is meant to surface). This
+// exists so a dropped-frame report can come back with real numbers read
+// straight off the affected screen, instead of a guess from a machine that
+// can't reproduce it: neither headless testing nor this project's own
+// automated browser tooling has managed to reproduce the intermittent
+// dropped-frame reports that only show up on someone's own hardware.
+let debugOverlayOn = false;
+let debugLastFrameTime = performance.now();
+const DEBUG_FRAME_WINDOW = 300; // ~5s worth at 60fps
+let debugFrameTimes = [];
+let debugDroppedTotal = 0; // frames over budget since the overlay was last turned on
+const DEBUG_DROP_THRESHOLD_MS = 20; // a touch over one 60fps frame (16.67ms)
+function debugRecordFrame(rawMs){
+  debugFrameTimes.push(rawMs);
+  if(debugFrameTimes.length > DEBUG_FRAME_WINDOW) debugFrameTimes.shift();
+  if(rawMs > DEBUG_DROP_THRESHOLD_MS) debugDroppedTotal++;
+}
+function drawDebugOverlay(){
+  if(!debugOverlayOn || debugFrameTimes.length === 0) return;
+  const n = debugFrameTimes.length;
+  const avg = debugFrameTimes.reduce((a,b)=>a+b,0)/n;
+  const sorted = [...debugFrameTimes].sort((a,b)=>a-b);
+  const max = sorted[n-1];
+  const p95 = sorted[Math.floor(n*0.95)];
+  const windowSec = debugFrameTimes.reduce((a,b)=>a+b,0)/1000;
+  const lines = [
+    'DEBUG (F3 to hide)',
+    'fps: '+(1000/avg).toFixed(1)+'  avg: '+avg.toFixed(1)+'ms  p95: '+p95.toFixed(1)+'ms  max: '+max.toFixed(1)+'ms',
+    'dropped(>'+DEBUG_DROP_THRESHOLD_MS+'ms) last '+windowSec.toFixed(1)+'s: '+debugFrameTimes.filter(t=>t>DEBUG_DROP_THRESHOLD_MS).length+'/'+n+'   total since toggled on: '+debugDroppedTotal,
+    'canvas backing store: '+canvas.width+'x'+canvas.height+'  DPR/transform: '+DPR.toFixed(3)+'  window: '+window.innerWidth+'x'+window.innerHeight,
+  ];
+  ctx.save();
+  ctx.font = '600 12px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const pad = 6, lineH = 15;
+  const boxW = 430, boxH = pad*2 + lineH*lines.length;
+  ctx.fillStyle = 'rgba(0,0,0,0.62)';
+  ctx.fillRect(4, 4, boxW, boxH);
+  ctx.fillStyle = '#7CFC00';
+  lines.forEach((l,i) => ctx.fillText(l, 4+pad, 4+pad+i*lineH));
+  ctx.restore();
+}
+window.addEventListener('keydown', e => {
+  if(e.key === 'F3'){ debugOverlayOn = !debugOverlayOn; debugDroppedTotal = 0; debugFrameTimes = []; e.preventDefault(); }
+});
 function render(time){
+ debugRecordFrame(time - debugLastFrameTime);
+ debugLastFrameTime = time;
  try{
   const dt = Math.min(0.05, (time-t0)/1000); t0 = time;
   // the zoom transition (entering/leaving combat) and the CSS transform it
@@ -8874,6 +8943,8 @@ function render(time){
      ctx.restore();
    }
  }catch(e3){}
+
+ try{ drawDebugOverlay(); }catch(e4){}
 
   requestAnimationFrame(render);
 }
