@@ -238,15 +238,6 @@
    shape the scale curve.
    ============================================================ */
 
-// Real wall-clock timestamp for when this script started running -- see
-// PRE_GAME_MIN_WARM_UP_MS / attemptPreGameRefresh()'s own comment. Declared
-// as early as possible so it reads as close to true page-load time as this
-// script can get. `let` rather than `const` purely so test code can rewind
-// it (see rewindPageLoadTimeForTest in the test hook block) to exercise the
-// 5-second warm-up gate without an automated test actually sleeping that
-// long for real every time.
-let PAGE_LOAD_TIME = performance.now();
-
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 // Tracks ctx's own save()/restore() stack depth from the outside, purely so
@@ -3480,20 +3471,31 @@ function beginGameWithLoadScreen(n){
   if(spawnP2){ player2.x = spawnP2.x; player2.y = spawnP2.y; facing2 = spawnP2.facing; }
   attemptPreGameRefresh(5);
 }
-// Real-hardware/live-server testing (2026-09-15) turned up something this
-// function didn't originally account for: firing performRefreshShrink() too
-// soon after page load can run to completion -- genuinely started, not
-// declined -- and still fail to actually fix the "gets slower every second"
-// bug on some hardware, only reliably taking effect once roughly 5 real
-// seconds have passed since the page loaded. That lines up with the same
-// class of issue described above the two load-time self-heal calls near
-// resize() (a GPU/compositor settle time the browser needs, separate from
-// anything this script can see) -- it just needs longer in practice than
-// those calls' own hard-coded 150ms/1500ms delays assumed. One round of
-// testing isn't a lot to hang a constant on, so this is flagged for the
-// user to reconfirm rather than treated as settled.
-const PRE_GAME_MIN_WARM_UP_MS = 5000;
-// performRefreshShrink() can also decline outright (refreshShrinkInProgress
+// A 5-second minimum-wait gate briefly lived here (2026-09-15), on the
+// theory that firing performRefreshShrink() too soon after page load could
+// run to genuine completion and still not fix the "gets slower every
+// second" bug, only reliably taking effect once ~5 real seconds had passed.
+// Real-hardware testing DISPROVED this: forcing the cycle to fire 75 times
+// in a row (way past any 5s wait) on a fast-loaded page still left fps flat
+// at ~13, while a normal-paced load reaching fps ~21 needed only 4 fires --
+// so firing more, or later, doesn't rescue a bad load. Timing/retry-count
+// isn't the lever here, so the wait was pulled back out rather than kept as
+// unproven complexity. Current best theory (unconfirmed, nothing in this
+// script can verify it): this machine's weak integrated GPU (Radeon Vega 3,
+// no discrete card, per earlier real-hardware profiling) power-manages
+// itself aggressively, and interacting within the first second or two of
+// load can catch the GPU still clocked down from idle -- once a frame
+// renders at that low clock speed, nothing done in canvas/JS afterward
+// seems to convince the driver to reclock, which would also explain why a
+// REAL OS-level window resize has always been the one thing that reliably,
+// instantly fixes it (a stronger signal to the driver than a script
+// reassigning canvas.width ever is) while every scripted trick tried across
+// this whole saga -- backing-store bounce, plain reflow, GPU layer
+// promotion, window focus, and now retry timing -- has failed to replicate
+// that. If true, there may be no reliable automatic fix left to find from
+// inside the page; a real manual window resize remains the practical
+// fallback if this ever leaves someone stuck at low fps.
+// performRefreshShrink() can still decline outright (refreshShrinkInProgress
 // -- most likely one of the two load-time self-heal timers still mid-hold)
 // -- retries a few times on a short delay instead of giving up, since giving
 // up here would mean lifting the cover while that OTHER cycle is still
@@ -3501,16 +3503,9 @@ const PRE_GAME_MIN_WARM_UP_MS = 5000;
 // to prevent. Same reasoning as triggerFirstMoveInputResize's own retry (see
 // its comment), just with a timer instead of a real keypress to retry on.
 // attemptsLeft is a hard safety net so the cover can never get permanently
-// stuck up if something unexpected keeps declining it -- the warm-up wait
-// above doesn't spend any of this budget, since it's a deliberate wait, not
-// a decline.
+// stuck up if something unexpected keeps declining it.
 function attemptPreGameRefresh(attemptsLeft){
   if(firstMoveInputResizeDone){ hidePreGameLoadCover(); return; }
-  const elapsed = performance.now() - PAGE_LOAD_TIME;
-  if(elapsed < PRE_GAME_MIN_WARM_UP_MS){
-    setTimeout(() => attemptPreGameRefresh(attemptsLeft), PRE_GAME_MIN_WARM_UP_MS - elapsed);
-    return;
-  }
   const started = performRefreshShrink(() => {
     firstMoveInputResizeDone = true;
     hidePreGameLoadCover();
