@@ -8,6 +8,20 @@
 <style>
   html, body { margin:0; height:100%; overflow:hidden; background:#000; }
   canvas { display:block; touch-action:none; position:absolute; top:0; left:0; }
+  /* A static snapshot stand-in shown over #game for the brief span of a
+     performRefreshShrink() cycle -- see that function's own big comment for
+     why: a visible resize (plain or fade-cloaked) during actual play was
+     rejected as unsettling either way, but the shrink itself turned out to
+     be functionally necessary on the player's first movement and every map
+     switch, not just cosmetic. Freezing on an exact copy of the last frame
+     (rather than covering with black) means there's no flash and no motion
+     at all -- the game just briefly pauses on what was already on screen
+     while the real resize happens hidden underneath, then resumes exactly
+     where its own state has gotten to. left/top/width/height are copied
+     from #game's own inline style at the moment each cycle starts (see
+     showResizeFreeze), not set here -- this only needs display and stacking. */
+  #resizeFreeze { display:none; z-index:10; pointer-events:none; }
+  #resizeFreeze.visible { display:block; }
 
   /* The canvas itself never resizes just because the editor opened — it stays
      the same full width it always was, so nothing on the map gets squished
@@ -56,11 +70,72 @@
   #editor textarea {
     width:100%; box-sizing:border-box; height:90px; margin-top:6px; font:11px/1.3 monospace;
   }
+
+  /* Covers the page during the two load-time self-heal performRefreshShrink()
+     cycles (see that function's own big comment) -- those fire on a fixed
+     timer regardless of what the player is doing, with no natural on-screen
+     transition to read as, unlike the first-move/map-switch triggers -- so
+     without this they show up as a jarring, unexplained shrink-and-grow of
+     the whole game area while someone's just looking at the start menu.
+     Plain CSS shapes only, deliberately no hieroglyph glyph here (standing
+     rule: never hand-type/retype hieroglyph unicode from memory).
+     pointer-events:none throughout -- this is purely a visual cover, not an
+     input-blocking one, so it can't get in the way of an eager player's
+     keyboard/touch input to the actual start menu/character-select screens
+     underneath it (only the visible resize blips were the actual complaint). */
+  #startupCover {
+    position:fixed; inset:0; background:#000; z-index:9999;
+    display:flex; align-items:center; justify-content:center;
+    transition: opacity 0.4s ease; pointer-events:none;
+  }
+  #startupCover.hidden { opacity:0; }
+  #startupCover .dots { display:flex; gap:10px; }
+  #startupCover .dots span {
+    width:12px; height:12px; border-radius:50%; background:#e3b98c;
+    animation: startupPulse 1.1s ease-in-out infinite;
+  }
+  #startupCover .dots span:nth-child(2) { animation-delay:0.15s; }
+  #startupCover .dots span:nth-child(3) { animation-delay:0.3s; }
+  @keyframes startupPulse { 0%,80%,100%{ opacity:0.25; transform:scale(0.85); } 40%{ opacity:1; transform:scale(1); } }
+  /* A per-cycle black fade-cloak briefly lived here to hide performRefreshShrink()
+     during actual play too, but direct feedback ("a sudden black screen as you
+     play sucks") ruled that out. Replaced with #resizeFreeze (see its own CSS
+     comment near the top of this style block) -- a snapshot stand-in instead
+     of a black cover, since the shrink turned out to be functionally
+     necessary on movement/map-switch, not just a startup thing. */
+
+  /* A second, separate loading cover -- this one for the moment right after
+     character select, before the player has ever actually seen the game
+     running. See beginGameWithLoadScreen's own big comment in the main
+     script for the full story: #resizeFreeze (above) still leaves a visible
+     "jump" on reveal for the very first performRefreshShrink() cycle,
+     because the game keeps running underneath the frozen snapshot the whole
+     time it's held (real feedback: "hole game jumps, well everything that
+     moves"). This cover sits over that first cycle instead, so it can run
+     for real, in real time, with nothing frozen and so nothing to
+     reveal-jump back from -- the cover just lifts once it's genuinely done,
+     showing wherever the world has naturally gotten to. Hidden by default
+     (unlike #startupCover, which is visible from page load) -- shown only
+     for this one deliberate window. Same plain-shapes-only,
+     pointer-events:none approach as #startupCover -- see its own comment. */
+  #preGameLoadCover {
+    position:fixed; inset:0; background:#000; z-index:9999;
+    display:flex; align-items:center; justify-content:center;
+    transition: opacity 0.4s ease; pointer-events:none;
+  }
+  #preGameLoadCover.hidden { opacity:0; }
+  #preGameLoadCover .dots { display:flex; gap:10px; }
+  #preGameLoadCover .dots span {
+    width:12px; height:12px; border-radius:50%; background:#e3b98c;
+    animation: startupPulse 1.1s ease-in-out infinite;
+  }
+  #preGameLoadCover .dots span:nth-child(2) { animation-delay:0.15s; }
+  #preGameLoadCover .dots span:nth-child(3) { animation-delay:0.3s; }
 </style>
 </head>
 <body>
-<div id="gameWrap"><canvas id="game"></canvas></div>
-<div id="editor" hidden>
+<div id="gameWrap"><canvas id="game"></canvas><canvas id="resizeFreeze"></canvas></div>
+<div id="startupCover"><div class="dots"><span></span><span></span><span></span></div></div><div id="preGameLoadCover" class="hidden"><div class="dots"><span></span><span></span><span></span></div></div><div id="editor" hidden>
   <h2>Level Editor</h2>
   <p class="hint">Press R to close. Click the map to place the selected sign, click a placed sign to select it, then drag it to move it. Del removes the selection.</p>
   <label>Zoom</label>
@@ -99,6 +174,9 @@
     <input type="checkbox" id="opaqueCheck">
     <label style="margin:0; text-transform:none; letter-spacing:0; font-size:13px;" for="opaqueCheck">Solid backing (blocks what's behind it)</label>
   </div>
+  <label>Quest notes (for Claude — never shown in-game)</label>
+  <p class="hint">Scratch notes for whichever sign is selected — write out what an NPC should ask for/say/do, then Export below and send it over to actually get built. Put a + between words if you want (e.g. "give+him+3+fish+then+he+opens+the+gate") to keep a multi-word phrase visually unambiguous when it's read back — purely a reading aid, never baked into anything a player sees.</p>
+  <textarea id="questNoteInput" placeholder="e.g. wants+3+fish+before+he'll+trade+the+u13+sign"></textarea>
   <div>
     <button id="deleteBtn">Delete selected</button>
   </div>
@@ -820,6 +898,14 @@ function setMap(mapId){
   // combatActive left on with nothing to ever resolve it
   if(currentMap === COMBAT_LVL_ID){ saveCombatLvlObjects(); combatActive = false; }
   currentMap = mapId;
+  // See performRefreshShrink's own big comment -- this is one of the two
+  // confirmed-effective automatic trigger points for the real fix to the
+  // long-standing "gets slower every second" bug (the other is the
+  // player's first movement input). No-ops harmlessly in the editor. (Was
+  // briefly removed on the theory that the hidden startup-only fix would be
+  // durable through the whole session -- real-hardware testing disproved
+  // that, this and the first-move trigger are both functionally necessary.)
+  performRefreshShrink();
   levelObjects = mapId === -1 ? MAP_NEG1_OBJECTS : mapId === 2 ? MAP2_OBJECTS : mapId === NEW_LVL_ID ? NEW_LVL_OBJECTS : mapId === COMBAT_LVL_ID ? COMBAT_LVL_OBJECTS : MAP1_OBJECTS;
   // the fish-jump ambient scene is lvl -1 only and shouldn't linger mid-flight
   // across a map change in either direction — it'll just replay naturally
@@ -1374,10 +1460,36 @@ function drawSunLight(){
   }
 
   ctx.save();
-  ctx.globalCompositeOperation = 'soft-light';
+  // TEMPORARY diagnostic (2026-09-14) -- press F5 to A/B this live. Bounding
+  // the fill area (below) only recovered a small slice of what turning the
+  // whole effect off did in testing, which points at the 'soft-light'/
+  // 'lighter' blend modes themselves being the expensive part, not the area
+  // they cover. 'source-over' (plain alpha blending) is the cheap, universally
+  // fast path every browser/GPU handles well -- this swaps to it only while
+  // testing, so it can be compared for both speed AND look (it will almost
+  // certainly look different -- a flatter translucent wash instead of light
+  // blending into the parchment grain -- not just faster) before deciding
+  // whether it's an acceptable trade. Remove this toggle once that's decided.
+  ctx.globalCompositeOperation = debugSunLightCheapMode ? 'source-over' : 'soft-light';
   ctx.fillStyle = g.wash;
-  ctx.fillRect(0, 0, W, H);
-  ctx.globalCompositeOperation = 'lighter';
+  // Confirmed via a live F4 on/off test on real hardware that this function
+  // is a real, measurable chunk of the per-frame cost (turning it off raised
+  // fps noticeably) -- this fillRect used to cover the ENTIRE canvas (0,0,
+  // W,H) every frame, but g.wash's own gradient already fades to fully
+  // transparent (alpha 0) at radius R, so every pixel further than R from
+  // the sun contributes NOTHING to the final image no matter how it's
+  // blended -- the engine still has to run the 'soft-light' blend math over
+  // all of them regardless, since it can't know in advance a given pixel is
+  // fully transparent. R (~min(W,H)*1.05) is close to the screen's shorter
+  // dimension, so on this game's wide canvas a large fraction of the width
+  // sits outside that radius entirely. Clamping the fill to a box just
+  // covering [cx-R,cx+R]x[cy-R,cy+R] (intersected with the real canvas
+  // bounds) produces the exact same pixels -- the gradient math is identical
+  // inside that box -- while skipping the blend cost everywhere else.
+  const washX0 = Math.max(0, cx - R), washY0 = Math.max(0, cy - R);
+  const washX1 = Math.min(W, cx + R), washY1 = Math.min(H, cy + R);
+  ctx.fillRect(washX0, washY0, washX1 - washX0, washY1 - washY0);
+  ctx.globalCompositeOperation = debugSunLightCheapMode ? 'source-over' : 'lighter';
   ctx.fillStyle = g.radiant;
   ctx.fillRect(cx-R*0.42, cy-R*0.42, R*0.84, R*0.84);
   ctx.fillStyle = g.core;
@@ -3213,7 +3325,73 @@ function confirmCharSelect2(){
 function finishCharSelectIfReady(){
   if(charSelectReady1 && (pendingNumPlayers !== 2 || charSelectReady2)){
     pickingCharacters = false;
-    startGame(pendingNumPlayers);
+    beginGameWithLoadScreen(pendingNumPlayers);
+  }
+}
+// ---------- pre-game load screen (2026-09-15) ----------
+// performRefreshShrink()'s #resizeFreeze snapshot (see its own big comment)
+// hides the ACTUAL resize during play, but it can't hide the fact that the
+// game keeps running underneath the frozen snapshot the whole time it's
+// held -- so revealing it again shows everything that was moving having
+// silently jumped ahead by ~400ms in one instant. Real feedback confirmed
+// this reads badly: "that movment at start looks bad, hole game jumps,
+// well everything that moves." That's specific to the very FIRST cycle --
+// the one that used to fire on the player's own first movement key, right
+// as they'd just started looking at the game -- so instead of masking that
+// one after the fact, run it before the player has ever seen the game at
+// all: hidden behind a loading screen shown the instant character select
+// finishes, before startGame() ever flips gameStarted true where the
+// player can see it. Nothing here needs freezing/snapshotting -- the world
+// can genuinely run forward in real time with an opaque cover over it, so
+// there's nothing to reveal-jump back from when the cover lifts.
+function showPreGameLoadCover(){ document.getElementById('preGameLoadCover').classList.remove('hidden'); }
+function hidePreGameLoadCover(){ document.getElementById('preGameLoadCover').classList.add('hidden'); }
+function beginGameWithLoadScreen(n){
+  showPreGameLoadCover();
+  startGame(n);
+  // Auto-move each active player a small step through the exact same
+  // on-foot movement code a real keypress would use (not a raw position
+  // hack) -- warms up walk-cycle/squish animation state the same way a
+  // real first move would, and doubles as visible "movement" for anything
+  // else in the file that keys off it. Snapped back to the exact spawn
+  // point actually assigned by startGame() right after (captured before
+  // the nudge, since that's the real value regardless of map/save state) --
+  // kept brief (a few frames) so there's no realistic chance of wandering
+  // into water or a hazard zone before that snap-back undoes it anyway.
+  // facing flips to mirrored on rightward travel (see its own comment near
+  // player1's movement code) -- captured and restored alongside position so
+  // the reveal shows each player in their original spawn-facing pose too,
+  // not just their original spot.
+  const spawnP1 = { x: player.x, y: player.y, facing };
+  const spawnP2 = numPlayers === 2 ? { x: player2.x, y: player2.y, facing: facing2 } : null;
+  keys['d'] = true;
+  if(numPlayers === 2) keys['arrowright'] = true;
+  for(let i = 0; i < 4; i++) update(1/60);
+  keys['d'] = false;
+  if(numPlayers === 2) keys['arrowright'] = false;
+  player.x = spawnP1.x; player.y = spawnP1.y; facing = spawnP1.facing;
+  if(spawnP2){ player2.x = spawnP2.x; player2.y = spawnP2.y; facing2 = spawnP2.facing; }
+  attemptPreGameRefresh(5);
+}
+// performRefreshShrink() can decline (refreshShrinkInProgress -- most likely
+// one of the two load-time self-heal timers still mid-hold, though by the
+// time a player's actually finished picking characters that's already
+// unlikely) -- retries a few times on a short delay instead of giving up,
+// since giving up here would mean lifting the cover while that OTHER cycle
+// is still visibly mid-resize underneath it -- exactly what this whole
+// cover exists to prevent. Same reasoning as triggerFirstMoveInputResize's
+// own retry (see its comment), just with a timer instead of a real keypress
+// to retry on. attemptsLeft is a hard safety net so the cover can never get
+// permanently stuck up if something unexpected keeps declining it.
+function attemptPreGameRefresh(attemptsLeft){
+  if(firstMoveInputResizeDone){ hidePreGameLoadCover(); return; }
+  const started = performRefreshShrink(() => {
+    firstMoveInputResizeDone = true;
+    hidePreGameLoadCover();
+  });
+  if(!started){
+    if(attemptsLeft <= 0){ hidePreGameLoadCover(); return; }
+    setTimeout(() => attemptPreGameRefresh(attemptsLeft - 1), 450);
   }
 }
 
@@ -4177,8 +4355,28 @@ const MOVE_KEYS = ['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d
 let firstMoveInputResizeDone = false;
 function triggerFirstMoveInputResize(){
   if(firstMoveInputResizeDone) return;
-  firstMoveInputResizeDone = true;
-  resize(true);
+  // Used to be resize(true) (a same-size backing-store bounce) -- confirmed
+  // across an earlier session's testing to fire correctly but never actually
+  // fix the underlying lag. Replaced with performRefreshShrink(), the
+  // mechanism actually confirmed to work -- see its own big comment.
+  //
+  // (Briefly removed this call entirely, on the theory that the hidden
+  // startup-only fix would be durable through the whole session -- direct
+  // real-hardware feedback disproved that: "it now just runs at 13 frames,
+  // nothing changed there... so its the flash as you start moving thats the
+  // fix". This is functionally necessary, not just cosmetic -- the visual
+  // side of it is handled separately now, see performRefreshShrink's own
+  // #resizeFreeze comment, rather than by not running it at all.)
+  //
+  // Only latch firstMoveInputResizeDone on an ACTUAL fire (performRefreshShrink
+  // returning true), not just on attempting one -- a player who starts moving
+  // within about 2s of page load can land on this while one of the two
+  // load-time self-heal timers is still mid-hold from its own cycle, which
+  // declines this call (see performRefreshShrink's own comment). Latching
+  // unconditionally used to permanently give up on ever doing this for the
+  // player's movement for the rest of the session in that case -- now it just
+  // tries again on the player's very next movement key instead.
+  if(performRefreshShrink()) firstMoveInputResizeDone = true;
 }
 window.addEventListener('keydown', e=>{
   const typing = document.activeElement && ['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
@@ -4440,6 +4638,7 @@ const pickupCheck = document.getElementById('pickupCheck');
 const mirrorCheck = document.getElementById('mirrorCheck');
 const noHitboxCheck = document.getElementById('noHitboxCheck');
 const opaqueCheck = document.getElementById('opaqueCheck');
+const questNoteInput = document.getElementById('questNoteInput');
 const levelJsonEl = document.getElementById('levelJson');
 const map1Btn = document.getElementById('map1Btn');
 const mapNeg1Btn = document.getElementById('mapNeg1Btn');
@@ -4686,6 +4885,17 @@ opaqueCheck.addEventListener('change', ()=>{
   placeOpaque = opaqueCheck.checked;
 });
 
+// Freeform per-object scratch notes -- unlike scale/pickup/etc above, this
+// deliberately does NOT stick as a default for the next new placement (a
+// quest note is specific to one sign, not a display property you'd want
+// copied onto a whole row of stamped copies). Never read by any drawing or
+// gameplay code -- it only round-trips through Export/Import so it reaches
+// Claude, who turns it into real quest logic by hand.
+questNoteInput.addEventListener('input', ()=>{
+  const obj = levelObjects.find(o=>o.id===selectedObjId);
+  if(obj) obj.questNote = questNoteInput.value;
+});
+
 function selectObject(obj){
   selectedObjId = obj ? obj.id : null;
   if(obj){
@@ -4698,6 +4908,7 @@ function selectObject(obj){
     mirrorCheck.checked = !!obj.mirror;
     noHitboxCheck.checked = !!obj.noHitbox;
     opaqueCheck.checked = !!obj.opaque;
+    questNoteInput.value = obj.questNote || '';
     // the palette highlight follows the selection too, so it always shows
     // which sign is about to be swapped in if you click another palette tile
     paletteEl.querySelectorAll('.palette-btn.active').forEach(b=>b.classList.remove('active'));
@@ -4750,7 +4961,7 @@ document.getElementById('importBtn').addEventListener('click', ()=>{
       const id = typeof o.id === 'number' ? o.id : nextObjId++;
       maxId = Math.max(maxId, id);
       const items = Array.isArray(o.items) ? o.items.map(sanitizeStackItem).filter(Boolean) : [];
-      levelObjects.push({ id, glyph:o.glyph, x:o.x, y:o.y, scale:o.scale||1, reveal: typeof o.reveal === 'number' ? o.reveal : 1, pickup:!!o.pickup, mirror:!!o.mirror, noHitbox:!!o.noHitbox, opaque:!!o.opaque, items });
+      levelObjects.push({ id, glyph:o.glyph, x:o.x, y:o.y, scale:o.scale||1, reveal: typeof o.reveal === 'number' ? o.reveal : 1, pickup:!!o.pickup, mirror:!!o.mirror, noHitbox:!!o.noHitbox, opaque:!!o.opaque, questNote: typeof o.questNote === 'string' ? o.questNote : '', items });
     });
     nextObjId = Math.max(nextObjId, maxId+1);
     selectedObjId = null;
@@ -7384,19 +7595,58 @@ resize();
 // free and self-corrects if anything was off, same effect as manually
 // resizing the window, without asking for it. Originally this was purely
 // about the display-fit CSS, not the backing store (see setCanvasBackingStore
-// above) -- but these two calls now ALSO force a fresh, unconditional
-// backing-store reallocation (see resize()'s own forceBackingRealloc
-// comment): the very first allocation, back in the initial resize() call
-// above, can land before the window's compositor/GPU-acceleration path has
-// actually finished attaching (an OS-level maximize animation or per-monitor
-// DPI negotiation settling a beat late, most visible on Windows), leaving
-// play laggy for the rest of the session even though every number resize()
-// computes is already correct -- exactly the symptom manually resizing the
-// window "fixes" by accident, since any real size change forces this same
-// reallocation once the compositor is definitely ready by then. Forcing it
-// here, once, shortly after load does the same thing on purpose.
-setTimeout(() => resize(true), 150);
-setTimeout(() => resize(true), 1500);
+// above) -- but these two calls used to ALSO force a fresh, unconditional
+// backing-store reallocation via resize(true) (a canvas.width/height bounce)
+// on the theory that the very first allocation can land before the window's
+// compositor/GPU-acceleration path has actually finished attaching (an OS-
+// level maximize animation or per-monitor DPI negotiation settling a beat
+// late, most visible on Windows). That theory was reasonable, but
+// resize(true)'s specific mechanism (bouncing the backing store through a
+// different size) was extensively tested against the real, related "gets
+// slower every second" bug in an earlier session and confirmed to fire
+// correctly without ever actually fixing it -- performRefreshShrink() (see
+// its own big comment) is the mechanism actually confirmed to work on real
+// hardware. Switched these two load-time calls to it as well: partly
+// because it's simply the better-proven fix for the same class of problem,
+// and partly to remove a real timing hazard -- triggerFirstMoveInputResize()
+// also calls performRefreshShrink() on the player's first movement, and if
+// that landed while one of these two OLD resize(true) calls fired in the
+// same ~1.5s window, the plain resize(true) could stomp the mid-flight
+// shrink (or vice versa) before either finished, which likely explains why
+// the very first attempt at this could land back at the slow ~14fps while a
+// second attempt (past this whole load-time window) reliably landed at the
+// fixed ~22fps. Now every automatic trigger in the whole file uses the same
+// one mechanism, so none of them can race each other like that anymore.
+// #startupCover (see its own CSS comment) hides both of these behind a
+// plain loading indicator -- unlike the first-move/map-switch triggers,
+// these two fire on a flat timer with no player action to read as a
+// transition, so left visible they're just an unexplained shrink-and-grow
+// of the whole game area while someone's looking at the start menu (real
+// user report: "it looks really unsettling as you play"). Tied to the
+// SECOND timer's onDone rather than a guessed delay, so the cover lifts at
+// the exact real moment that cycle finishes, jitter and all, instead of
+// risking lifting early and still showing a blip.
+let startupCoverEl = document.getElementById('startupCover');
+function hideStartupCover(){
+  if(!startupCoverEl) return;
+  startupCoverEl.classList.add('hidden');
+  startupCoverEl = null; // one-shot: guards the hard safety-net timeout below from double-handling
+}
+setTimeout(() => performRefreshShrink(), 150);
+setTimeout(() => {
+  if(!performRefreshShrink(hideStartupCover)){
+    // declined -- e.g. the player already moved fast enough to grab this
+    // cycle for themselves first (see triggerFirstMoveInputResize). Nothing
+    // else here to wait on, so don't leave them staring at a cover that
+    // would otherwise never lift.
+    hideStartupCover();
+  }
+}, 1500);
+// Safety net only -- normal play always lifts the cover above, at
+// 1500+400=1900ms or the immediate decline path. This is just insurance
+// against the cover ever getting stuck up for some unforeseen reason; set
+// generously past the real path so it never fires first in ordinary play.
+setTimeout(hideStartupCover, 4000);
 // The same drift the two setTimeouts above catch right after load can also
 // creep back in well into an actual play session -- dragging the window to
 // a different monitor, an OS display-scale change, or the tab being
@@ -8354,6 +8604,176 @@ let newLvlAutosaveT = 0; // seconds since the scratch level was last flushed to 
 // automated browser tooling has managed to reproduce the intermittent
 // dropped-frame reports that only show up on someone's own hardware.
 let debugOverlayOn = false;
+// TEMPORARY diagnostic toggle (2026-09-14), not a fix -- press F4 to flip it.
+// The F3 overlay's own per-phase timing only ever accounts for ~20-25ms of a
+// measured ~55-90ms real frame on real hardware; the standing theory (see
+// drawSunLight's own big comment) is that the missing time is the browser's
+// own compositor-side cost for this function's 'soft-light'/'lighter'
+// globalCompositeOperation fills, which happens AFTER our JS returns and so
+// never shows up in performance.now() timing no matter how many phase marks
+// get added. This flag exists purely to test that in isolation on real
+// hardware: toggle it live, same map, same session, and compare the F3
+// fps/avg reading with sun-light on vs off. If off is dramatically faster,
+// that confirms the theory and points squarely at drawSunLight as the next
+// thing to actually fix; if it's barely different, it rules this out and the
+// search moves elsewhere. Remove this whole toggle once that's answered --
+// it's a measurement tool, not a shipped feature.
+let debugSunLightDisabled = false;
+// TEMPORARY diagnostic toggle, press F5 -- see drawSunLight's own comment.
+let debugSunLightCheapMode = false;
+// TEMPORARY diagnostic (2026-09-14), press F6 -- an ACTION, not a toggle:
+// every press forces one layout reflow on the canvas element WITHOUT
+// touching canvas.width/height at all (no backing-store reallocation, no
+// pixel content change -- see setCanvasBackingStore's own comment for that
+// mechanism, already tried at length via the auto-heal watchdog and
+// confirmed NOT to fix the real bug even when it fires correctly). This
+// tests a DIFFERENT theory: maybe what actually helps about a real window
+// resize isn't the backing-store reallocation at all, but the full page
+// layout/compositor pass the browser runs alongside it -- something a bare
+// canvas.width assignment might not trigger by itself. Compare fps
+// immediately before vs immediately after pressing F6, same as F4/F5.
+let debugForcedReflowCount = 0;
+function debugForceReflow(){
+  const prevDisplay = canvas.style.display;
+  canvas.style.display = 'none';
+  void canvas.offsetHeight; // synchronously forces the reflow
+  canvas.style.display = prevDisplay;
+  debugForcedReflowCount++;
+  debugDroppedTotal = 0;
+  debugFrameTimes = [];
+}
+// TEMPORARY diagnostic (2026-09-14), press F7 -- also an action, not a
+// toggle. Backing-store reallocation (auto-heal, ruled out) and a plain
+// layout reflow (F6, just ruled out -- barely any effect) are both now
+// known NOT to replicate what a real window resize does. This tries a
+// third, more targeted mechanism: browsers can promote an element onto its
+// OWN dedicated GPU compositor layer (or demote it back) based on CSS hints
+// like `transform`/`will-change` -- toggling that promotion on then off
+// forces the browser to actually re-evaluate this canvas's own compositing
+// setup specifically, which a plain reflow (F6) or a same-canvas backing
+// -store resize might not reach. Briefly sets transform/willChange, forces
+// a synchronous read to make the browser commit to it, then removes both --
+// end state is identical to before (no lasting style change).
+let debugForcedLayerToggleCount = 0;
+function debugForceLayerToggle(){
+  canvas.style.willChange = 'transform';
+  canvas.style.transform = 'translateZ(0)';
+  void canvas.getBoundingClientRect(); // force the browser to actually commit the layer promotion
+  canvas.style.transform = '';
+  canvas.style.willChange = '';
+  void canvas.getBoundingClientRect(); // and force it to commit the demotion back too
+  debugForcedLayerToggleCount++;
+  debugDroppedTotal = 0;
+  debugFrameTimes = [];
+}
+// REAL FIX (2026-09-14) for the long-standing "gets slower every second,
+// only fixed by resizing the window" bug -- confirmed via extensive live
+// A/B testing on the actual affected hardware, not guessed. Three other
+// mechanisms were tried first and ruled out: reallocating just the canvas's
+// backing store (canvas.width/height bounce, tried at length as an
+// "auto-heal" watchdog in an earlier session -- confirmed firing correctly
+// but never actually raising fps), a plain forced layout reflow (no real
+// change), and toggling the canvas onto/off its own GPU compositor layer
+// (made things slightly WORSE). What actually worked: genuinely shrinking
+// the canvas -- BOTH its backing store and its on-screen CSS size -- and
+// holding that smaller size across several real rendered frames (not just
+// touching a value and immediately reverting it in the same instant, the
+// way every earlier attempt did) before growing back. 14fps -> 22fps in
+// testing, and it held steady afterward rather than decaying back down.
+// This fires automatically on the player's first movement input and on
+// every real map switch (see triggerFirstMoveInputResize and setMap) -- and
+// went through three visual treatments before landing on the current one.
+// First left visible on the theory that those natural transition points
+// would read as part of the transition -- rejected ("all the flashes are
+// unsettling"). Then hidden behind a quick fade-to-black cloak -- rejected
+// too ("just a sudden black screen as you play sucks"). Then removed
+// entirely from these two call sites, betting the hidden startup-only run
+// would be durable for the whole session (it matched what F8 testing had
+// shown: held steady for 20-30s of continued play with no decay) -- but
+// real-hardware testing disproved that: with these calls removed, the game
+// just ran at a flat ~13fps the whole time, confirming the shrink itself is
+// functionally necessary here, not just cosmetic. So it's back, but the
+// visual side is handled differently now: see #resizeFreeze (this
+// function's own use of it, and its CSS comment) -- a snapshot stand-in
+// shown over the canvas for the cycle's duration instead of a black cover,
+// so there's no flash and no visible motion, just a brief pause on the
+// frame that was already there. Skipped entirely in the level editor, where
+// a stable canvas geometry matters for precise placement.
+// refreshShrinkInProgress guards against two triggers overlapping (e.g. a
+// map switch landing during the first-move shrink) and stomping on each
+// other's saved pre-shrink size.
+let refreshShrinkInProgress = false;
+let refreshShrinkCount = 0; // for the F3 overlay only -- see drawPerfOverlay
+// Returns true if a shrink+restore cycle actually started, false if it was
+// declined (editMode, or another cycle already in flight). Callers that only
+// get ONE chance to ask for this (see triggerFirstMoveInputResize's one-shot
+// latch below) need to know which happened -- a caller that treats "declined"
+// the same as "started" ends up silently skipping the fix for good instead of
+// trying again, which is exactly the bug that turned up in practice: the
+// player's first movement can land while one of the two load-time self-heal
+// timers (150ms/1500ms after page load) is still mid-hold from ITS OWN cycle,
+// this call gets declined, and firstMoveInputResizeDone used to get set to
+// true regardless -- so the fix never actually ran for that whole session,
+// with no automatic retry, until the player happened to switch maps (setMap's
+// own call isn't gated by a one-shot flag, so it just tries again next time).
+// onDone (optional) fires once the restore actually happens -- used to lift
+// #startupCover exactly when the load-time self-heal sequence really
+// finishes, instead of guessing a fixed delay (see the two setTimeout calls
+// near resize() below).
+//
+// #resizeFreeze: drawImage() copies the canvas's CURRENT pixels onto a
+// same-sized sibling canvas, which is then shown at the exact same on-screen
+// box (left/top/width/height copied from #game's own inline style) sitting
+// on top of it, all synchronously before the real canvas changes size at
+// all -- so the browser never actually paints an in-between frame where the
+// real canvas is visibly mid-shrink. Restoring the real canvas back to its
+// saved size, THEN hiding the freeze (also synchronous, in that order), means
+// there's no flash of the shrunk state on the way back out either. The
+// running game keeps updating underneath the whole time (nothing here pauses
+// update() or input) -- the freeze only affects what's drawn, so unhiding it
+// can show a small jump if something was moving, but that's a far smaller,
+// quieter thing than a screen-wide flash or visible resize was.
+const resizeFreezeEl = document.getElementById('resizeFreeze');
+const resizeFreezeCtx = resizeFreezeEl.getContext('2d');
+function showResizeFreeze(){
+  resizeFreezeEl.width = canvas.width;
+  resizeFreezeEl.height = canvas.height;
+  resizeFreezeCtx.drawImage(canvas, 0, 0);
+  resizeFreezeEl.style.left = canvas.style.left;
+  resizeFreezeEl.style.top = canvas.style.top;
+  resizeFreezeEl.style.width = canvas.style.width;
+  resizeFreezeEl.style.height = canvas.style.height;
+  resizeFreezeEl.classList.add('visible');
+}
+function hideResizeFreeze(){ resizeFreezeEl.classList.remove('visible'); }
+function performRefreshShrink(onDone){
+  if(editMode || refreshShrinkInProgress) return false;
+  refreshShrinkInProgress = true;
+  const savedW = canvas.width, savedH = canvas.height, savedDPR = DPR;
+  const savedStyleW = canvas.style.width, savedStyleH = canvas.style.height;
+  const shrinkW = Math.max(1, Math.round(savedW * 0.6));
+  const shrinkH = Math.max(1, Math.round(savedH * 0.6));
+  showResizeFreeze();
+  setCanvasBackingStore(shrinkW, shrinkH, savedDPR * 0.6);
+  canvas.style.width = (parseFloat(savedStyleW) * 0.6) + 'px';
+  canvas.style.height = (parseFloat(savedStyleH) * 0.6) + 'px';
+  setTimeout(() => {
+    setCanvasBackingStore(savedW, savedH, savedDPR);
+    canvas.style.width = savedStyleW;
+    canvas.style.height = savedStyleH;
+    hideResizeFreeze();
+    debugDroppedTotal = 0;
+    debugFrameTimes = [];
+    refreshShrinkInProgress = false;
+    refreshShrinkCount++;
+    if(onDone) onDone();
+  }, 400);
+  return true;
+}
+// TEMPORARY diagnostic key, F8 -- manually re-triggers the exact same fix
+// on demand, kept around for continued spot-checking on real hardware.
+// Safe to remove once confidence in the two automatic triggers is high.
+function debugForceShrinkAndRestore(){ performRefreshShrink(); }
 let debugLastFrameTime = performance.now();
 const DEBUG_FRAME_WINDOW = 300; // ~5s worth at 60fps
 let debugFrameTimes = [];
@@ -8382,6 +8802,11 @@ function drawPerfOverlay(){
     'fps: '+(1000/avg).toFixed(1)+'  avg: '+avg.toFixed(1)+'ms  p95: '+p95.toFixed(1)+'ms  max: '+max.toFixed(1)+'ms',
     'dropped(>'+DEBUG_DROP_THRESHOLD_MS+'ms) last '+windowSec.toFixed(1)+'s: '+debugFrameTimes.filter(t=>t>DEBUG_DROP_THRESHOLD_MS).length+'/'+n+'   total since toggled on: '+debugDroppedTotal,
     'canvas backing store: '+canvas.width+'x'+canvas.height+'  DPR/transform: '+DPR.toFixed(3)+'  window: '+window.innerWidth+'x'+window.innerHeight,
+    'F4 TEST TOGGLE -- sun-light: '+(debugSunLightDisabled ? 'OFF (disabled for testing)' : 'ON (normal)'),
+    'F5 TEST TOGGLE -- sun-light blend: '+(debugSunLightCheapMode ? 'CHEAP (source-over, testing)' : 'NORMAL (soft-light/lighter)'),
+    'F6 TEST ACTION -- force layout reflow (no backing-store change): '+debugForcedReflowCount+' triggered',
+    'F7 TEST ACTION -- force GPU layer promote/demote toggle: '+debugForcedLayerToggleCount+' triggered',
+    'refresh-shrink fix (real fix, auto-fires on first move + map switch; F8 manually re-fires it): '+refreshShrinkCount+' fired',
     'last frame breakdown:',
     ...debugLastPhaseMarks.map(([label, ms]) => '  '+ms.toFixed(1)+'ms  '+label),
   ];
@@ -8399,6 +8824,16 @@ function drawPerfOverlay(){
 }
 window.addEventListener('keydown', e => {
   if(e.key === 'F3'){ debugOverlayOn = !debugOverlayOn; debugDroppedTotal = 0; debugFrameTimes = []; e.preventDefault(); }
+  // TEMPORARY diagnostic toggle -- see debugSunLightDisabled's own comment.
+  if(e.key === 'F4'){ debugSunLightDisabled = !debugSunLightDisabled; debugDroppedTotal = 0; debugFrameTimes = []; e.preventDefault(); }
+  // TEMPORARY diagnostic toggle -- see debugSunLightCheapMode's own comment.
+  if(e.key === 'F5'){ debugSunLightCheapMode = !debugSunLightCheapMode; debugDroppedTotal = 0; debugFrameTimes = []; e.preventDefault(); }
+  // TEMPORARY diagnostic -- see debugForceReflow's own comment.
+  if(e.key === 'F6'){ debugForceReflow(); e.preventDefault(); }
+  // TEMPORARY diagnostic -- see debugForceLayerToggle's own comment.
+  if(e.key === 'F7'){ debugForceLayerToggle(); e.preventDefault(); }
+  // TEMPORARY diagnostic -- see debugForceShrinkAndRestore's own comment.
+  if(e.key === 'F8'){ debugForceShrinkAndRestore(); e.preventDefault(); }
 });
 // Phase breakdown for the overlay above: which part of a frame the time
 // actually goes to (background/wash/sun-glow, building the draw list,
@@ -8483,7 +8918,7 @@ function render(time){
   ctx.fillRect(0,0,W,H);
   drawWaterWash();
   drawPlantWash();
-  drawSunLight(); // lvl -1 / lvl 1 only, see its own big comment — drawn before every depth-sorted object below so it reads as light behind the scene, not an overlay on top of it
+  if(!debugSunLightDisabled) drawSunLight(); // lvl -1 / lvl 1 only, see its own big comment — drawn before every depth-sorted object below so it reads as light behind the scene, not an overlay on top of it. debugSunLightDisabled is a TEMPORARY F4 test toggle, see its own comment.
   debugMark('background/washes/sun');
 
   if(fontsReady){
