@@ -4536,6 +4536,72 @@ function drawRestartChoiceButton(rect, label, sublabel){
   ctx.fillText(sublabel, rect.x+rect.w/2, rect.y+rect.h/2+rect.h*0.26);
 }
 
+// Hearts HUD -- a row of red LIFE_HEART_GLYPH (𓄣, F34) glyphs, one per
+// heart currentHearts() reports right now. anchorX/anchorY is the row's
+// own top-left corner unless align says otherwise, so the same function
+// serves both the top-center HUD during ordinary play (see the main
+// render() loop) and the centered row on the black death screen (see
+// drawGameOver() above). Self-contained ctx.save()/restore() so it never
+// depends on, or disturbs, whatever font/alignment/baseline the caller was
+// already using.
+//
+// "flash when lost" (2026-09-20; redesigned same day after "it dident
+// flash at al" on the user's real hardware): while heartFlashT is counting
+// down (see triggerHeartFlash()), every heart in the row pops -- an
+// instant bright white overlay plus a size bump, both easing back down to
+// normal over HEART_FLASH_DURATION. This REPLACES a first attempt that
+// used a fast (7Hz) sine blink over just 0.35s, same technique family as
+// drawDictionaryFlash()'s own blink -- logically correct (verified in
+// test_hearts.js) but almost certainly too subtle/brief to actually
+// register as "flashing" on the user's own real hardware: this project's
+// own perf saga (see the RESOLVED note above) already established the
+// user's iGPU can run well under 60fps, and a multi-cycle blink needs
+// several real sampled frames to read as blinking at all -- at a low
+// enough frame rate it can collapse to a single barely-different frame,
+// which is indistinguishable from "nothing happened". A monotonic
+// ease-out (not an oscillation) reads clearly even from just 1-2 sampled
+// frames, and pairs color with a scale pop (a second, independent visual
+// cue) rather than relying on color contrast alone. Flashing the WHOLE
+// row rather than just "the lost one" is still deliberate: hearts aren't
+// individually tracked objects, just a live count, so there's no single
+// heart to single out.
+function drawHearts(anchorX, anchorY, align){
+  const hearts = currentHearts();
+  if(hearts <= 0) return;
+  const size = LIFE_HEART_SIZE, gap = LIFE_HEART_GAP;
+  const totalW = hearts*size + (hearts-1)*gap;
+  let startX = anchorX;
+  if(align === 'center') startX = anchorX - totalW/2;
+  else if(align === 'right') startX = anchorX - totalW;
+
+  // flashK: 1 right at the moment of loss, eases straight down to 0 -- no
+  // oscillation, so there's nothing to miss between frames.
+  const flashK = heartFlashT > 0 ? heartFlashT / HEART_FLASH_DURATION : 0;
+  const flashScale = 1 + flashK*0.45; // pops up to 1.45x, eases back to 1x
+
+  ctx.save();
+  ctx.font = size.toFixed(0)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for(let i=0;i<hearts;i++){
+    const cx = startX + i*(size+gap) + size/2;
+    const cy = anchorY + size/2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    if(flashScale !== 1) ctx.scale(flashScale, flashScale);
+    ctx.fillStyle = LIFE_HEART_COLOR;
+    ctx.fillText(LIFE_HEART_GLYPH, 0, 0);
+    if(flashK > 0.02){
+      ctx.globalAlpha = flashK;
+      ctx.fillStyle = '#fff5e6';
+      ctx.fillText(LIFE_HEART_GLYPH, 0, 0);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function drawGameOver(){
   ctx.save();
   ctx.fillStyle = '#000';
@@ -4545,6 +4611,11 @@ function drawGameOver(){
   ctx.textBaseline = 'middle';
   ctx.font = (Math.min(W,H)*0.16).toFixed(1)+"px "+HIERO_FONT;
   ctx.fillText('𓂝𓈖𓂽', W/2, H/2);
+
+  // Hearts remaining -- shown up top on the death screen too, so this
+  // death's real cost is immediately visible instead of a one-off number
+  // (see drawHearts() and currentHearts() above)
+  drawHearts(W/2, H*0.14, 'center');
 
   // solo mode, free-death budget used up: swap the ordinary "press Enter"
   // prompt for a genuine choice — see respawnAfterDeath()'s own
@@ -4569,27 +4640,30 @@ function drawGameOver(){
   restartChoiceLayout = null; // stale otherwise — the mousedown handler checks this before trusting it
 
   // 2-player mode only: a quiet reminder of where this death lands in the
-  // MAX_FREE_DEATHS_2P budget, since going past it resets the whole run
-  // instead of just respawning in place — see respawnAfterDeath().
+  // maxHearts budget, since going past it resets the whole run instead of
+  // just respawning in place — see respawnAfterDeath().
   if(numPlayers === 2){
     const thisDeath = deathCount + 1; // respawnAfterDeath() hasn't incremented yet — this Enter press will be death #thisDeath
     ctx.font = '600 '+(Math.min(W,H)*0.032).toFixed(1)+'px system-ui, sans-serif';
     ctx.fillStyle = 'rgba(233,228,216,0.75)';
-    const msg = thisDeath > MAX_FREE_DEATHS_2P
+    // no more numeric "death X of Y" -- the hearts row up top already shows
+    // exactly how many are left, per the user's own request
+    const msg = thisDeath >= maxHearts
       ? 'last life used — the level restarts this time'
-      : 'death '+thisDeath+' of '+MAX_FREE_DEATHS_2P+' — press Enter to respawn';
+      : 'press Enter to respawn';
     ctx.fillText(msg, W/2, H/2 + Math.min(W,H)*0.12);
   } else if(numPlayers === 1){
     // solo mode: same quiet reminder as 2-player's own, counting toward
-    // MAX_FREE_DEATHS_1P instead — previews the restart-choice screen
+    // the same maxHearts budget — previews the restart-choice screen
     // (drawn above once awaitingRestartChoice actually flips true) the same
     // way 2-player's own "last life used" message previews its auto-reset
     const thisDeath = deathCount + 1;
     ctx.font = '600 '+(Math.min(W,H)*0.032).toFixed(1)+'px system-ui, sans-serif';
     ctx.fillStyle = 'rgba(233,228,216,0.75)';
-    const msg1p = thisDeath > MAX_FREE_DEATHS_1P
+    // no more numeric "death X of Y" -- see the 2-player branch's own comment above
+    const msg1p = thisDeath >= maxHearts
       ? 'out of free lives — press Enter to choose how to continue'
-      : 'death '+thisDeath+' of '+MAX_FREE_DEATHS_1P+' — press Enter to respawn';
+      : 'press Enter to respawn';
     ctx.fillText(msg1p, W/2, H/2 + Math.min(W,H)*0.12);
   }
   ctx.restore();
@@ -5266,15 +5340,60 @@ function drawLevelObject(obj, glyphOverride, mirrorOverride){
 // death just respawns you right back on the SAME map, in the SAME player
 // mode, with the run's progress untouched — same idea as a checkpoint.
 // In 2-player mode specifically, that free respawn is only good for
-// MAX_FREE_DEATHS_2P deaths in a row; the next one after that still falls
-// back to the old full reset (see the FULL_RESET branch below), so co-op
-// keeps some real stakes, applied automatically with no extra prompt.
-// 1-player mode has its own budget too (MAX_FREE_DEATHS_1P) — but instead
-// of resetting automatically, it hands the choice to the player: see
+// maxHearts deaths in a row; the next one after that still falls back to
+// the old full reset (see the FULL_RESET branch below), so co-op keeps
+// some real stakes, applied automatically with no extra prompt. 1-player
+// mode has its own budget too (the same maxHearts) — but instead of
+// resetting automatically, it hands the choice to the player: see
 // awaitingRestartChoice/drawGameOver()'s own branch below.
-const MAX_FREE_DEATHS_2P = 3;
-const MAX_FREE_DEATHS_1P = 3;
-let deathCount = 0; // deaths since the last full reset — consulted in both modes, against each one's own MAX_FREE_DEATHS_*
+// Hearts (𓄣, Gardiner F34 -- same "heart and windpipe" glyph the npc1356
+// quest item already uses, see HEART_ID) replace the old flat
+// MAX_FREE_DEATHS_* constants below with a real, growable life total. Per
+// the user's own request, 2026-09-20 ("add the death counter as hearts on
+// the screen instead of the counter when death occurs... completing red
+// quests gives one heart back to player if it has lost any hearts during
+// gameplay, if non are lost then they gain a hearth/life"): maxHearts
+// starts at the same total the old constants added up to (3 free
+// respawns + the life you're on = 4, one shared team pool either way,
+// same as the old deathCount was never per-player) and can only grow from
+// there via awardRedQuestHeart() -- fired from the one place in the game
+// that currently marks a quest red (the lvl -2 god statue's
+// sentence-combat challenge, see actuallyExitSentenceCombat()); more red
+// quests are coming per the user's own words, and should call
+// awardRedQuestHeart() from their own equivalent one-time-payout gate.
+// Deliberately uncapped, per the user's own answer when asked.
+const LIFE_HEART_GLYPH = '𓄣'; // U+13123 EGYPTIAN HIEROGLYPH F034 -- verified via Python unicodedata, per the user's own "f34" request
+const LIFE_HEART_COLOR = '#a83232'; // red ochre -- same shade GOD_NPC_MARKER_COLOR already uses, per the user's own "red ocur colour" request
+// "20%bigger" (2026-09-20) -- was 20/4, kept the same size:gap ratio rather
+// than just bumping size alone
+const LIFE_HEART_SIZE = 24;
+const LIFE_HEART_GAP = 4.8;
+let maxHearts = 4;
+// deaths since the last full reset, net of hearts awardRedQuestHeart() has
+// restored -- currentHearts() below derives the live displayed/consulted
+// count from this and maxHearts rather than storing a second variable that
+// could drift out of sync with it.
+let deathCount = 0;
+function currentHearts(){ return Math.max(0, maxHearts - deathCount); }
+// "flash when lost" (2026-09-20) -- an attention-grabbing pop (see
+// drawHearts()'s own big comment for the visual design and why it was
+// redesigned away from a fast blink) over the whole row (see
+// triggerHeartFlash()'s own call site in respawnInPlace() -- per the
+// user's own follow-up the same day, this fires once the death screen's
+// "press to continue" has actually landed you back in live gameplay, not
+// at the moment the heart is technically consumed in respawnAfterDeath()
+// -- and its decrement alongside dictFlashT's own in render()). Bumped
+// from an initial 0.35s to 0.6s in the same redesign, so it spans enough
+// real frames to actually be seen even at a low frame rate. Tripled again
+// (2026-09-20, "3 times the time for the blink") from 0.6s to 1.8s per the
+// user's own direct follow-up.
+const HEART_FLASH_DURATION = 1.8;
+let heartFlashT = 0;
+function triggerHeartFlash(){ heartFlashT = HEART_FLASH_DURATION; }
+function awardRedQuestHeart(){
+  if(deathCount > 0) deathCount--; // had lost at least one heart -- give one back
+  else maxHearts++; // no hearts lost -- permanently gain an extra heart/life instead
+}
 // The rare full reset still needs a real page reload (score/items/quests/
 // pets/etc. all live in plain module-level state with no other way to
 // clear them all at once) — but it should still come back on whichever
@@ -5300,11 +5419,18 @@ const RESPAWN_GLYPH2_KEY = 'depthWalkRespawnGlyph2';
 let awaitingRestartChoice = false;
 function respawnAfterDeath(){
   deathCount++;
-  if(numPlayers === 2 && deathCount > MAX_FREE_DEATHS_2P){
+  // NOT triggerHeartFlash() here -- per the user's own follow-up ("make it
+  // flash after the deat screen is pressed to contiue"), the flash belongs
+  // to actually landing back in live gameplay, not to the continue-press
+  // itself. This function also covers the two paths that DON'T return you
+  // to gameplay (fullResetReload()'s page reload, and awaitingRestartChoice's
+  // two-button screen, where currentHearts()===0 anyway so there'd be
+  // nothing to flash) -- see respawnInPlace()'s own trigger below instead.
+  if(numPlayers === 2 && deathCount >= maxHearts){
     fullResetReload();
     return;
   }
-  if(numPlayers === 1 && deathCount > MAX_FREE_DEATHS_1P){
+  if(numPlayers === 1 && deathCount >= maxHearts){
     // don't respawn or reset yet — the death screen switches to the
     // two-button choice (drawGameOver()) and waits for an actual click;
     // see restartFromStart()/restartFromLastSave(), wired up in the
@@ -5366,6 +5492,7 @@ function restartFromLastSave(){
 // nothing to do" and leave both players stranded wherever the boat was.
 function respawnInPlace(){
   gameOver = false;
+  triggerHeartFlash(); // fires exactly once the death screen's own "press to continue" has actually taken you back into live gameplay -- see respawnAfterDeath()'s own comment on why it isn't triggered there instead
   boatPilot = null;
   boatPassenger = null;
   boarded = false;
@@ -10509,6 +10636,7 @@ function actuallyExitSentenceCombat(){
     sentenceCombatWordsLearned = true; // see its own big comment above -- this is what "adds [these words] to the dictionary in game" means here
     triggerDictionaryFlash(); // the same familiar "new word!" flash every other learned word gets
     score += SENTENCE_COMBAT_REWARD; // one-time payout, same gate as the dictionary flash above -- see SENTENCE_COMBAT_REWARD's own comment
+    awardRedQuestHeart(); // this is currently the game's only red-marked (!) quest -- see LIFE_HEART_GLYPH's own big comment above; same one-time gate as the score/flash above
   }
   sentenceCombatActive = false;
   sentenceCombatTiles = [];
@@ -11120,6 +11248,7 @@ function render(time){
   updateCanvasZoomStyle();
   updateGamepadInput(); // runs every frame regardless of anything else, same reasoning as the two lines above -- see its own big comment
   if(dictFlashT > 0) dictFlashT = Math.max(0, dictFlashT - dt); // runs regardless of pause state, so it never gets stuck mid-flash
+  if(heartFlashT > 0) heartFlashT = Math.max(0, heartFlashT - dt); // same reasoning -- a heart lost right as gameOver flips true must still finish its flash on the death screen
   // periodic autosave while actively editing either scratch slot ("+ New
   // Lvl" or "Combat Arena") — runs regardless of editMode's own update(dt)
   // gate just below, same as dictFlashT/spawnControlsElapsed above, since
@@ -11603,6 +11732,18 @@ function render(time){
     ctx.fillStyle = 'rgba(42,31,20,0.8)';
     ctx.fillText('score '+score, W-14, 14);
     ctx.restore();
+
+    // Hearts HUD -- top-center, shown once a run is actually underway (see
+    // drawHearts() above); the old numeric "death X of Y" counter is gone
+    // from drawGameOver() in favor of this always-visible row, per the
+    // user's own request ("add the death counter as hearts on the
+    // screen... instead of the counter when death occurs"). Moved here
+    // from the top-left corner, and enlarged, per the user's own follow-up
+    // ("they need to be at senter top and 20%bigger") -- top-center also
+    // keeps the row clear of the score/lvl corner markers and the (SPACE)
+    // pickup prompt below it (y 50-80, well clear of the hearts' own
+    // y 14-38 at their new bigger size).
+    if(gameStarted) drawHearts(W/2, 14, 'center');
 
     // small corner marker so it's visible which map you're in
     if(currentMap !== 1){
