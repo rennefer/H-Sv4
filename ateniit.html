@@ -186,6 +186,7 @@
   </div>
   <label>Map</label>
   <div>
+    <button id="map0Btn">Lvl 0</button>
     <button id="map1Btn">Lvl 1</button>
     <button id="mapNeg1Btn">Lvl -1</button>
     <button id="mapNeg2Btn">Lvl -2</button>
@@ -442,7 +443,7 @@ function clipHeadSafe(cx, cy, glyph, size, frac){
   ctx.clip();
 }
 
-const player = { x:0.2325, y:0.7874 }; // lvl 1 default spawn — the spot marked with a red circle in the screenshot
+const player = { x:0.2325, y:0.7874 }; // lvl 1 default spawn — the spot marked with a red circle in the screenshot. (This stays lvl 1's own spawn, NOT lvl 0's, even though lvl 0 is now the actual starting level — see the setMap(0) call at the very end of this script for why.)
 let facing = 1; // 1 = default glyph orientation (faces left), -1 = mirrored (faces right)
 
 /* ============================================================
@@ -889,7 +890,7 @@ function drawFishJump(){
 }
 
 let gameOver = false;
-let currentMap = 1; // which map is active: -1 blank (west of the river), 1 the main map, 2 unbuilt (east)
+let currentMap = 1; // which map is active: -1 blank (west of the river), 1 the main map, 2 unbuilt (east), 0 pharaoh's home. (Starts at 1 here — NOT the real starting map anymore — for the same reason `player` above still holds lvl 1's spawn; see the setMap(0) call at the very end of this script.)
 function setMap(mapId){
   if(currentMap === mapId) return;
   // leaving the scratch "+ New Lvl" slot — flush it to localStorage right
@@ -903,6 +904,20 @@ function setMap(mapId){
   // combatActive left on with nothing to ever resolve it
   if(currentMap === COMBAT_LVL_ID){ saveCombatLvlObjects(); combatActive = false; }
   currentMap = mapId;
+  // BUG FIX (2026-09-20): "when in edditor and pressing new lvl it shal
+  // always load completly blank lvl, not any thing saved, as i use it to
+  // make more then one lvl" -- the "+ New Lvl" scratch slot used to just
+  // keep pointing levelObjects at whatever NEW_LVL_OBJECTS already held
+  // (restored from localStorage once at page load, then never cleared),
+  // so building a second/third scratch level here kept showing whatever
+  // was left over from the previous one. This is a maker-only tool (never
+  // seen by players), used to build one level at a time and export it, so
+  // every single entry now starts from a genuinely blank level regardless
+  // of what's saved. (The save/autosave calls elsewhere are now harmless
+  // dead weight for this slot specifically -- left in place since they're
+  // shared plumbing with the separate "Combat Arena" scratch slot, which
+  // keeps its own old persist-across-reload behavior unchanged.)
+  if(mapId === NEW_LVL_ID) NEW_LVL_OBJECTS = [];
   // See performRefreshShrink's own big comment -- this is one of the two
   // confirmed-effective automatic trigger points for the real fix to the
   // long-standing "gets slower every second" bug (the other is the
@@ -911,13 +926,14 @@ function setMap(mapId){
   // durable through the whole session -- real-hardware testing disproved
   // that, this and the first-move trigger are both functionally necessary.)
   performRefreshShrink();
-  levelObjects = mapId === -1 ? MAP_NEG1_OBJECTS : mapId === -2 ? MAP_NEG2_OBJECTS : mapId === 2 ? MAP2_OBJECTS : mapId === NEW_LVL_ID ? NEW_LVL_OBJECTS : mapId === COMBAT_LVL_ID ? COMBAT_LVL_OBJECTS : MAP1_OBJECTS;
+  levelObjects = mapId === 0 ? MAP0_OBJECTS : mapId === -1 ? MAP_NEG1_OBJECTS : mapId === -2 ? MAP_NEG2_OBJECTS : mapId === 2 ? MAP2_OBJECTS : mapId === NEW_LVL_ID ? NEW_LVL_OBJECTS : mapId === COMBAT_LVL_ID ? COMBAT_LVL_OBJECTS : MAP1_OBJECTS;
   // the fish-jump ambient scene is lvl -1 only and shouldn't linger mid-flight
   // across a map change in either direction — it'll just replay naturally
   // next time the player gets close again
   fishJump = null;
   wasNearFishSpot = false;
   fishJumpCooldownT = 0;
+  if(mapId === 0) arriveAtMap0();
   if(mapId === -1) arriveAtMapNeg1();
   if(mapId === -2) arriveAtMapNeg2();
   if(mapId === 2) arriveAtMap2();
@@ -1001,6 +1017,7 @@ function arriveAtMapNeg1(){
   if(goatIsPet) loadGoatPetOntoBoat();
   if(southCrocIsPet) loadSouthCrocPetOntoBoat();
   if(hippoIsPet) loadHippoPetOntoBoat();
+  if(dogIsPet) loadDogPetOntoBoat();
   if(freshArrival){ boatPilot = 1; boatPassenger = null; }
   boardCooldown = 0;
   // quest progress (the elephant chased off, fish/snake deliveries,
@@ -1083,6 +1100,268 @@ function arriveAtMapNeg2(){
   if(numPlayers === 2){ player2.x = Math.min(BOUNDS.xMax, MAP_NEG2_SPAWN.x + 0.05); player2.y = MAP_NEG2_SPAWN.y; }
 }
 
+// lvl 0 ("pharaoh's home") is the game's new starting level (see the top-
+// level startup try/catch's own setMap(0) call near the very end of this
+// script) -- entirely on foot, no boat involved, same shape as
+// arriveAtMapNeg2() above. No spawn point was specified in the source
+// layout (it's a straight docx export, purely decorative aside from its
+// one exit trigger), so this is a placeholder -- adjustable later via the
+// editor's own drag/placement tools if a different spot is wanted.
+// BUG FIX (2026-09-20): "player cant move and is stuck in start position" --
+// the first placeholder (0.5, 0.92) looked clear by eye (no object's own x/y
+// sat within a naive 0.05 distance of it), but that never checked the
+// object's actual SCALED collision footprint (see obstacleCircles()) -- the
+// large scale-3 gate pylon (id 1440 pre-renumber, one of the two flanking
+// the entrance) has a hitbox ellipse that reaches much further than its own
+// center point, and it fully swallowed (0.5, 0.92). Since collidesAt() only
+// ever blocks a MOVE INTO a solid, never flags already being inside one, a
+// player spawned there was trapped from frame one -- any direction they
+// tried to step still landed inside that same oversized hitbox, so nothing
+// ever visibly moved. Reconfirmed this time by actually replicating
+// collidesAt()'s own math (scaleForY, LEVEL_OBJ_BASE_MULT, the ellipse
+// formula) against every real MAP0_OBJECTS hitbox and searching for a point
+// clear with a full +-0.08 margin in every direction, not just a bare point
+// check -- (0.5, 0.65) is genuinely clear.
+const MAP0_SPAWN = { x: 0.5, y: 0.65 };
+function arriveAtMap0(){
+  player.x = MAP0_SPAWN.x;
+  player.y = MAP0_SPAWN.y;
+  if(numPlayers === 2){ player2.x = Math.min(BOUNDS.xMax, MAP0_SPAWN.x + 0.05); player2.y = MAP0_SPAWN.y; }
+}
+
+// The lvl0 layout's one pickup:true object (Gardiner S6) -- picking it up
+// is, for now, the entire way to leave lvl 0 (see the interception in
+// tryPickup() itself): "picking up the object s6 shal trigger a seen and
+// then you spawn at lvl 1, but il add that later, right now picking up the
+// item spawns you at lvl 1" -- direct instruction, 2026-09-20. The fuller
+// "scene" mechanic before the map switch is explicitly deferred by the user
+// for later; nothing else references this id.
+const LVL0_EXIT_ITEM_ID = 1514;
+
+/* ============================================================
+   S6 CUTSCENE -- the deferred "scene" from LVL0_EXIT_ITEM_ID's own comment
+   above, built 2026-09-20 per direct instruction with a hand-annotated
+   screenshot of lvl 0: "when player picks up s6 ther shoud be a stop in
+   game play,, and 4 soliders a23 walks in from the red lines, and then
+   2sec later a42 walks in from blue line and says(...)". Fully frozen
+   world (same gating idea as stelaActive/birdAttack in update() -- nothing
+   else ticks while this plays), 4 Gardiner A23 soldiers walk in from the
+   sides and take up a flanking position near the gate, then ~2s after
+   they start (not after they finish -- "walk in... and THEN 2sec later")
+   a single Gardiner A42 figure walks down from the gate to the player and
+   delivers its line. Once the line's had its normal 5s on screen (matches
+   NPC_INTERACT_SPEECH_DURATION, the project's standard speech-bubble
+   duration), the cutscene ends and the EXACT same lvl0->lvl1 transition
+   that used to fire immediately on pickup (setMap(1)+arriveAtMap1(), see
+   tryPickup()) finally fires -- matching the original deferred plan
+   verbatim: "trigger a s[c]ene and THEN you spawn at lvl 1".
+   Soldier/messenger paths below are traced from the user's own screenshot
+   (red lines = soldiers, blue line = messenger) via a Python color-mask +
+   connected-component pass over the actual annotated image, not eyeballed
+   -- each of the 4 soldier paths came out as its own separate connected
+   red region, a clean 1:1 match for "4 soldiers"; the messenger's blue
+   line was a single stroke from the gate down toward where the player
+   stands. Coordinates are that image's own pixel positions divided by its
+   own width/height (1786x825), so they carry over as ordinary 0..1 world
+   fractions regardless of the game's actual canvas resolution -- same
+   convention as every other screenshot-calibrated position in this file
+   (e.g. lvl -2's temple door points).
+   ============================================================ */
+const S6_SOLDIER_GLYPH = '𓀛'; // Gardiner A23, U+1301B
+const S6_MESSENGER_GLYPH = '𓀰'; // Gardiner A42, U+13030
+// The messenger's full spoken line -- corrected mid-request ("sorry
+// 𓇥𓂋𓇋𓇥𓂋𓇋𓀜 not 𓇥𓇋𓇥𓇋𓀜"), copied verbatim from the user's own messages and
+// assembled via an exact Python find/replace, never hand-typed. The
+// trailing "?" the user wrote right after the "crown" glyphs was their own
+// translation-uncertainty note (matches their parenthetical "crown?"), not
+// a real hieroglyph, so it's kept on the segment's own meaning below
+// instead of embedded in the spoken glyph text itself.
+const S6_MESSENGER_LINE = '𓇋𓅷𓄿𓂷𓂡𓎡𓅯𓄿𓋴𓎛𓆰𓏌𓋖 𓏏𓏲𓎡𓇥𓂋𓇋𓇥𓂋𓇋𓀜𓂋𓇋𓈖𓎡𓀀';
+// Each soldier's own {fromX,fromY,toX,toY} -- fromX/fromY off to a side
+// (the screenshot's red line's screen-edge end), toX/toY a flanking spot
+// near the gate (the same line's other end, closest to the gate/crossing).
+const S6_SOLDIER_PATHS = [
+  { fromX: 0.00392, fromY: 0.48848, toX: 0.47537, toY: 0.36727 }, // upper-left
+  { fromX: 0.02463, fromY: 0.74182, toX: 0.49608, toY: 0.45091 }, // lower-left
+  { fromX: 0.95353, fromY: 0.49091, toX: 0.52179, toY: 0.40121 }, // upper-right
+  { fromX: 0.98041, fromY: 0.73818, toX: 0.54312, toY: 0.43879 }, // lower-right
+];
+const S6_MESSENGER_START = { x: 0.51008, y: 0.33939 }; // the blue line's own top (near the gate)
+// "realy good but slow down the speed they enter by 60%" (2026-09-20) --
+// speed down 60% means each walk takes 1/0.4 = 2.5x as long to cover the
+// same distance, so both walk durations below are the original values
+// (1.5s/1.8s) times 2.5. S6_MESSENGER_DELAY and S6_SPEECH_DURATION are
+// left untouched -- those are the "2 sec later" pause and the line's own
+// on-screen time, not part of "the speed they enter".
+const S6_SOLDIER_WALK_DURATION = 3.75; // was 1.5
+const S6_MESSENGER_DELAY = 2; // "and then 2sec later" -- measured from the soldiers' own start, not their arrival
+const S6_MESSENGER_WALK_DURATION = 4.5; // was 1.8
+// literal 5, not a reference to NPC_INTERACT_SPEECH_DURATION -- that
+// constant is declared much further down the file (after this point in
+// source order), so referencing it here in a top-level const initializer
+// would throw (temporal dead zone) the instant this line runs at script
+// load; every other per-line speech-duration constant in this file
+// (HIPPO_PET_SPEECH_DURATION, GOAT_SPEECH_DURATION, etc.) is its own
+// independent literal for the same reason, so this just matches that.
+const S6_SPEECH_DURATION = 5; // same 5s every other spoken line in this file gets
+
+let s6Cutscene = null; // { t } | null -- every position below is purely a function of t, same style as sunGuardian's own t-driven animation
+
+function triggerS6Cutscene(){
+  s6Cutscene = { t: 0 };
+}
+
+// Where the messenger walks TO -- a short distance in front of the
+// player's own live position (not a fixed map coordinate), so it still
+// lines up correctly regardless of exactly where the player was standing
+// when they picked up the S6 item. The whole world is frozen the instant
+// this cutscene starts (see update()'s own early-return below), so
+// player.x/y can't move out from under this while it plays.
+function s6MessengerDest(){
+  return { x: player.x, y: Math.max(BOUNDS.yMin, player.y - 0.05) };
+}
+
+function s6SpeechStartT(){ return S6_MESSENGER_DELAY + S6_MESSENGER_WALK_DURATION; }
+
+function updateS6Cutscene(dt){
+  if(!s6Cutscene) return;
+  s6Cutscene.t += dt;
+  if(s6Cutscene.t >= s6SpeechStartT() + S6_SPEECH_DURATION){
+    s6Cutscene = null;
+    // the exact same transition CORRECTION 22 added right after the old
+    // immediate setMap(1) call -- now fires here instead, once the scene's
+    // actually finished, per "trigger a scene and then you spawn at lvl 1"
+    setMap(1);
+    arriveAtMap1();
+  }
+}
+
+function s6SoldierPos(i){
+  const p = S6_SOLDIER_PATHS[i];
+  const t = Math.min(1, s6Cutscene.t / S6_SOLDIER_WALK_DURATION);
+  const eased = t*(2-t);
+  return { x: p.fromX + (p.toX - p.fromX)*eased, y: p.fromY + (p.toY - p.fromY)*eased };
+}
+
+function s6MessengerActive(){
+  return !!s6Cutscene && s6Cutscene.t >= S6_MESSENGER_DELAY;
+}
+
+function s6MessengerPos(){
+  const dest = s6MessengerDest();
+  const t = Math.min(1, (s6Cutscene.t - S6_MESSENGER_DELAY) / S6_MESSENGER_WALK_DURATION);
+  const eased = t*(2-t);
+  return {
+    x: S6_MESSENGER_START.x + (dest.x - S6_MESSENGER_START.x)*eased,
+    y: S6_MESSENGER_START.y + (dest.y - S6_MESSENGER_START.y)*eased,
+  };
+}
+
+function s6Speaking(){
+  return !!s6Cutscene && s6Cutscene.t >= s6SpeechStartT();
+}
+
+function drawS6CutsceneFigure(x, y, destX, glyph){
+  const depthFactor = scaleForY(y);
+  const size = Math.min(W,H) * PLAYER_SIZE_MULT * depthFactor;
+  const dir = destX < x ? 1 : -1; // faces the way it's travelling, same convention as drawSunGuardian
+  ctx.save();
+  ctx.translate(x*W, y*H);
+  ctx.scale(dir, 1);
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#2a1f14';
+  ctx.fillText(glyph, 0, 0);
+  ctx.restore();
+  return size;
+}
+
+function drawS6Cutscene(){
+  if(!s6Cutscene) return;
+  for(let i=0;i<S6_SOLDIER_PATHS.length;i++){
+    const { x, y } = s6SoldierPos(i);
+    drawS6CutsceneFigure(x, y, S6_SOLDIER_PATHS[i].toX, S6_SOLDIER_GLYPH);
+  }
+  if(s6MessengerActive()){
+    const { x, y } = s6MessengerPos();
+    const dest = s6MessengerDest();
+    const size = drawS6CutsceneFigure(x, y, dest.x, S6_MESSENGER_GLYPH);
+    if(s6Speaking()){
+      drawSpeechBubble(x*W, y*H - size*0.75, S6_MESSENGER_LINE, BUBBLE_FONT_SIZE, 's6messenger');
+    }
+  }
+}
+
+// "make the s6 glow slightly to draw the player to it" (2026-09-20) -- a
+// gentle "look here" beacon on the S6 item itself, so it stands out on lvl
+// 0's busy 218-object courtyard instead of blending in as just another
+// glyph. Same 3-layer wash/radiant/core radial-gradient technique as
+// drawSunLight()/drawMummyGlow() (see their own big comments), just a small
+// fixed-position glow rather than a map-wide light or a fading one-shot
+// flash -- it gently pulses (never fully dims) so it reads as "look here"
+// rather than a static ambient wash. Looked up fresh each frame like the
+// other glows, so it simply stops drawing the instant the item's picked up
+// (tryPickup splices it straight out of levelObjects before the cutscene
+// even starts). This is a single small localized draw, same cost class as
+// drawMummyGlow -- NOT the "reapply an expensive blend per opaque object"
+// mistake that tanked framerate in CORRECTION 31; that was N=186 objects
+// every frame, this is exactly one.
+const S6_GLOW_RADIUS_MULT = 0.12; // fraction of min(W,H) -- "slightly", well under drawMummyGlow's own 0.34
+const S6_GLOW_PULSE_PERIOD = 1.8; // seconds per full brighten/dim breathing cycle
+const S6_GLOW_PULSE_MIN = 0.5; // never fully dims out -- always at least half strength, so it's never truly gone between pulses
+let s6GlowT = 0;
+function updateS6Glow(dt){
+  s6GlowT += dt;
+}
+let s6GlowGradientCache = null; // { key, wash, radiant, core } | null
+function drawS6Glow(){
+  if(currentMap !== 0) return;
+  const obj = levelObjects.find(o => o.id === LVL0_EXIT_ITEM_ID);
+  if(!obj) return; // already picked up (or cutscene running) -- glow simply stops
+  const cx = obj.x*W, cy = obj.y*H;
+  const R = Math.min(W,H) * S6_GLOW_RADIUS_MULT;
+  const key = cx+'|'+cy+'|'+R;
+  let g = s6GlowGradientCache && s6GlowGradientCache.key === key ? s6GlowGradientCache : null;
+  if(!g){
+    // same stop shape as drawMummyGlow's own (already tuned down once from
+    // drawSunLight's full-strength stops -- "way to strong" otherwise, see
+    // its own comment) since this glow's radius is in the same small range
+    const wash = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+    wash.addColorStop(0, 'rgba(255,228,170,0.5)');
+    wash.addColorStop(0.3, 'rgba(255,214,140,0.34)');
+    wash.addColorStop(0.65, 'rgba(255,214,140,0.12)');
+    wash.addColorStop(1, 'rgba(255,214,140,0)');
+    const radiant = ctx.createRadialGradient(cx, cy, 0, cx, cy, R*0.42);
+    radiant.addColorStop(0, 'rgba(255,241,205,0.24)');
+    radiant.addColorStop(0.4, 'rgba(255,229,170,0.12)');
+    radiant.addColorStop(1, 'rgba(255,229,170,0)');
+    const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, R*0.16);
+    core.addColorStop(0, 'rgba(255,250,230,0.26)');
+    core.addColorStop(1, 'rgba(255,250,230,0)');
+    g = { key, wash, radiant, core };
+    s6GlowGradientCache = g;
+  }
+  // gentle breathing pulse, 0..1 via sine remapped into S6_GLOW_PULSE_MIN..1
+  // so it never fully dims out -- same "sin*0.5+0.5" shape already used for
+  // the dictionary-flash blink elsewhere in this file
+  const pulse = Math.sin(s6GlowT * (Math.PI*2/S6_GLOW_PULSE_PERIOD))*0.5+0.5;
+  const alpha = S6_GLOW_PULSE_MIN + (1-S6_GLOW_PULSE_MIN)*pulse;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.globalCompositeOperation = 'soft-light';
+  ctx.fillStyle = g.wash;
+  const washX0 = Math.max(0, cx-R), washY0 = Math.max(0, cy-R);
+  const washX1 = Math.min(W, cx+R), washY1 = Math.min(H, cy+R);
+  ctx.fillRect(washX0, washY0, washX1-washX0, washY1-washY0);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.fillStyle = g.radiant;
+  ctx.fillRect(cx-R*0.42, cy-R*0.42, R*0.84, R*0.84);
+  ctx.fillStyle = g.core;
+  ctx.fillRect(cx-R*0.16, cy-R*0.16, R*0.32, R*0.32);
+  ctx.restore();
+}
+
 // Walk-into-it map crossing for the lvl -1 <-> lvl -2 temple doorway --
 // deliberately NOT key/interact-gated, same idea as the boat sailing off a
 // map's edge (see tryMoveBoatTo). Checked every frame from update() while
@@ -1147,14 +1426,18 @@ function arriveAtMap2(){
   if(goatIsPet) loadGoatPetOntoBoat();
   if(southCrocIsPet) loadSouthCrocPetOntoBoat();
   if(hippoIsPet) loadHippoPetOntoBoat();
+  if(dogIsPet) loadDogPetOntoBoat();
   if(freshArrival){ boatPilot = 1; boatPassenger = null; }
   boardCooldown = 0;
 }
 
-// lvl 1 has no boat-arrival edge of its own (it's the map you start on) —
-// this only exists so a death respawn while on lvl 1 has somewhere real to
-// call, symmetric with arriveAtMapNeg1()/arriveAtMap2() above.
-const MAP1_SPAWN = { x: 0.2325, y: 0.7874 }; // matches player's own initial declaration above — lvl 1's home spawn
+// lvl 1 has no boat-arrival edge of its own — this only exists so a death
+// respawn while on lvl 1, or the editor's own "Lvl 1" button, has somewhere
+// real to call, symmetric with arriveAtMapNeg1()/arriveAtMap2() above. (Lvl 1
+// used to be the map you start the game on; lvl 0 — "pharaoh's home" — is
+// now that start level instead, see MAP0_SPAWN/arriveAtMap0() above and the
+// player/currentMap initial declarations near the top of the file.)
+const MAP1_SPAWN = { x: 0.2325, y: 0.7874 }; // lvl 1's own home spawn — the spot marked with a red circle in the screenshot
 function arriveAtMap1(){
   player.x = MAP1_SPAWN.x;
   player.y = MAP1_SPAWN.y;
@@ -1203,9 +1486,25 @@ const MAP2_OBJECTS = [{"id":1070,"glyph":"𓇳","x":0.07,"y":0.05,"scale":1.5,"p
 // updateNeg2MonkeyPatrol. id 1332 is tameable and climbs/descends the
 // steps on its own -- see updateNeg2ClimberPatrol.
 const MAP_NEG2_SPAWN = { x: 0.552, y: 0.87 }; // bottom center, between the entrance pillars (ids 1187/1188)
-const MAP_NEG2_OBJECTS = [{"id":1187,"glyph":"𓉶","x":0.7080273363722497,"y":0.842489479279131,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1188,"glyph":"𓉶","x":0.3959958521143786,"y":0.842489479279131,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1189,"glyph":"𓉶","x":0.7389493753527594,"y":0.6727613512171777,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1191,"glyph":"𓉶","x":0.7839268865971372,"y":0.45453947228038066,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1192,"glyph":"𓉶","x":0.8026675162822946,"y":0.3797782730149965,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1193,"glyph":"𓉶","x":0.364136781649611,"y":0.6848847889358887,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1194,"glyph":"𓉶","x":0.33977396305890634,"y":0.5454652551707128,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1195,"glyph":"𓉶","x":0.3172852074367174,"y":0.4565600452334992,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1196,"glyph":"𓉶","x":0.29854457775156,"y":0.385839991874352,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1197,"glyph":"𓉶","x":0.654616541769551,"y":0.3130993655620863,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1198,"glyph":"𓉶","x":0.4531547726541087,"y":0.3130993655620863,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1199,"glyph":"𓉹","x":0.3013556722043336,"y":0.6970082266545996,"scale":2.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1200,"glyph":"𓉹","x":0.799856421829521,"y":0.6869053618890072,"scale":2.5,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1201,"glyph":"𓉹","x":0.5431097951428643,"y":0.2423793122029391,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1202,"glyph":"𓉹","x":0.8476450275266724,"y":0.3838194189212335,"scale":2.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1203,"glyph":"𓉹","x":0.2535670665071822,"y":0.39190171073370744,"scale":2.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1204,"glyph":"𓊬","x":0.5431097951428643,"y":0.4161485861711294,"scale":2.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1205,"glyph":"𓊯","x":0.596520589745563,"y":0.39392228368682597,"scale":1.2,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1207,"glyph":"𓊯","x":0.4925100949929393,"y":0.39392228368682597,"scale":1.2,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1209,"glyph":"𓋂","x":0.7061532734037339,"y":0.8950243760602118,"scale":1.2,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1218,"glyph":"𓋂","x":0.3959958521143786,"y":0.8950243760602118,"scale":1.2,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1220,"glyph":"𓉾","x":0.6115130934936889,"y":0.25248217696853154,"scale":2.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1221,"glyph":"𓉾","x":0.47376946530778186,"y":0.25046160401541306,"scale":2.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1222,"glyph":"𓉾","x":0.40349210398844154,"y":0.24844103106229457,"scale":2.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1223,"glyph":"𓉾","x":0.6817904548130292,"y":0.25248217696853154,"scale":2.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1224,"glyph":"𓊢","x":0.654616541769551,"y":0.3333050950932712,"scale":2.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1225,"glyph":"𓊢","x":0.4531547726541087,"y":0.3353256680463897,"scale":2.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1230,"glyph":"𓉶","x":0.7642492254277219,"y":0.5555681199363053,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1233,"glyph":"𓉶","x":0.8617004997905405,"y":0.6768024971234148,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1234,"glyph":"𓉶","x":0.8935595702553081,"y":0.37775770006187803,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1235,"glyph":"𓉶","x":0.20858955526280437,"y":0.381798845968115,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1236,"glyph":"𓉶","x":0.23482643682202478,"y":0.6808436430296517,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1237,"glyph":"𓎨","x":0.36788490758664244,"y":0.26864676059347947,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1238,"glyph":"𓎨","x":0.7248939030888913,"y":0.270667333546598,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1239,"glyph":"𓉪","x":0.5440468266271222,"y":0.1696386858906734,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1240,"glyph":"𓈙","x":0.6068279360723996,"y":0.15347410226572547,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1241,"glyph":"𓈙","x":0.6611757621593561,"y":0.15347410226572547,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1242,"glyph":"𓈙","x":0.712712493793539,"y":0.15549467521884397,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1243,"glyph":"𓈙","x":0.38006631688199477,"y":0.151453529312607,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1244,"glyph":"𓃩","x":0.4503436782013351,"y":0.44443660751478825,"scale":1.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1245,"glyph":"𓈙","x":0.4915730635086814,"y":0.151453529312607,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1246,"glyph":"𓈙","x":0.43535117445320914,"y":0.151453529312607,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1248,"glyph":"𓅃","x":0.6405610695056829,"y":0.44443660751478825,"scale":1.5,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1249,"glyph":"𓀄","x":0.34914427790148506,"y":0.9798884400911885,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1250,"glyph":"𓀎","x":0.3182222389209753,"y":0.3333050950932712,"scale":1.05,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1251,"glyph":"𓀎","x":0.33602583712187484,"y":0.39392228368682597,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1252,"glyph":"𓀎","x":0.3547664668070323,"y":0.46868348295221013,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1253,"glyph":"𓀎","x":0.37631819094496327,"y":0.5616298387956608,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1254,"glyph":"𓀎","x":0.7829898551128793,"y":0.3333050950932712,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1255,"glyph":"𓀎","x":0.7670603198804955,"y":0.3797782730149965,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1256,"glyph":"𓀎","x":0.7530048476166274,"y":0.4484777534210252,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1257,"glyph":"𓀎","x":0.7380123438685016,"y":0.5454652551707128,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1258,"glyph":"𓃻","x":0.5412357321743486,"y":0.10902149729711867,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1259,"glyph":"𓇳","x":0.9919478761023846,"y":0.052445454609800914,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[],"invisible":true},{"id":1260,"glyph":"𓉸","x":0.0914606197305705,"y":0.7596459882012728,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":true,"items":[]},{"id":1261,"glyph":"𓁰","x":0.7408234383212752,"y":0.3029965007964938,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1262,"glyph":"𓁰","x":0.3557034982912901,"y":0.2928936360309014,"scale":1.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1263,"glyph":"𓁰","x":0.545920889595638,"y":0.3130993655620863,"scale":1.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1270,"glyph":"𓊯","x":0.5721577711548583,"y":0.3130993655620863,"scale":0.9,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1271,"glyph":"𓊯","x":0.5149988506151282,"y":0.3171405114683233,"scale":0.9,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1272,"glyph":"𓇊","x":0.7455085957425645,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1273,"glyph":"𓇊","x":0.7811157921443636,"y":0.9920118778098994,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1274,"glyph":"𓇊","x":0.8195340829989363,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1275,"glyph":"𓇊","x":0.857952373853509,"y":0.9920118778098994,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1276,"glyph":"𓇊","x":0.8907484758025345,"y":0.9859501589505439,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1277,"glyph":"𓇊","x":0.9263556722043336,"y":0.9859501589505439,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1278,"glyph":"𓇊","x":0.9591517741533591,"y":0.9859501589505439,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1279,"glyph":"𓇊","x":0.9928849075866424,"y":0.9839295859974254,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1280,"glyph":"𓇊","x":0.3116630185311702,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1281,"glyph":"𓇊","x":0.27418175916085535,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1282,"glyph":"𓇊","x":0.23482643682202478,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1283,"glyph":"𓇊","x":0.2048414293257729,"y":0.9920118778098994,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1284,"glyph":"𓇊","x":0.17017126440823166,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1285,"glyph":"𓇊","x":0.13269000503791684,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1286,"glyph":"𓇊","x":0.09708280863611773,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1287,"glyph":"𓇊","x":0.06428670668709224,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1288,"glyph":"𓇊","x":0.027742478801035274,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1289,"glyph":"𓇣","x":0.8823151924442136,"y":0.7879340095449318,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1290,"glyph":"𓇣","x":0.21140064971557798,"y":0.7980368743105242,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1291,"glyph":"𓇣","x":0.8926225387710502,"y":0.4343337427491958,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1292,"glyph":"𓇣","x":0.8851262868969872,"y":0.5070743690614614,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1293,"glyph":"𓇣","x":0.87950409799144,"y":0.6060824437642676,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1294,"glyph":"𓇣","x":0.2076525237785465,"y":0.4343337427491958,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1295,"glyph":"𓇣","x":0.21327471268409373,"y":0.505053796108343,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1296,"glyph":"𓇣","x":0.2207709645581567,"y":0.624267600342334,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1297,"glyph":"𓁀","x":0.8392117441683515,"y":0.46262176409285466,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1298,"glyph":"𓀿","x":0.8270303348729993,"y":0.5737532765143717,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1303,"glyph":"𓀿","x":0.8326525237785465,"y":0.5191978067801724,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1304,"glyph":"𓁟","x":0.2498189405701507,"y":0.5232389526864094,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1305,"glyph":"𓁹","x":0.604016841619626,"y":0.1696386858906734,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1306,"glyph":"𓁹","x":0.4887619690559078,"y":0.1676181129375549,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1307,"glyph":"𓆃","x":0.4334771114846934,"y":0.1676181129375549,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1308,"glyph":"𓆃","x":0.6602387306750982,"y":0.1676181129375549,"scale":1.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1309,"glyph":"𓆃","x":0.8007934533137788,"y":0.7576254152481544,"scale":1.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1314,"glyph":"𓆃","x":0.30322973517284935,"y":0.7677282800137468,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1317,"glyph":"𓇢","x":0.5749688656076319,"y":0.858654062904079,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1318,"glyph":"𓇢","x":0.603079810135368,"y":0.7071110914201921,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1320,"glyph":"𓇢","x":0.5281172913947384,"y":0.5373829633582389,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1321,"glyph":"𓇢","x":0.6218204398205255,"y":0.9111889596851597,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1322,"glyph":"𓇢","x":0.530928385847512,"y":0.9334152621694631,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1323,"glyph":"𓇢","x":0.3547664668070323,"y":0.34138738690574516,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1324,"glyph":"𓇢","x":0.40068100953566793,"y":0.4242308779836033,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1325,"glyph":"𓇢","x":0.41005132437824665,"y":0.5030332231552245,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1326,"glyph":"𓇢","x":0.44846961523281936,"y":0.6202264544360969,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1327,"glyph":"𓇢","x":0.726767966057407,"y":0.34542853281198216,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1328,"glyph":"𓇢","x":0.6930348326241237,"y":0.45858061818661766,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1329,"glyph":"𓇢","x":0.6846015492658029,"y":0.5656709847018977,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1330,"glyph":"𓇢","x":0.509376661709581,"y":0.6788230700765332,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1332,"glyph":"𓃡","x":0.9254186407200757,"y":0.7071110914201921,"scale":0.75,"reveal":1,"pickup":true,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]}]; // baked-in starting layout for "lvl -2", pasted in via the level editor's Export
+const MAP_NEG2_OBJECTS = [{"id":1187,"glyph":"𓉶","x":0.7080273363722497,"y":0.842489479279131,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1188,"glyph":"𓉶","x":0.3959958521143786,"y":0.842489479279131,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1189,"glyph":"𓉶","x":0.7389493753527594,"y":0.6727613512171777,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1191,"glyph":"𓉶","x":0.7839268865971372,"y":0.45453947228038066,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1192,"glyph":"𓉶","x":0.8026675162822946,"y":0.3797782730149965,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1193,"glyph":"𓉶","x":0.364136781649611,"y":0.6848847889358887,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1194,"glyph":"𓉶","x":0.33977396305890634,"y":0.5454652551707128,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1195,"glyph":"𓉶","x":0.3172852074367174,"y":0.4565600452334992,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1196,"glyph":"𓉶","x":0.29854457775156,"y":0.385839991874352,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1197,"glyph":"𓉶","x":0.654616541769551,"y":0.3130993655620863,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1198,"glyph":"𓉶","x":0.4531547726541087,"y":0.3130993655620863,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1199,"glyph":"𓉹","x":0.3013556722043336,"y":0.6970082266545996,"scale":2.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1200,"glyph":"𓉹","x":0.799856421829521,"y":0.6869053618890072,"scale":2.5,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1201,"glyph":"𓉹","x":0.5431097951428643,"y":0.2423793122029391,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1202,"glyph":"𓉹","x":0.8476450275266724,"y":0.3838194189212335,"scale":2.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1203,"glyph":"𓉹","x":0.2535670665071822,"y":0.39190171073370744,"scale":2.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1204,"glyph":"𓊬","x":0.5431097951428643,"y":0.4161485861711294,"scale":2.65,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1205,"glyph":"𓊯","x":0.596520589745563,"y":0.39392228368682597,"scale":1.2,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1207,"glyph":"𓊯","x":0.4925100949929393,"y":0.39392228368682597,"scale":1.2,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1209,"glyph":"𓋂","x":0.7061532734037339,"y":0.8950243760602118,"scale":1.2,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1218,"glyph":"𓋂","x":0.3959958521143786,"y":0.8950243760602118,"scale":1.2,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1220,"glyph":"𓉾","x":0.6115130934936889,"y":0.25248217696853154,"scale":2.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1221,"glyph":"𓉾","x":0.47376946530778186,"y":0.25046160401541306,"scale":2.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1222,"glyph":"𓉾","x":0.40349210398844154,"y":0.24844103106229457,"scale":2.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1223,"glyph":"𓉾","x":0.6817904548130292,"y":0.25248217696853154,"scale":2.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1224,"glyph":"𓊢","x":0.654616541769551,"y":0.3333050950932712,"scale":2.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1225,"glyph":"𓊢","x":0.4531547726541087,"y":0.3353256680463897,"scale":2.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1230,"glyph":"𓉶","x":0.7642492254277219,"y":0.5555681199363053,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1233,"glyph":"𓉶","x":0.8617004997905405,"y":0.6768024971234148,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1234,"glyph":"𓉶","x":0.8935595702553081,"y":0.37775770006187803,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1235,"glyph":"𓉶","x":0.20858955526280437,"y":0.381798845968115,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1236,"glyph":"𓉶","x":0.23482643682202478,"y":0.6808436430296517,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1237,"glyph":"𓎨","x":0.36788490758664244,"y":0.26864676059347947,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1238,"glyph":"𓎨","x":0.7248939030888913,"y":0.270667333546598,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1239,"glyph":"𓉪","x":0.5440468266271222,"y":0.1696386858906734,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1240,"glyph":"𓈙","x":0.6068279360723996,"y":0.15347410226572547,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1241,"glyph":"𓈙","x":0.6611757621593561,"y":0.15347410226572547,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1242,"glyph":"𓈙","x":0.712712493793539,"y":0.15549467521884397,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1243,"glyph":"𓈙","x":0.38006631688199477,"y":0.151453529312607,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1244,"glyph":"𓃩","x":0.4503436782013351,"y":0.44443660751478825,"scale":1.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1245,"glyph":"𓈙","x":0.4915730635086814,"y":0.151453529312607,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1246,"glyph":"𓈙","x":0.43535117445320914,"y":0.151453529312607,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1248,"glyph":"𓅃","x":0.6405610695056829,"y":0.44443660751478825,"scale":1.5,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1249,"glyph":"𓀄","x":0.34914427790148506,"y":0.9798884400911885,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[],"questNote":"𓅠𓅓𓏛+𓌡𓂝𓏤+𓇋𓈖𓂋𓊌       (english: find+one+stone)"},{"id":1250,"glyph":"𓀎","x":0.3182222389209753,"y":0.3333050950932712,"scale":1.05,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1251,"glyph":"𓀎","x":0.33602583712187484,"y":0.39392228368682597,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1252,"glyph":"𓀎","x":0.3547664668070323,"y":0.46868348295221013,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1253,"glyph":"𓀎","x":0.37631819094496327,"y":0.5616298387956608,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1254,"glyph":"𓀎","x":0.7829898551128793,"y":0.3333050950932712,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1255,"glyph":"𓀎","x":0.7670603198804955,"y":0.3797782730149965,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1256,"glyph":"𓀎","x":0.7530048476166274,"y":0.4484777534210252,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1257,"glyph":"𓀎","x":0.7380123438685016,"y":0.5454652551707128,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1258,"glyph":"𓃻","x":0.5412357321743486,"y":0.10902149729711867,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1259,"glyph":"𓇳","x":0.9919478761023846,"y":0.052445454609800914,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[],"invisible":true},{"id":1260,"glyph":"𓉸","x":0.0914606197305705,"y":0.7596459882012728,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":true,"items":[]},{"id":1261,"glyph":"𓁰","x":0.7408234383212752,"y":0.3029965007964938,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1262,"glyph":"𓁰","x":0.3557034982912901,"y":0.2928936360309014,"scale":1.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1263,"glyph":"𓁰","x":0.545920889595638,"y":0.3130993655620863,"scale":1.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1270,"glyph":"𓊯","x":0.5721577711548583,"y":0.3130993655620863,"scale":0.9,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1271,"glyph":"𓊯","x":0.5149988506151282,"y":0.3171405114683233,"scale":0.9,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1272,"glyph":"𓇊","x":0.7455085957425645,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1273,"glyph":"𓇊","x":0.7811157921443636,"y":0.9920118778098994,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1274,"glyph":"𓇊","x":0.8195340829989363,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1275,"glyph":"𓇊","x":0.857952373853509,"y":0.9920118778098994,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1276,"glyph":"𓇊","x":0.8907484758025345,"y":0.9859501589505439,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1277,"glyph":"𓇊","x":0.9263556722043336,"y":0.9859501589505439,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1278,"glyph":"𓇊","x":0.9591517741533591,"y":0.9859501589505439,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1279,"glyph":"𓇊","x":0.9928849075866424,"y":0.9839295859974254,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1280,"glyph":"𓇊","x":0.3116630185311702,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1281,"glyph":"𓇊","x":0.27418175916085535,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1282,"glyph":"𓇊","x":0.23482643682202478,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1283,"glyph":"𓇊","x":0.2048414293257729,"y":0.9920118778098994,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1284,"glyph":"𓇊","x":0.17017126440823166,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1285,"glyph":"𓇊","x":0.13269000503791684,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1286,"glyph":"𓇊","x":0.09708280863611773,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1287,"glyph":"𓇊","x":0.06428670668709224,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1288,"glyph":"𓇊","x":0.027742478801035274,"y":0.9899913048567809,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1289,"glyph":"𓇣","x":0.8823151924442136,"y":0.7879340095449318,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1290,"glyph":"𓇣","x":0.21140064971557798,"y":0.7980368743105242,"scale":0.9,"reveal":0.8,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1291,"glyph":"𓇣","x":0.8926225387710502,"y":0.4343337427491958,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1292,"glyph":"𓇣","x":0.8851262868969872,"y":0.5070743690614614,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1293,"glyph":"𓇣","x":0.87950409799144,"y":0.6060824437642676,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1294,"glyph":"𓇣","x":0.2076525237785465,"y":0.4343337427491958,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1295,"glyph":"𓇣","x":0.21327471268409373,"y":0.505053796108343,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1296,"glyph":"𓇣","x":0.2207709645581567,"y":0.624267600342334,"scale":2.85,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1297,"glyph":"𓁀","x":0.8392117441683515,"y":0.46262176409285466,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1298,"glyph":"𓀿","x":0.8270303348729993,"y":0.5737532765143717,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1303,"glyph":"𓀿","x":0.8326525237785465,"y":0.5191978067801724,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1304,"glyph":"𓁟","x":0.2498189405701507,"y":0.5232389526864094,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1305,"glyph":"𓁹","x":0.604016841619626,"y":0.1696386858906734,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1306,"glyph":"𓁹","x":0.4887619690559078,"y":0.1676181129375549,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1307,"glyph":"𓆃","x":0.4334771114846934,"y":0.1676181129375549,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1308,"glyph":"𓆃","x":0.6602387306750982,"y":0.1676181129375549,"scale":1.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1309,"glyph":"𓆃","x":0.8007934533137788,"y":0.7576254152481544,"scale":1.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1314,"glyph":"𓆃","x":0.30322973517284935,"y":0.7677282800137468,"scale":1.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1317,"glyph":"𓇢","x":0.5749688656076319,"y":0.858654062904079,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1318,"glyph":"𓇢","x":0.603079810135368,"y":0.7071110914201921,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1320,"glyph":"𓇢","x":0.5281172913947384,"y":0.5373829633582389,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1321,"glyph":"𓇢","x":0.6218204398205255,"y":0.9111889596851597,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1322,"glyph":"𓇢","x":0.530928385847512,"y":0.9334152621694631,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1323,"glyph":"𓇢","x":0.3547664668070323,"y":0.34138738690574516,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1324,"glyph":"𓇢","x":0.40068100953566793,"y":0.4242308779836033,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1325,"glyph":"𓇢","x":0.41005132437824665,"y":0.5030332231552245,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1326,"glyph":"𓇢","x":0.44846961523281936,"y":0.6202264544360969,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1327,"glyph":"𓇢","x":0.726767966057407,"y":0.34542853281198216,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1328,"glyph":"𓇢","x":0.6930348326241237,"y":0.45858061818661766,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1329,"glyph":"𓇢","x":0.6846015492658029,"y":0.5656709847018977,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1330,"glyph":"𓇢","x":0.509376661709581,"y":0.6788230700765332,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1332,"glyph":"𓃡","x":0.9254186407200757,"y":0.7071110914201921,"scale":0.75,"reveal":1,"pickup":true,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1334,"glyph":"𓄣","x":0.5449838581113801,"y":0.49495093134275053,"scale":1,"reveal":1,"pickup":true,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[],"questNote":"when item is picked up, archers attack wth arrows going in slow arces towards the player. they stop if you return it or leave map"},{"id":1337,"glyph":"𓊅","x":0.10832718644721218,"y":0.36361368939004857,"scale":1.9,"reveal":0.9,"pickup":true,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1338,"glyph":"𓉶","x":0.12613078464811173,"y":0.3535108246244561,"scale":2.55,"reveal":0.9,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1339,"glyph":"𓉶","x":0.0914606197305705,"y":0.3535108246244561,"scale":2.55,"reveal":0.9,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1340,"glyph":"𓊌","x":0.11301234386850154,"y":0.28279077126530894,"scale":2.55,"reveal":0.9,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1350,"glyph":"𓉳","x":0.04742013997045057,"y":0.35149025167133763,"scale":2.55,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1351,"glyph":"𓉳","x":0.17110829589248955,"y":0.34744910576510063,"scale":2.55,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1352,"glyph":"𓉳","x":0.17485642182952102,"y":0.2848113442184274,"scale":2.55,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1353,"glyph":"𓉳","x":0.051168265907482045,"y":0.2888524901246644,"scale":2.55,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1354,"glyph":"𓉶","x":0.12800484761662748,"y":0.28279077126530894,"scale":2.55,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1355,"glyph":"𓉶","x":0.09708280863611773,"y":0.28279077126530894,"scale":2.55,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1356,"glyph":"𓁣","x":0.05960154926580289,"y":0.4989920772489875,"scale":1.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":true,"stela":false,"items":[],"questNote":"𓅠𓅓𓏛+𓈖+𓅆+𓌡𓂝𓏤+𓄣𓏤     (english: fnd+for+me+one+hearth)"},{"id":1357,"glyph":"𓇣","x":0.021183258411230175,"y":0.4161485861711294,"scale":2.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1358,"glyph":"𓇣","x":0.01837216395845656,"y":0.608103016717386,"scale":2.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1359,"glyph":"𓇣","x":0.01743513247419869,"y":0.9051272408258042,"scale":2.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1360,"glyph":"𓇢","x":0.1111382808999858,"y":0.6505350487328744,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1363,"glyph":"𓇢","x":0.09708280863611773,"y":0.5697121306081346,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1364,"glyph":"𓇢","x":0.1401862569119798,"y":0.8263248956541831,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1366,"glyph":"𓇢","x":0.1111382808999858,"y":0.492930358389632,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1367,"glyph":"𓇢","x":0.10176796605740708,"y":0.4424160345616697,"scale":0.5,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1368,"glyph":"𓇠","x":0.30604082962562296,"y":0.8889626572008563,"scale":0.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1369,"glyph":"𓇢","x":0.12987891058514323,"y":0.7374196857169695,"scale":0.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1371,"glyph":"𓇠","x":0.2432597201803456,"y":0.8829009383415009,"scale":0.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1372,"glyph":"𓇠","x":0.17673048479803677,"y":0.8788597924352639,"scale":0.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1373,"glyph":"𓇠","x":0.06428670668709224,"y":0.9354358351225817,"scale":0.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1374,"glyph":"𓅭","x":0.0914606197305705,"y":0.17570040475002888,"scale":0.9,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1375,"glyph":"𓅭","x":0.11394937535275941,"y":0.18984441542185831,"scale":0.9,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1376,"glyph":"𓅭","x":0.16173798104991083,"y":0.16559753998443644,"scale":0.9,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1377,"glyph":"𓅭","x":0.1495565717545585,"y":0.21005014495304325,"scale":0.9,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]},{"id":1378,"glyph":"𓅭","x":0.2010933033887414,"y":0.1959061342812138,"scale":0.9,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":false,"stela":false,"items":[]}]; // baked-in starting layout for "lvl -2", pasted in via the level editor's Export
 
-let levelObjects = MAP1_OBJECTS; // active object list for whichever map is currently loaded
+
+// lvl 0 ("pharaoh's home") -- the new intended START level, built from
+// the user's own docx export (218 objects, purely decorative except for
+// one pickup:true object, the exit trigger -- see LVL0_EXIT_ITEM_ID below).
+// The export's own raw ids (1189-1520) collided with a whole slate of
+// existing hardcoded "special" ids used elsewhere in the game
+// (NEG2_SUN_OBJ_ID, STONE_ITEM_ID, NPC_1356_ID, HEART_ID, NEG2_MONKEY_ID,
+// GOD_NPC_ID, SETH_ANIMAL_ID, NEG2_SHRINE_ID, and 4 of the 8 ARCHER_IDS),
+// which would have made an ungated levelObjects.find(o=>o.id===X) lookup
+// on this map resolve to the wrong, unrelated lvl0 object instead -- same
+// bug class as the nextObjId fix's own comment further up. Every object
+// below has been renumbered to a fresh contiguous block (1379-1596, one
+// past the true prior global max id of 1378) before ever being pasted in
+// here, preserving the export's original relative order throughout.
+const MAP0_OBJECTS = [{"id":1379,"glyph":"𓅄","x":0.6915113792656371,"y":0.28093822115899125,"scale":0.75,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1380,"glyph":"𓆋","x":0.9451345676714341,"y":0.9003881579293173,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1381,"glyph":"𓆋","x":0.05357142067350462,"y":0.8975978428988203,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1382,"glyph":"𓃣","x":0.11050723847888765,"y":0.7915658717399356,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1383,"glyph":"𓃣","x":0.8817287705699849,"y":0.7915658717399356,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1384,"glyph":"𓇳","x":0.97,"y":0.02,"scale":2.25,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[],"invisible":true},{"id":1385,"glyph":"𓊍","x":0.5297618968639808,"y":0.11630963435967034,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1386,"glyph":"𓊍","x":0.4909420210875833,"y":0.11630963435967034,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1387,"glyph":"𓆋","x":0.16666666666666666,"y":0.6451208350508981,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1388,"glyph":"𓆋","x":0.8247929527646018,"y":0.6436791751235965,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1389,"glyph":"𓃤","x":0.6407867494824016,"y":0.6227983148069224,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1390,"glyph":"𓃤","x":0.37065792939348663,"y":0.6306111968923138,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1391,"glyph":"𓃤","x":0.20367494034224168,"y":0.5627600392391846,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1392,"glyph":"𓃤","x":0.7898550645658441,"y":0.5599697242086876,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1393,"glyph":"𓃤","x":0.6462215241931734,"y":0.8138883919839114,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1394,"glyph":"𓃤","x":0.3654819459566336,"y":0.8054709388034569,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1395,"glyph":"𓉩","x":0.5314365168169247,"y":0.10875945010921631,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1396,"glyph":"𓉩","x":0.47023808734017125,"y":0.1358418395731491,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1397,"glyph":"𓉩","x":0.44996261181334757,"y":0.17956297183965178,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1398,"glyph":"𓉩","x":0.4278867050897068,"y":0.22716647373978624,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1399,"glyph":"𓉩","x":0.40385049163438475,"y":0.2789970937553682,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1400,"glyph":"𓉩","x":0.377679899209698,"y":0.33543019350578923,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1401,"glyph":"𓉩","x":0.34918539822966055,"y":0.39687446614778255,"scale":1.95,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1402,"glyph":"𓉩","x":0.5504658306113928,"y":0.1358418395731491,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1403,"glyph":"𓉩","x":0.5659937809219517,"y":0.18048688006110053,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1404,"glyph":"𓉩","x":0.5854037188101505,"y":0.23350286564054284,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1405,"glyph":"𓉩","x":0.6074016484167758,"y":0.27814790612849427,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1406,"glyph":"𓉩","x":0.6332815656010408,"y":0.3311638917079366,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1407,"glyph":"𓉩","x":0.6591614827853058,"y":0.3841798772873789,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1408,"glyph":"𓉾","x":0.7160973005906889,"y":0.3813895622568819,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1409,"glyph":"𓉾","x":0.7807970935513513,"y":0.3813895622568819,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1410,"glyph":"𓉾","x":0.8454968865120138,"y":0.3813895622568819,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1411,"glyph":"𓉾","x":0.9089026836134632,"y":0.3813895622568819,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1412,"glyph":"𓉾","x":0.29037266290952946,"y":0.3925508223788698,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1413,"glyph":"𓉾","x":0.22437887408965368,"y":0.3925508223788698,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1414,"glyph":"𓉾","x":0.15967908112899115,"y":0.3925508223788698,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1415,"glyph":"𓉾","x":0.09497928816832864,"y":0.3925508223788698,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1416,"glyph":"𓉾","x":0.028985499348452865,"y":0.3925508223788698,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1417,"glyph":"𓉾","x":0.9723084807149124,"y":0.3813895622568819,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1418,"glyph":"𓊌","x":0.33954450555963295,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1419,"glyph":"𓊌","x":0.3097826007977282,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1420,"glyph":"𓊌","x":0.28002069603582347,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1421,"glyph":"𓊌","x":0.2502587912739187,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1422,"glyph":"𓊌","x":0.22049688651201393,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1423,"glyph":"𓊌","x":0.19073498175010917,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1424,"glyph":"𓊌","x":0.1609730769882044,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1425,"glyph":"𓊌","x":0.13121117222629963,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1426,"glyph":"𓊌","x":0.10144926746439488,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1427,"glyph":"𓊌","x":0.07168736270249013,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1428,"glyph":"𓊌","x":0.041925457940585366,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1429,"glyph":"𓊌","x":0.012163553178680609,"y":0.3060510564334639,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1430,"glyph":"𓊌","x":0.6721014413774383,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1431,"glyph":"𓊌","x":0.7018633461393431,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1432,"glyph":"𓊌","x":0.7290372591828214,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1433,"glyph":"𓊌","x":0.7587991639447261,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1434,"glyph":"𓊌","x":0.7872670728474176,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1435,"glyph":"𓊌","x":0.8157349817501091,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1436,"glyph":"𓊌","x":0.8454968865120138,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1437,"glyph":"𓊌","x":0.8739647954147054,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1438,"glyph":"𓊌","x":0.9024327043173969,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1439,"glyph":"𓊌","x":0.9321946090793016,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1440,"glyph":"𓊌","x":0.9606625179819932,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1441,"glyph":"𓊌","x":0.9891304268846847,"y":0.29488979631147605,"scale":1.95,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1442,"glyph":"𓉸","x":0.6902173834064238,"y":0.2697769610370034,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1443,"glyph":"𓉸","x":0.3269496204278813,"y":0.2808917130700277,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1444,"glyph":"𓉸","x":0.7910628019323671,"y":0.27159066296837114,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1445,"glyph":"𓉸","x":0.8945824706694272,"y":0.2697304529480398,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1446,"glyph":"𓉸","x":0.994076356960215,"y":0.2697304529480398,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1447,"glyph":"𓉸","x":0.22429261559696342,"y":0.2808917130700277,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1448,"glyph":"𓉸","x":0.12336093857832987,"y":0.2808917130700277,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1449,"glyph":"𓉸","x":0.020703933747412008,"y":0.28461213311069034,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1450,"glyph":"𓉱","x":0.6605130018572547,"y":0.385063474208581,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1451,"glyph":"𓉱","x":0.29296065462795595,"y":0.28093822115899125,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1452,"glyph":"𓉱","x":0.3524844641517655,"y":0.3981314524398637,"scale":3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1453,"glyph":"𓉱","x":0.25707384403036576,"y":0.2808917130700277,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1454,"glyph":"𓉱","x":0.19237405106970323,"y":0.2808917130700277,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1455,"glyph":"𓉱","x":0.15614216701173222,"y":0.2808917130700277,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1456,"glyph":"𓉱","x":0.09057971014492754,"y":0.282751923090359,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1457,"glyph":"𓉱","x":0.7220496894409938,"y":0.27159066296837114,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1458,"glyph":"𓉱","x":0.7582815734989647,"y":0.2697304529480398,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1459,"glyph":"𓉱","x":0.826432022084196,"y":0.2697304529480398,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1460,"glyph":"𓉱","x":0.8618012422360248,"y":0.2697304529480398,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1461,"glyph":"𓉱","x":0.926788572281126,"y":0.27159066296837114,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1462,"glyph":"𓉱","x":0.9612951285268126,"y":0.2697304529480398,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1463,"glyph":"𓉱","x":0.05434782608695652,"y":0.282751923090359,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1464,"glyph":"𓐪","x":0.6677018633540371,"y":0.28349600709849154,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1465,"glyph":"𓐪","x":0.3498964803312629,"y":0.29019276317168424,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1466,"glyph":"𓐚","x":0.6842650103519667,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1467,"glyph":"𓐚","x":0.7163561076604554,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1468,"glyph":"𓐚","x":0.748447204968944,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1469,"glyph":"𓐚","x":0.779503105590062,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1470,"glyph":"𓐚","x":0.8115942028985507,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1471,"glyph":"𓐚","x":0.8436853002070392,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1472,"glyph":"𓐚","x":0.8757763975155278,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1473,"glyph":"𓐚","x":0.9068322981366459,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1474,"glyph":"𓐚","x":0.9378881987577639,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1475,"glyph":"𓐚","x":0.9679089026915113,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1476,"glyph":"𓐚","x":0.9958592132505175,"y":0.20313493422017898,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1477,"glyph":"𓐚","x":0.3333333333333333,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1478,"glyph":"𓐚","x":0.3012422360248447,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1479,"glyph":"𓐚","x":0.2681159420289855,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1480,"glyph":"𓐚","x":0.23602484472049687,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1481,"glyph":"𓐚","x":0.20393374741200826,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1482,"glyph":"𓐚","x":0.17080745341614906,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1483,"glyph":"𓐚","x":0.13768115942028983,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1484,"glyph":"𓐚","x":0.10559006211180123,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1485,"glyph":"𓐚","x":0.07349896480331262,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1486,"glyph":"𓐚","x":0.04037267080745341,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1487,"glyph":"𓐚","x":0.008281573498964802,"y":0.21206394231776926,"scale":1.95,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1488,"glyph":"𓐚","x":0.3095238095238095,"y":0.4352891447575264,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1489,"glyph":"𓐚","x":0.27284826974267967,"y":0.4352891447575264,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1490,"glyph":"𓐚","x":0.23587695947944393,"y":0.4352891447575264,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1491,"glyph":"𓐚","x":0.19964507542147292,"y":0.4352891447575264,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1492,"glyph":"𓐚","x":0.1634131913635019,"y":0.4352891447575264,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1493,"glyph":"𓐚","x":0.1264418811002662,"y":0.4352891447575264,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1494,"glyph":"𓐚","x":0.08947057083703046,"y":0.4352891447575264,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1495,"glyph":"𓐚","x":0.05249926057379473,"y":0.4352891447575264,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1496,"glyph":"𓐚","x":0.01626737651582372,"y":0.4352891447575264,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1497,"glyph":"𓐚","x":0.7022084346433886,"y":0.42093895317211344,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1498,"glyph":"𓐚","x":0.7377008924960948,"y":0.42093895317211344,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1499,"glyph":"𓐚","x":0.7731933503488011,"y":0.42093895317211344,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1500,"glyph":"𓐚","x":0.8086858082015075,"y":0.41934448744040087,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1501,"glyph":"𓐚","x":0.8441782660542138,"y":0.41934448744040087,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1502,"glyph":"𓐚","x":0.87967072390692,"y":0.41934448744040087,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1503,"glyph":"𓐚","x":0.9151631817596263,"y":0.41934448744040087,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1504,"glyph":"𓐚","x":0.9506556396123327,"y":0.41934448744040087,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1505,"glyph":"𓐚","x":0.986148097465039,"y":0.41934448744040087,"scale":1.55,"reveal":0.85,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1506,"glyph":"𓊹","x":0.30078215299597105,"y":0.19160163209412484,"scale":1.55,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1507,"glyph":"𓅄","x":0.32781228433402343,"y":0.29205297319201556,"scale":0.75,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1508,"glyph":"𓅄","x":0.30710835058661146,"y":0.43156872471686375,"scale":0.6,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1509,"glyph":"𓅄","x":0.6996204278812974,"y":0.4166870445542133,"scale":0.6,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1510,"glyph":"𓊹","x":0.7234874670056329,"y":0.180440371972137,"scale":1.55,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1511,"glyph":"𓊹","x":0.6892684610075914,"y":0.439009564798189,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1512,"glyph":"𓊹","x":0.3321256038647343,"y":0.4464504048795142,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1513,"glyph":"𓊬","x":0.5112721460946599,"y":0.23996709262273888,"scale":1.1,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1514,"glyph":"𓋗","x":0.5112721460946599,"y":0.2213649924194258,"scale":0.7,"reveal":1,"pickup":true,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1515,"glyph":"𓋞","x":0.6605130018572547,"y":0.39064410426957497,"scale":0.7,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1516,"glyph":"𓋞","x":0.3525419873645011,"y":0.3999451543712315,"scale":0.7,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1517,"glyph":"𓌚","x":0.6130664870194356,"y":0.21206394231776926,"scale":1.3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1518,"glyph":"𓌚","x":0.6380837402975583,"y":0.2604294028463833,"scale":1.3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1519,"glyph":"𓌚","x":0.5906372254597392,"y":0.17113932187048045,"scale":1.3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1520,"glyph":"𓌚","x":0.5707959556184693,"y":0.12649428138252902,"scale":1.3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1521,"glyph":"𓌚","x":0.44743501704013944,"y":0.12463407136219772,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1522,"glyph":"𓌚","x":0.42414309157430097,"y":0.16741890182981783,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1523,"glyph":"𓌚","x":0.3999885022023203,"y":0.20834352227710665,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1524,"glyph":"𓌚","x":0.3749712489241974,"y":0.2622896128667146,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1525,"glyph":"𓐚","x":0.6001265284273031,"y":0.13207491144352296,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1526,"glyph":"𓐚","x":0.6191051343624306,"y":0.13207491144352296,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1527,"glyph":"𓐚","x":0.6380837402975583,"y":0.13207491144352296,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1528,"glyph":"𓐚","x":0.4129284607944528,"y":0.13021470142319164,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1529,"glyph":"𓐚","x":0.3939498548593251,"y":0.13021470142319164,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1530,"glyph":"𓐚","x":0.3749712489241974,"y":0.13021470142319164,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1531,"glyph":"𓐚","x":0.579422594679891,"y":0.08929008097590284,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1532,"glyph":"𓐚","x":0.5975385367088765,"y":0.08929008097590284,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1533,"glyph":"𓐚","x":0.43794571407257565,"y":0.08742987095557153,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1534,"glyph":"𓐚","x":0.4198297720435901,"y":0.08742987095557153,"scale":1.3,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1535,"glyph":"𓊉","x":0.6587876740449704,"y":0.18602100203313093,"scale":2.2,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1536,"glyph":"𓊈","x":0.35340465127064324,"y":0.18230058199246832,"scale":2.2,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1537,"glyph":"𓋪","x":0.5112721460946599,"y":0.1655586918094865,"scale":2.2,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1538,"glyph":"𓊈","x":0.4051644856391733,"y":0.1190534413012038,"scale":1.55,"reveal":0.9,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1539,"glyph":"𓊈","x":0.6122038231132934,"y":0.1209136513215351,"scale":1.55,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1540,"glyph":"𓉶","x":0.6725902965432451,"y":0.1841607920127996,"scale":3,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1541,"glyph":"𓉶","x":0.6225557899869993,"y":0.11347281124020986,"scale":3,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1542,"glyph":"𓉶","x":0.39567518267160945,"y":0.11347281124020986,"scale":3,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1543,"glyph":"𓉶","x":0.33787670096008426,"y":0.18974142207379355,"scale":3,"reveal":0.9,"pickup":false,"mirror":true,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1544,"glyph":"𓉶","x":0.9697204889964859,"y":0.4567280680803,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1545,"glyph":"𓉶","x":0.9891304268846847,"y":0.5906631895441542,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1546,"glyph":"𓉶","x":0.010869557319467357,"y":0.5878728745136572,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1547,"glyph":"𓉶","x":0.03545547864451912,"y":0.46509901317179086,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1548,"glyph":"𓉶","x":0.8700828078370656,"y":0.4595183831107969,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1549,"glyph":"𓉶","x":0.13638715566315265,"y":0.4623086981412939,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1550,"glyph":"𓉶","x":0.5711697643588047,"y":0.8557431174413658,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1551,"glyph":"𓉶","x":0.44435817015590623,"y":0.8585334324718628,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1552,"glyph":"𓉶","x":0.7368012343381009,"y":0.8501624873803719,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1553,"glyph":"𓉶","x":0.2709627250213307,"y":0.8557431174413658,"scale":3,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1554,"glyph":"𓆃","x":0.8053830148764031,"y":0.9506138284782626,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1555,"glyph":"𓆃","x":0.20108694862381515,"y":0.9534041435087596,"scale":1.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1556,"glyph":"𓆃","x":0.10015527160518163,"y":0.529276258873221,"scale":1.4,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1557,"glyph":"𓆃","x":0.9076086877542499,"y":0.5209053137817301,"scale":1.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1558,"glyph":"𓇢","x":0.5271739051455543,"y":0.5209053137817301,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1559,"glyph":"𓇢","x":0.5556418140482458,"y":0.3813895622568819,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1560,"glyph":"𓇢","x":0.5944616898246433,"y":0.47346995826328175,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1561,"glyph":"𓇢","x":0.5349378803008338,"y":0.5767116143916694,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1562,"glyph":"𓇢","x":0.515527942412635,"y":0.7190176809470146,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1563,"glyph":"𓇢","x":0.5077639672573555,"y":0.8696946925938507,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1564,"glyph":"𓇢","x":0.45988612046646526,"y":0.5348568889342149,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1565,"glyph":"𓇢","x":0.38483436063209675,"y":0.5153246837207363,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1566,"glyph":"𓇢","x":0.32919253868592696,"y":0.529276258873221,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1567,"glyph":"𓇢","x":0.25155278713313195,"y":0.5209053137817301,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1568,"glyph":"𓇢","x":0.6928053751248503,"y":0.5264859438427241,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1569,"glyph":"𓇢","x":0.7355072384788875,"y":0.5209053137817301,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1570,"glyph":"𓇢","x":0.5090579631165688,"y":0.4483571229888091,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1571,"glyph":"𓇢","x":0.5439958513153266,"y":0.30047042637246996,"scale":0.4,"reveal":1,"pickup":false,"mirror":false,"noHitbox":true,"opaque":true,"stela":false,"items":[]},{"id":1572,"glyph":"𓇇","x":0.6332815656010408,"y":0.453937753049803,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1573,"glyph":"𓇇","x":0.40942028195714847,"y":0.3841798772873789,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1574,"glyph":"𓇇","x":0.43400620328220024,"y":0.3144220015249548,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1575,"glyph":"𓇇","x":0.4521221453111857,"y":0.2586157009150155,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1576,"glyph":"𓇇","x":0.4715320831993845,"y":0.20839003036607015,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1577,"glyph":"𓇇","x":0.5427018554561133,"y":0.20839003036607015,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1578,"glyph":"𓇇","x":0.5582298057666722,"y":0.2669866460065064,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1579,"glyph":"𓇇","x":0.577639743654871,"y":0.3200026315859487,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1580,"glyph":"𓇇","x":0.6009316691207095,"y":0.37301861716539103,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1581,"glyph":"𓇇","x":0.3796583771952437,"y":0.4595183831107969,"scale":1.1,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1582,"glyph":"𓇈","x":0.9257246297832354,"y":0.4427764929278151,"scale":1.1,"reveal":0.8,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1583,"glyph":"𓇈","x":0.8222049610461754,"y":0.4427764929278151,"scale":1.1,"reveal":0.8,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1584,"glyph":"𓇈","x":0.7497411929302333,"y":0.4399861778973182,"scale":1.1,"reveal":0.8,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1585,"glyph":"𓇈","x":0.2722567208805439,"y":0.453937753049803,"scale":1.1,"reveal":0.8,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1586,"glyph":"𓇈","x":0.20367494034224168,"y":0.453937753049803,"scale":1.1,"reveal":0.8,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1587,"glyph":"𓇈","x":0.09368529230911539,"y":0.4567280680803,"scale":1.1,"reveal":0.8,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1588,"glyph":"𓇇","x":0.16744305628427067,"y":0.839001227258384,"scale":0.8,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1589,"glyph":"𓇇","x":0.8260869486238152,"y":0.836210912227887,"scale":0.8,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1590,"glyph":"𓇇","x":0.1118012343381009,"y":0.9645654036307474,"scale":0.8,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1591,"glyph":"𓇇","x":0.8869047540068379,"y":0.9645654036307474,"scale":0.8,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1592,"glyph":"𓇣","x":0.9283126215016619,"y":0.6325179150016087,"scale":1.55,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":false,"stela":false,"items":[]},{"id":1593,"glyph":"𓋈","x":0.5711697643588047,"y":0.9282913082342868,"scale":0.8,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1594,"glyph":"𓋈","x":0.44435817015590623,"y":0.9338719382952808,"scale":0.8,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1595,"glyph":"𓋆","x":0.7368012343381009,"y":0.922710678173293,"scale":0.8,"reveal":1,"pickup":false,"mirror":false,"noHitbox":false,"opaque":true,"stela":false,"items":[]},{"id":1596,"glyph":"𓋆","x":0.2709627250213307,"y":0.9310816232647838,"scale":0.8,"reveal":1,"pickup":false,"mirror":true,"noHitbox":false,"opaque":true,"stela":false,"items":[]}];
+
+let levelObjects = MAP1_OBJECTS; // active object list for whichever map is currently loaded. Stays MAP1_OBJECTS here at module load time -- several other module-level consts computed just below (duckObj, ladyObj, riverManObj) do a ONE-TIME levelObjects.find() right at script-load time and rely on levelObjects already being MAP1_OBJECTS at that exact moment; pointing this at MAP0_OBJECTS instead silently broke all three (a real regression test catching a null riverManObj is what surfaced this). The actual switch to lvl 0 as the real starting map happens via an explicit setMap(0) call at the very end of this script, well after every one of those has already run.
 // Past the highest id already used on ANY map, computed fresh from the
 // actual baked-in layouts instead of a hand-maintained number -- that
 // number (761) had drifted stale as more objects got added over time (lvl 1
@@ -1286,9 +1585,26 @@ function saveCombatLvlObjects(){
 }
 let COMBAT_LVL_OBJECTS = loadCombatLvlObjects();
 
+// BUG FIX (2026-09-20): "the edditor now auto selects other signs when
+// trying to place a new one... far far away" -- MAP_NEG2_OBJECTS (lvl -2,
+// the temple) was missing from this list entirely (it was added in a later
+// session than every other map here and this was never updated to include
+// it), so nextObjId started from the max id across every OTHER map only
+// (1186, from MAP1_OBJECTS) while lvl -2's own real max id is 1332. Every
+// single new sign placed on lvl -2 in a fresh session got assigned
+// nextObjId++ starting at 1187 -- which is ALREADY an existing lvl -2
+// object's id (one of the entrance pillars) -- creating a genuine duplicate
+// id. Since every other `.find(o => o.id === X)` lookup in the file
+// resolves to the FIRST matching array entry, editing/selecting the "new"
+// object (appended at the end of the array) silently read/wrote the
+// OLD, original, far-away object with that same id instead -- exactly
+// "grabs other signs, far far away", and 100% reproducible on the very
+// first placement, since MAP_NEG2_OBJECTS runs ids 1187-1332 densely.
 let nextObjId = 1 + Math.max(0,
+  ...MAP0_OBJECTS.map(o=>o.id),
   ...MAP1_OBJECTS.map(o=>o.id),
   ...MAP_NEG1_OBJECTS.map(o=>o.id),
+  ...MAP_NEG2_OBJECTS.map(o=>o.id),
   ...MAP2_OBJECTS.map(o=>o.id),
   ...NEW_LVL_OBJECTS.map(o=>o.id),
   ...COMBAT_LVL_OBJECTS.map(o=>o.id)
@@ -1641,8 +1957,15 @@ const LVL2_SUN_OBJ_ID = 1070;
 // purely decorative like lvl 1/2's, added per "add sun at n5 location upper
 // right".
 const NEG2_SUN_OBJ_ID = 1259;
-// All four suns (lvl -1's guarded pickup, lvl 1's, lvl 2's, and lvl -2's
-// purely decorative ones) are marked invisible:true in their level data —
+// lvl 0's own sun disk (id 1384, N5, top-center of the pharaoh's-home
+// layout) — the docx export already placed this glyph decoratively in its
+// sky, same as every other map; per "add the sun to lvl 0, (n5) location"
+// this is that same existing N5 object, now wired into the shared ambient-
+// light system below instead of adding a brand new one from scratch.
+const LVL0_SUN_OBJ_ID = 1384;
+// All five suns (lvl -1's guarded pickup, lvl 0's, lvl 1's, lvl 2's, and
+// lvl -2's purely decorative ones) are marked invisible:true in their level
+// data —
 // the glyph itself never actually draws in normal play (see
 // drawLevelObject's own hideGlyph handling), only the glow below. Pickup,
 // hitbox and position are completely untouched by this — lvl -1's sun is
@@ -1667,7 +1990,7 @@ const NEG2_SUN_OBJ_ID = 1259;
 // 'lighter' blend right around the disk adds just enough real brightness
 // to sell it as an actual light source. Never ctx.filter (standing rule) —
 // both passes use only globalCompositeOperation + radial gradients.
-const SUN_LIGHT_OBJ_ID_BY_MAP = { '-1': SUN_OBJ_ID, '1': LVL1_SUN_OBJ_ID, '2': LVL2_SUN_OBJ_ID, '-2': NEG2_SUN_OBJ_ID };
+const SUN_LIGHT_OBJ_ID_BY_MAP = { '-1': SUN_OBJ_ID, '0': LVL0_SUN_OBJ_ID, '1': LVL1_SUN_OBJ_ID, '2': LVL2_SUN_OBJ_ID, '-2': NEG2_SUN_OBJ_ID };
 // Every one of these three gradients is fully determined by the sun's own
 // (fixed, during normal play) position and W/H -- which are themselves
 // pinned to BASE_W/BASE_H outside the editor -- so none of it actually
@@ -1679,6 +2002,24 @@ const SUN_LIGHT_OBJ_ID_BY_MAP = { '-1': SUN_OBJ_ID, '1': LVL1_SUN_OBJ_ID, '2': L
 // gradients and only rebuild them when the key they depend on actually
 // changes (moving the sun in the editor, or the sun object disappearing
 // and a different one becoming active).
+// Per-map glow-radius scale -- every map defaults to the original wide 1.05x
+// falloff, except lvl 0 which is shrunk way down (2026-09-20: moving lvl 0's
+// sun to the far upper-right corner alone still left the glow overlapping
+// roughly half of its ~186 obj.opaque:true signs -- "lets try scaling the
+// glow way down for lvl 0, to 25% perhaps" -- at 0.25x the glow now only
+// reaches a small handful of objects right in that corner). Purely a
+// smaller-radius data change, not new render logic -- same fillRect/blend
+// call count as before, just over less area, so this carries no extra
+// per-frame cost (in fact slightly less, since the clamped fill boxes in
+// drawSunLight below shrink too). Shared by drawSunLight() and
+// sunFadeAlpha() so the player's fade-near-the-sun effect always matches
+// the size of the glow actually visible around it, instead of fading out
+// somewhere the glow doesn't even reach anymore.
+const SUN_LIGHT_RADIUS_SCALE_BY_MAP = { '0': 0.25 };
+function sunLightRadiusScaleForMap(mapId){
+  const s = SUN_LIGHT_RADIUS_SCALE_BY_MAP[String(mapId)];
+  return s === undefined ? 1 : s;
+}
 let sunLightGradientCache = null; // { key, wash, radiant, core } | null
 function drawSunLight(){
   const sunObjId = SUN_LIGHT_OBJ_ID_BY_MAP[String(currentMap)];
@@ -1686,7 +2027,7 @@ function drawSunLight(){
   const sun = levelObjects.find(o => o.id === sunObjId);
   if(!sun) return;
   const cx = sun.x*W, cy = sun.y*H;
-  const R = Math.min(W,H) * 1.05; // wide, gradual falloff -- reads as ambient light filling the sky, not a localized graphic
+  const R = Math.min(W,H) * 1.05 * sunLightRadiusScaleForMap(currentMap); // wide, gradual falloff -- reads as ambient light filling the sky, not a localized graphic (see SUN_LIGHT_RADIUS_SCALE_BY_MAP for per-map overrides)
 
   const key = sunObjId+'|'+cx+'|'+cy+'|'+R;
   let g = sunLightGradientCache && sunLightGradientCache.key === key ? sunLightGradientCache : null;
@@ -1756,6 +2097,183 @@ function drawSunLight(){
   ctx.restore();
 }
 
+/* ============================================================
+   lvl -2: NPC id 1249 wants a stone -- new questNote added in the latest
+   exported lvl -2 data alongside 30 new decorated-room objects. Of those
+   new objects, exactly one (id 1337) is marked pickup:true -- everything
+   else in that same new corner (ids 1338-1340, 1350-1355) is decorative
+   architecture (pickup:false). Gardiner's own name for 1337's glyph is
+   actually O36 "wall", not O39 "stone" (that's the separate, non-pickup id
+   1340) -- but since 1337 is the ONLY takeable object anywhere in the new
+   room, it's clearly the one meant to be carried over here; flagged plainly
+   since the glyph itself doesn't literally spell "stone" the way the
+   ask-line's own written word does (that word, jnr, ends in the real O39
+   stone-block sign -- see the new EGYPT_DICTIONARY entry above this block).
+   Simple one-time delivery, same offer()/tryDropHeldItem() shape as every
+   other single-item NPC quest in this file (closest precedent: the
+   frog-keeper). */
+const NPC_1249_ID = 1249;
+const STONE_ITEM_ID = 1337;
+const NPC1249_TALK_RANGE = 0.12; // matches the common talk-range convention -- see LADY_TALK_RANGE's own comment
+const NPC1249_REWARD = 10;
+let stoneQuestDone = false;
+const npc1249Obj = MAP_NEG2_OBJECTS.find(o => o.id === NPC_1249_ID) || null;
+// Verbatim, extracted programmatically from the object's own questNote
+// field (never hand-retyped): find + one + stone, in that order.
+const NPC1249_ASK_LINE = '𓅠𓅓𓏛𓌡𓂝𓏤𓇋𓈖𓂋𓊌';
+
+// called from tryDropHeldItem() -- handing him the stone sign (id 1337)
+// while close enough completes the quest instead of just setting it down
+function tryGiveStoneToNpc1249(item){
+  if(currentMap !== -2 || stoneQuestDone || !npc1249Obj || item.kind !== 'level' || item.id !== STONE_ITEM_ID) return false;
+  const dist = Math.hypot((player.x-npc1249Obj.x)*W, (player.y-npc1249Obj.y)*H);
+  if(dist >= Math.min(W,H)*NPC1249_TALK_RANGE) return false;
+  stoneQuestDone = true;
+  score += NPC1249_REWARD;
+  return true;
+}
+
+/* ============================================================
+   lvl -2: NPC id 1356 wants a heart -- the other new NPC in the same
+   exported room, own questNote: "find for me one heart". The item it wants
+   (id 1334, pickup:true, its own separate questNote) is a genuinely new,
+   original hazard on top of being a delivery target -- see the ARCHER
+   AMBUSH section right below this quest for that half. Same delivery shape
+   as the stone quest just above. */
+const NPC_1356_ID = 1356;
+const HEART_ID = 1334;
+const NPC1356_TALK_RANGE = 0.12;
+const NPC1356_REWARD = 10;
+let heartQuestDone = false;
+const npc1356Obj = MAP_NEG2_OBJECTS.find(o => o.id === NPC_1356_ID) || null;
+// Verbatim, extracted programmatically from the object's own questNote
+// field (never hand-retyped): find + for + me + one + heart, in that order.
+const NPC1356_ASK_LINE = '𓅠𓅓𓏛𓈖𓅆𓌡𓂝𓏤𓄣𓏤';
+
+// called from tryDropHeldItem() -- handing over the heart while close
+// enough completes the quest instead of just setting it down. This also
+// naturally ends the archer ambush below the same frame (heldItem/
+// heldItem2 both stop pointing at HEART_ID the instant this returns true),
+// which is exactly the "stop if you return it" behavior asked for --
+// nothing extra needs to happen here to satisfy that.
+function tryGiveHeartToNpc1356(item){
+  if(currentMap !== -2 || heartQuestDone || !npc1356Obj || item.kind !== 'level' || item.id !== HEART_ID) return false;
+  const dist = Math.hypot((player.x-npc1356Obj.x)*W, (player.y-npc1356Obj.y)*H);
+  if(dist >= Math.min(W,H)*NPC1356_TALK_RANGE) return false;
+  heartQuestDone = true;
+  score += NPC1356_REWARD;
+  return true;
+}
+
+/* ============================================================
+   lvl -2: the heart (id 1334) triggers an archer ambush -- its own
+   questNote, verbatim: "when item is picked up, archers attack wth arrows
+   going in slow arces towards the player. they stop if you return it or
+   leave map". The temple already has 8 archer figures lining its own new
+   hallway (Gardiner A12, "soldier with bow and quiver" -- ids 1250-1257,
+   two columns of 4 flanking the corridor) that were otherwise purely
+   decorative; repurposed here as the actual shooters rather than inventing
+   new sprites from nothing. "stop if you return it or leave map" needs no
+   separate on/off flag at all -- simply re-checking "is anyone currently
+   holding the exact heart item, and are we still on lvl -2" every single
+   frame already satisfies both stop conditions for free (giving it away/
+   dropping it clears heldItem, leaving the map changes currentMap), so the
+   hazard is driven entirely off that live check rather than a sticky
+   "ambush started" flag. No existing precedent for a projectile hazard
+   anywhere else in this file, so this is an original mechanic: every
+   archer fires independently, on its own staggered timer (so all 8 don't
+   loose an identical synchronized volley), a slow arcing arrow toward
+   wherever its target actually is at the instant it fires -- a real
+   thrown trajectory, not a homing missile -- and standing near where one
+   lands costs a small score penalty (my own judgment call on the exact
+   number: 10, well below the game's larger one-time penalties like
+   disturbing the body (-30) or a live trap sign (-50), since this can
+   repeat many times over a single dash through the corridor rather than
+   being one unlucky misstep). */
+const ARCHER_IDS = [1250,1251,1252,1253,1254,1255,1256,1257];
+const ARCHER_FIRE_INTERVAL_MIN = 1.4; // seconds between one archer's own shots -- randomized per-archer below so all 8 don't fire in lockstep
+const ARCHER_FIRE_INTERVAL_MAX = 2.6;
+const ARROW_FLIGHT_SECONDS = 1.3; // "slow arces" -- noticeably slower than an instant hit, real time to react/keep moving
+const ARROW_ARC_HEIGHT = 0.10; // fraction of min(W,H) -- how high the arc rises above a straight line at its midpoint
+const ARROW_HIT_RANGE = 0.035; // fraction of min(W,H) -- how close a landing arrow needs to be to actually catch whoever it was aimed at
+const ARCHER_ARROW_GLYPH = String.fromCodePoint(0x1339a); // Gardiner V27, per direct instruction ("archers shal fire v27")
+let neg2ArcherNextFireT = {}; // archer id -> seconds until its own next shot, staggered per-archer
+let neg2ArcherArrows = []; // { fromX, fromY, toX, toY, t, targetIsP2 }
+
+// whichever player is actually carrying the heart right now, or null if
+// neither is -- this single live check is what both starts AND stops the
+// whole ambush, see the big comment above
+function heartCarrierPlayer(){
+  if(heldItem && heldItem.kind === 'level' && heldItem.id === HEART_ID) return { p: player, isP2: false };
+  if(heldItem2 && heldItem2.kind === 'level' && heldItem2.id === HEART_ID) return { p: player2, isP2: true };
+  return null;
+}
+
+function updateNeg2ArcherAmbush(dt){
+  const carrier = currentMap === -2 ? heartCarrierPlayer() : null;
+  if(!carrier){
+    // "stop if you return it or leave map" -- clear everything already in
+    // flight the instant either condition is true, rather than letting
+    // already-loosed arrows finish landing on a target no longer even at risk
+    if(neg2ArcherArrows.length) neg2ArcherArrows = [];
+    return;
+  }
+  for(const archerId of ARCHER_IDS){
+    if(neg2ArcherNextFireT[archerId] === undefined){
+      neg2ArcherNextFireT[archerId] = ARCHER_FIRE_INTERVAL_MIN + Math.random()*(ARCHER_FIRE_INTERVAL_MAX-ARCHER_FIRE_INTERVAL_MIN);
+    }
+    neg2ArcherNextFireT[archerId] -= dt;
+    if(neg2ArcherNextFireT[archerId] <= 0){
+      neg2ArcherNextFireT[archerId] = ARCHER_FIRE_INTERVAL_MIN + Math.random()*(ARCHER_FIRE_INTERVAL_MAX-ARCHER_FIRE_INTERVAL_MIN);
+      const archer = levelObjects.find(o => o.id === archerId) || MAP_NEG2_OBJECTS.find(o => o.id === archerId);
+      if(!archer) continue;
+      neg2ArcherArrows.push({ fromX: archer.x, fromY: archer.y, toX: carrier.p.x, toY: carrier.p.y, t: 0, targetIsP2: carrier.isP2 });
+    }
+  }
+  for(let i = neg2ArcherArrows.length-1; i >= 0; i--){
+    const a = neg2ArcherArrows[i];
+    a.t += dt;
+    if(a.t >= ARROW_FLIGHT_SECONDS){
+      // landed -- catches whoever it was actually aimed at (they may well
+      // have kept moving since it was loosed) only if still close enough,
+      // and only if still actually on lvl -2 (leaving mid-flight shouldn't
+      // somehow still kill you once you're already gone). A hit is a real
+      // death (gameOver, same as the crocodile/elephant hazards), not just a
+      // score penalty -- per direct instruction ("hiting player causes loss
+      // of life").
+      const target = a.targetIsP2 ? player2 : player;
+      const dist = Math.hypot((target.x-a.toX)*W, (target.y-a.toY)*H);
+      if(currentMap === -2 && dist < Math.min(W,H)*ARROW_HIT_RANGE) gameOver = true;
+      neg2ArcherArrows.splice(i, 1);
+    }
+  }
+}
+
+function neg2ArrowPos(a){
+  const frac = Math.min(1, a.t / ARROW_FLIGHT_SECONDS);
+  const x = a.fromX + (a.toX-a.fromX)*frac;
+  const straightY = a.fromY + (a.toY-a.fromY)*frac;
+  // rises above the straight line, peaks at the midpoint, back down by
+  // landing -- a real arcing throw rather than a straight-line dart
+  const y = straightY - ARROW_ARC_HEIGHT * Math.sin(Math.PI*frac);
+  return { x, y };
+}
+
+function drawNeg2ArcherArrows(){
+  if(currentMap !== -2 || !neg2ArcherArrows.length) return;
+  const size = Math.min(W,H) * 0.03;
+  ctx.save();
+  ctx.font = size.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#6b1f1f'; // dark warning red -- distinct from the ordinary ink color every other glyph draws in
+  for(const a of neg2ArcherArrows){
+    const { x, y } = neg2ArrowPos(a);
+    ctx.fillText(ARCHER_ARROW_GLYPH, x*W, y*H);
+  }
+  ctx.restore();
+}
+
 // ---------- fading into the sunlight ----------
 // Walking close enough to the sun on any of the three maps above fades a
 // player out entirely — by the time they're standing right in the light
@@ -1779,7 +2297,7 @@ function sunFadeAlpha(px, py){
   if(!sun) return 1;
   const closestX = Math.max(BOUNDS.xMin, Math.min(BOUNDS.xMax, sun.x));
   const closestY = Math.max(BOUNDS.yMin, Math.min(BOUNDS.yMax, sun.y));
-  const R = Math.min(W,H) * 1.05;
+  const R = Math.min(W,H) * 1.05 * sunLightRadiusScaleForMap(currentMap);
   const d = Math.hypot(px*W - closestX*W, py*H - closestY*H);
   const t = (d - R*SUN_FADE_END_FRAC) / (R*(SUN_FADE_START_FRAC - SUN_FADE_END_FRAC));
   return Math.max(0, Math.min(1, t));
@@ -1871,6 +2389,34 @@ function tryPickup(){
       }
       return;
     }
+    // lvl 0's exit trigger (Gardiner S6, see LVL0_EXIT_ITEM_ID) -- picking it
+    // up now plays the full S6 cutscene (see that section's own big comment,
+    // 2026-09-20) instead of jumping straight to lvl 1: the item is still
+    // removed from the world immediately, exactly as before, but the actual
+    // setMap(1)/arriveAtMap1() transition now happens at the END of that
+    // cutscene rather than right here -- matching the original deferred plan
+    // verbatim ("trigger a scene and then you spawn at lvl 1"). Checked
+    // ahead of the generic pickup:true branch below since this object also
+    // has pickup:true set (that's what makes nearestBase()/computeNpcAsks()
+    // find it at all) but must never actually end up in heldItem.
+    if(kind === 'level' && base.id === LVL0_EXIT_ITEM_ID){
+      levelObjects.splice(levelObjects.indexOf(base), 1);
+      if(selectedObjId === base.id) selectedObjId = null;
+      triggerS6Cutscene();
+      return;
+    }
+    // lvl -2's climbing dog (id 1332) has TWO separate interactions, both
+    // real, per direct instruction ("you shal also be able to pick up the
+    // dog with(space) why did you remove that?"): space picks it up as an
+    // ordinary static held item like any other pickup:true object (falls
+    // straight through to the generic branch right below, nothing special
+    // needed here) -- you can carry it around and drop it elsewhere, same
+    // as before it was ever tameable. E, separately, tames it and makes it
+    // speak (see becomeDogPet()'s own big comment, right after
+    // updateNeg2ClimberPatrol, and the offer('dog',...) call inside
+    // computeNpcAsks()) -- that check looks for it live in levelObjects, so
+    // it still works even after a normal pickup-then-drop cycle, since
+    // dropping it just puts it back in levelObjects like anything else.
     if(kind === 'level' && base.pickup){
       // the sun's guardian only ever intervenes on the ORIGINAL sun object,
       // never a golden reward or anything else that happens to reuse the
@@ -1998,6 +2544,8 @@ function tryDropHeldItem(){
   // of the two guardian statues for 100 points -- see the big GUARDIAN
   // STATUES QUEST comment above tryGiveMummyToStatues() itself
   if(tryGiveMummyToStatues(item)) return;
+  if(tryGiveStoneToNpc1249(item)) return;
+  if(tryGiveHeartToNpc1356(item)) return;
 
   // the boat only ever sits as its own base in the world — everything else
   // (the cow, any pickupable sign) is happy to stack onto whatever's nearby.
@@ -2232,13 +2780,15 @@ function updateNeg2MonkeyPatrol(dt){
   obj.x = obj._baseX + NEG2_MONKEY_STEP_DIST * frac;
 }
 
-// lvl -2's tameable climber (id 1332, 𓃡) -- "moves up and down 5 steps" per
-// the request. Climbs one discrete step at a time up to 5 steps above its
-// resting spot, holds briefly at each one (including the top and bottom),
-// then descends the same way, forever -- a stepwise climb/descend rather
-// than a smooth glide, to actually read as climbing stairs. Taming itself
-// (what it eats, whether/how it follows across the temple door back to lvl
-// -1) is intentionally NOT built yet -- see the chat for why.
+// lvl -2's tameable climber (id 1332, 𓃡 -- Gardiner E14, a dog) -- "moves
+// up and down 5 steps" per the request. Climbs one discrete step at a time
+// up to 5 steps above its resting spot, holds briefly at each one
+// (including the top and bottom), then descends the same way, forever --
+// a stepwise climb/descend rather than a smooth glide, to actually read as
+// climbing stairs. Taming (see becomeDogPet() below, right after this
+// function) is built: catching it pulls it out of MAP_NEG2_OBJECTS, which
+// is exactly what makes this patrol function stop doing anything from then
+// on -- the `if(!obj) return;` guard below already covers it.
 const NEG2_CLIMBER_ID = 1332;
 const NEG2_CLIMBER_STEP_HEIGHT = 0.035; // fraction of canvas height per step
 const NEG2_CLIMBER_NUM_STEPS = 5;
@@ -2249,9 +2799,14 @@ let neg2ClimberDir = 1; // 1 while climbing, -1 while descending -- flips at eit
 let neg2ClimberStep = 0; // 0..NEG2_CLIMBER_NUM_STEPS, the step it's currently resting on
 let neg2ClimberPhase = 'hold'; // 'hold' | 'moving'
 function updateNeg2ClimberPatrol(dt){
-  if(currentMap !== -2) return;
+  // no map gate here, same as updateGoatGraze()'s own pattern -- it just
+  // looks the dog up live in whichever map's levelObjects is currently
+  // active, so picking it up and dropping it on any other level lets it
+  // keep climbing/descending in place there too, instead of freezing the
+  // instant it leaves lvl -2. "same logic as every other animal you can
+  // tame" -- direct instruction, 2026-09-20.
   const obj = levelObjects.find(o => o.id === NEG2_CLIMBER_ID);
-  if(!obj) return; // currently held, or not on this map right now
+  if(!obj) return; // currently held, or already tamed
   if(obj._baseY === undefined) obj._baseY = obj.y;
   neg2ClimberT += dt;
   if(neg2ClimberPhase === 'hold'){
@@ -2268,6 +2823,102 @@ function updateNeg2ClimberPatrol(dt){
     neg2ClimberStep = toStep;
     neg2ClimberT = 0;
     neg2ClimberPhase = 'hold';
+  }
+}
+
+/* ---------- lvl -2's climbing dog (id 1332, 𓃡), tamed ----------
+   BUG FIX (2026-09-20): "the dog ob lvl -2 doesent move when moved out to
+   other lvls, fix that it moves on all lvls" -- before this, the climber
+   above was purely decorative ambient scenery confined to lvl -2 (drawn
+   only because it's an entry in MAP_NEG2_OBJECTS, which only ever renders
+   while currentMap === -2); the "Taming... NOT built yet" note above used
+   to mean there was no way to ever take it anywhere else at all.
+   UPDATED (2026-09-20): 'E' (talk/interact) tames it -- per direct
+   instruction: "pressing e should tame the dog, dog says(...) (english-
+   dog)". Walking up and pressing E now both tames it AND makes it speak
+   its own name (DOG_SPEECH_LINE below) via the same generic NPC-ask/
+   speech-bubble plumbing every other talkable character on this map uses
+   (see the offer('dog',...) call inside computeNpcAsks() and the taming
+   side-effect right where 'dog' wins as tryTalkToNpc()'s closest ask) --
+   which also means it automatically goes through the normal "seen 3 times
+   -> combat -> dictionary" pipeline like any other spoken line, for free.
+   'space' is a SEPARATE, ordinary pickup -- per direct correction ("you
+   shal also be able to pick up the dog with(space) why did you remove
+   that?"): it still has pickup:true in the exported level data and falls
+   straight through tryPickup()'s generic pickup:true branch like any other
+   object, no special-casing needed there at all -- you can carry it and
+   drop it elsewhere same as always, and computeNpcAsks()'s live
+   levelObjects lookup means E still tames it wherever it's actually
+   sitting, including after a normal pickup-then-drop. No feeding mechanic
+   like the cat/goat/hippo -- there's no specific food ever specified for
+   this one, and talking to it once is simplest. From then on it's a real
+   pet: pulled out of
+   MAP_NEG2_OBJECTS (which is also exactly what makes
+   updateNeg2ClimberPatrol above stop doing anything, per its own comment)
+   and walks alongside you across every map, exactly like the
+   cat/goat/hippo/south crocodile. Same shape as
+   becomeGoatPet()/updatePetGoat() elsewhere in this file, including riding
+   the boat as cargo while boarded. */
+const DOG_PET_FOLLOW_SPEED = 0.40; // fraction of canvas width/sec at full (foreground) depth, same baseline as the other pets
+const DOG_TALK_RANGE = 0.12; // same ballpark as the other lvl -2 talk ranges (guardian statues, npc1249/npc1356)
+// exact word the user provided for what the dog says once tamed -- copied
+// verbatim from their message, never hand-typed -- also the EGYPT_DICTIONARY
+// entry's own 'e' field above (kept as two separate literals rather than a
+// cross-reference, same pattern the other npc ask-line consts use)
+const DOG_SPEECH_LINE = '𓍿𓊃𓅓𓏲𓄛𓏤';
+let dogIsPet = false;
+let dogOnBoat = false; // true while riding as boat cargo instead of walking/drawn in the world
+let dogObj = null; // the tamed dog entity, once caught -- see becomeDogPet()
+
+function becomeDogPet(obj){
+  dogIsPet = true;
+  dogObj = obj;
+  registerPetFollowOrder('dog'); // claims the next follow-queue slot, in taming order — see the shared comment above updateSouthCroc's own section
+  registerPetOwner('dog'); // connects it to whichever player actually caught it — see the "who they actually follow" comment above
+  // no longer an ordinary level object living in MAP_NEG2_OBJECTS — pulled
+  // out and treated like the cat/goat from here on: a standalone entity
+  // drawn/updated every frame regardless of which map's levelObjects
+  // happens to be active
+  const idx = levelObjects.indexOf(obj);
+  if(idx !== -1) levelObjects.splice(idx, 1);
+  // caught while already sailing — get it straight onto the boat instead
+  // of waiting for the next tryAutoBoard() call
+  if(boarded) loadDogPetOntoBoat();
+}
+
+function loadDogPetOntoBoat(){
+  if(!boatOnGround || dogOnBoat) return;
+  boatOnGround.items = boatOnGround.items || [];
+  // petMarker (plus petKind, so it can't be confused with another pet's own
+  // marker if several are ever aboard at once) keeps this from being yanked
+  // off as ordinary cargo by tryPickup's generic stack-popping
+  boatOnGround.items.push({ kind:'level', glyph: dogObj.glyph, scale: dogObj.scale, mirror: dogObj.mirror, petMarker: true, petKind: 'dog' });
+  dogOnBoat = true;
+}
+
+function unloadDogPetFromBoat(){
+  if(!dogOnBoat) return;
+  if(boatOnGround && boatOnGround.items){
+    const idx = boatOnGround.items.findIndex(it => it.petMarker && it.petKind === 'dog');
+    if(idx !== -1) boatOnGround.items.splice(idx, 1);
+  }
+  dogOnBoat = false;
+  dogObj.x = player.x;
+  dogObj.y = player.y;
+}
+
+function updatePetDog(dt){
+  if(!dogIsPet || boarded) return; // rides passively while boarded — see loadDogPetOntoBoat
+  const owner = petOwnerPlayer('dog'); // whichever player actually tamed it — see the "who they actually follow" comment above
+  const dx = (owner.x-dogObj.x)*W, dy = (owner.y-dogObj.y)*H;
+  const dist = Math.hypot(dx, dy);
+  const followGap = petFollowGapPx('dog', dogObj.y);
+  if(dist > followGap){
+    const speed = Math.min(W,H) * DOG_PET_FOLLOW_SPEED * scaleForY(dogObj.y) * dt;
+    const step = Math.min(dist-followGap, speed);
+    dogObj.x += (dx/dist) * step / W;
+    dogObj.y += (dy/dist) * step / H;
+    if(dx > 0) dogObj.mirror = true; else if(dx < 0) dogObj.mirror = false;
   }
 }
 
@@ -2462,6 +3113,10 @@ const EGYPT_DICTIONARY = [
   { e:'𓅱𓇋𓀾', t:'wi', m:'mummy', segs:['w','i',null] }, // added 2026-09-15 for the guardian statues' alternate line (GUARDIAN_QUEST_LINE_2) -- G43 (w) + M17 (i) spell the plain phonetic 'wi'; A53 ("a mummy with a long curved beard, standing upright", used as an image/statue-likeness classifier) is the actual mummy determinative carrying the real meaning here, gets null. A simplified game-friendly spelling, not the real word for mummy (sAH/wt) -- same abbreviated-ideogram convention as the life/prosperity/health triad above -- flagged as a judgment call, not a confirmed attestation
   { e:'𓂋', t:'r', m:'towards', segs:['r'] }, // D21 (mouth) alone -- the extremely common uniliteral/preposition 'r', "to/toward/at" -- a confident, standard match, same footing as the 'Dd'/'n' entries above
   { e:'𓈖𓈖𓏥', t:'n', m:'us', segs:['n',null,null] }, // added 2026-09-15 for the guardian statues' alternate line -- N35 (n) carries the real 1st-person plural dependent pronoun "us"; doubled here (second N35 gets null, a redundant reinforcement rather than a distinct sound) with Z2 (plural strokes) reinforcing the plurality -- same "sn"/them treatment just above, and the same bare-'n' collision wordsInText()'s longest-match-first scan already handles (this entry's own 'n'/"to" substring is exactly that case again)
+  { e:'𓌡𓂝𓏤', t:'wa', m:'one', segs:['wa',null,null] }, // added 2026-09-20 for NPC 1249's/1356's new lines -- T21 (harpoon) is the real biliteral 'wa' ("single, one, each"), D36 (forearm) is a phonetic complement reinforcing the same 'a' sound, Z1 (single stroke) is the standard numeral-one determinative -- confirmed via a Gardiner sign-list lookup, a confident match
+  { e:'𓇋𓈖𓂋𓊌', t:'inr', m:'stone', segs:['j','n','r',null] }, // added 2026-09-20 for NPC 1249's own new line -- M17 (reed leaf, j) + N35 (water, n) + D21 (mouth, r) spell the real word 'jnr' (stone); O39 (stone-block) is the actual stone determinative reinforcing it, gets null -- confirmed via a Gardiner sign-list lookup, a confident match
+  { e:'𓅆', t:'wi', m:'me', segs:['wi'] }, // added 2026-09-20 for NPC 1356's own new line -- G7 (falcon-on-standard) is ordinarily just a generic divine/Horus determinative with no standalone phonetic reading of its own (see the 'Seth' entry above, where this exact same sign correctly gets null) -- there's no real attested word for "me" spelled with this sign alone. Using the real 1st-person dependent pronoun 'wi' ("me") here anyway, since that IS the real transliteration for what this npc's line actually means -- flagged plainly as an invented pairing between sign and sound, not an attested spelling, same spirit as the 'Seth'/'mummy' entries' own acknowledged simplifications above
+  { e:'𓍿𓊃𓅓𓏲𓄛𓏤', t:'tjezem', m:'dog', segs:['tj','s','m','w',null,null] }, // V13+O34+G17+Z7+F27+Z1 -- user-provided spelling for lvl -2's tamed dog (id 1332), said when tamed via 'E'
 ];
 const COMBAT_ELIGIBLE_SIGHTINGS = 3; // distinct speakers needed before a word is eligible to trigger the combat challenge
 const wordSeenBy = new Map(); // dictionary entry's "e" string -> Set of speaker keys ('npc','lady','goat',...) who have shown it — needs COMBAT_ELIGIBLE_SIGHTINGS DIFFERENT speakers before the word is even ELIGIBLE (see wordsLearned below — hearing it twice used to be enough on its own, now it's just the gate that lets the combat challenge start)
@@ -2776,10 +3431,10 @@ function updateCombat(dt){
   // WASD or arrows — same either-key-set convention numPlayers===1 already
   // uses on the real map.
   let dx=0, dy=0;
-  if(keys['a'] || (numPlayers===1 && keys['arrowleft'])) dx -= 1;
-  if(keys['d'] || (numPlayers===1 && keys['arrowright'])) dx += 1;
-  if(keys['w'] || (numPlayers===1 && keys['arrowup'])) dy -= 1;
-  if(keys['s'] || (numPlayers===1 && keys['arrowdown'])) dy += 1;
+  if(inputHeld('a') || (numPlayers===1 && inputHeld('arrowleft'))) dx -= 1;
+  if(inputHeld('d') || (numPlayers===1 && inputHeld('arrowright'))) dx += 1;
+  if(inputHeld('w') || (numPlayers===1 && inputHeld('arrowup'))) dy -= 1;
+  if(inputHeld('s') || (numPlayers===1 && inputHeld('arrowdown'))) dy += 1;
   if(dx && dy){ dx *= 0.7071; dy *= 0.7071; }
   combatPlayerX = Math.max(0.03, Math.min(0.97, combatPlayerX + dx*COMBAT_PLAYER_SPEED*dt));
   combatPlayerY = Math.max(0.32, Math.min(0.95, combatPlayerY + dy*COMBAT_PLAYER_SPEED*dt));
@@ -2788,10 +3443,10 @@ function updateCombat(dt){
   // big comment above this whole COMBAT section
   if(numPlayers === 2){
     let dx2=0, dy2=0;
-    if(keys['arrowleft']) dx2 -= 1;
-    if(keys['arrowright']) dx2 += 1;
-    if(keys['arrowup']) dy2 -= 1;
-    if(keys['arrowdown']) dy2 += 1;
+    if(inputHeld('arrowleft')) dx2 -= 1;
+    if(inputHeld('arrowright')) dx2 += 1;
+    if(inputHeld('arrowup')) dy2 -= 1;
+    if(inputHeld('arrowdown')) dy2 += 1;
     if(dx2 && dy2){ dx2 *= 0.7071; dy2 *= 0.7071; }
     combatPlayer2X = Math.max(0.03, Math.min(0.97, combatPlayer2X + dx2*COMBAT_PLAYER_SPEED*dt));
     combatPlayer2Y = Math.max(0.32, Math.min(0.95, combatPlayer2Y + dy2*COMBAT_PLAYER_SPEED*dt));
@@ -5008,6 +5663,167 @@ canvas.addEventListener('mousemove', e=>{
 canvas.addEventListener('mouseleave', ()=>{ mouseX = -1; mouseY = -1; });
 
 /* ============================================================
+   GAMEPAD SUPPORT -- "lets add contoller functions for steam deak and
+   android" (2026-09-20). Steam Deck's own built-in controls, and any
+   Bluetooth/USB gamepad paired to an Android device, both show up in the
+   browser as an ordinary standard-mapping Gamepad (the W3C Gamepad API) --
+   the exact same code below handles either, no per-platform branching
+   needed. Menus (start screen/character select, and the two-button
+   "restart from start / from last save" choice) are left keyboard+touch/
+   click only, as before -- both target devices already have a touchscreen
+   and those screens are already fully reachable that way (see the existing
+   mousedown/touchend handlers above), so this is scoped to actual gameplay:
+   movement, interact/talk, pick up/drop, the dictionary panel, and
+   restarting after an ordinary death.
+
+   The first connected gamepad drives player1 (left stick/d-pad = his own
+   WASD movement), a second connected gamepad drives player2 (his own arrow
+   keys) once a real 2-player game is running -- mirrors the existing
+   keyboard split exactly, per direct instruction ("both players").
+
+   Movement is wired in WITHOUT ever writing into the real `keys` object:
+   gamepadHeld below is recomputed from scratch every single frame straight
+   from navigator.getGamepads() (nothing carried over from the previous
+   frame), and every existing movement-reading call site was changed from
+   `keys['x']` to `inputHeld('x')` (keys[x] || gamepadHeld[x]) -- so a
+   disconnected/idle gamepad is exactly equivalent to before (gamepadHeld's
+   own fields are all false, inputHeld() reduces to the original keys[x]
+   check), and letting go of the stick/d-pad just stops contributing rather
+   than forcing anything "off". This also means it could never clobber the
+   pre-game load screen's own direct keys['d']/keys['arrowright'] nudge (see
+   beginGameWithLoadScreen) -- that code writes straight into `keys`, which
+   gamepadHeld never touches. */
+const GAMEPAD_STICK_DEADZONE = 0.35;
+// standard Gamepad API mapping (https://w3c.github.io/gamepad/#remapping) --
+// Steam Deck's own controls and a paired Android gamepad both report this
+// same layout, so no per-device button-index guessing is needed
+const GAMEPAD_BTN_A = 0, GAMEPAD_BTN_X = 2, GAMEPAD_BTN_Y = 3;
+const GAMEPAD_DPAD_UP = 12, GAMEPAD_DPAD_DOWN = 13, GAMEPAD_DPAD_LEFT = 14, GAMEPAD_DPAD_RIGHT = 15;
+let gamepadHeld = { w:false, a:false, s:false, d:false, arrowup:false, arrowdown:false, arrowleft:false, arrowright:false };
+// player1's/player2's own last-seen button-pressed snapshot, so button
+// actions (unlike movement) only fire once on the frame they're actually
+// pressed, the same "don't repeat every frame while held" guard the real
+// keydown handler gets for free from the browser's own keydown/keyup pair
+// (see interactHeld/spaceHeld etc above) -- null until that gamepad's own
+// first poll, so a controller that's already held down when the page loads
+// doesn't fire on its first frame either.
+let gamepadPrevButtons = [null, null];
+function gamepadAxisDir(pad){
+  const x = pad.axes[0] || 0, y = pad.axes[1] || 0;
+  return {
+    x: Math.abs(x) > GAMEPAD_STICK_DEADZONE ? x : 0,
+    y: Math.abs(y) > GAMEPAD_STICK_DEADZONE ? y : 0,
+  };
+}
+function gamepadPressed(pad, idx){
+  const b = pad.buttons[idx];
+  return !!(b && b.pressed);
+}
+// called once per real animation frame (see render()), unconditionally --
+// deliberately NOT gated on gameStarted/gameOver/editMode itself, since
+// different pieces below need to work in different states (movement only
+// matters while update(dt) is actually ticking, but the dictionary toggle
+// and the death-screen respawn both need to keep working exactly when
+// update(dt) is NOT ticking -- dictionaryOpen/gameOver are two of that
+// function's own gating conditions, see its call site).
+// "Failed to execute 'getGamepads' on 'Navigator': Access to the feature
+// "gamepad" is disallowed by permissions policy" -- hit on real hardware
+// immediately after this was first added (2026-09-20). Some browsing
+// contexts (a cross-origin iframe with no allow="gamepad", certain in-app/
+// webview browsers, some file:// origins) block the Gamepad API outright at
+// the permissions-policy level and throw a SecurityError on every single
+// call -- without this guard, that meant EVERY frame threw and got caught
+// one level up by render()'s own top-level recovery instead (still kept the
+// game running, since that catch-all exists for exactly this kind of
+// surprise, but silently eating a real error every single frame forever is
+// noisy and pointless). Treat a blocked API exactly like "no gamepads
+// connected" -- keyboard and touch are completely unaffected either way --
+// and log it once, so it's still visible in the console for debugging
+// rather than disappearing entirely.
+let gamepadUnavailableLogged = false;
+function updateGamepadInput(){
+  gamepadHeld = { w:false, a:false, s:false, d:false, arrowup:false, arrowdown:false, arrowleft:false, arrowright:false };
+  let pads = [];
+  try{
+    pads = (navigator.getGamepads && navigator.getGamepads()) || [];
+  }catch(err){
+    if(!gamepadUnavailableLogged){
+      console.warn('[gamepad] navigator.getGamepads() is blocked in this browsing context -- controller support is unavailable here, but keyboard/touch controls are unaffected.', err);
+      gamepadUnavailableLogged = true;
+    }
+    pads = [];
+  }
+  const p1 = pads[0], p2 = pads[1];
+  if(p1){
+    const dir = gamepadAxisDir(p1);
+    if(gamepadPressed(p1, GAMEPAD_DPAD_LEFT) || dir.x < 0) gamepadHeld.a = true;
+    if(gamepadPressed(p1, GAMEPAD_DPAD_RIGHT) || dir.x > 0) gamepadHeld.d = true;
+    if(gamepadPressed(p1, GAMEPAD_DPAD_UP) || dir.y < 0) gamepadHeld.w = true;
+    if(gamepadPressed(p1, GAMEPAD_DPAD_DOWN) || dir.y > 0) gamepadHeld.s = true;
+  }
+  if(p2){
+    const dir = gamepadAxisDir(p2);
+    if(gamepadPressed(p2, GAMEPAD_DPAD_LEFT) || dir.x < 0) gamepadHeld.arrowleft = true;
+    if(gamepadPressed(p2, GAMEPAD_DPAD_RIGHT) || dir.x > 0) gamepadHeld.arrowright = true;
+    if(gamepadPressed(p2, GAMEPAD_DPAD_UP) || dir.y < 0) gamepadHeld.arrowup = true;
+    if(gamepadPressed(p2, GAMEPAD_DPAD_DOWN) || dir.y > 0) gamepadHeld.arrowdown = true;
+  }
+
+  // ---- buttons -- A=interact/talk, X=pick up/drop, Y=dictionary, mirroring
+  // e/Shift, Space, and Q respectively. Edge-triggered (only on the frame a
+  // button newly becomes pressed), exactly matching the real keydown
+  // handler's own one-shot behavior for these same actions. ----
+  for(let i=0;i<2;i++){
+    const pad = pads[i];
+    if(!pad){ gamepadPrevButtons[i] = null; continue; }
+    const prev = gamepadPrevButtons[i];
+    const justA = gamepadPressed(pad, GAMEPAD_BTN_A) && !(prev && prev[GAMEPAD_BTN_A]);
+    const justX = gamepadPressed(pad, GAMEPAD_BTN_X) && !(prev && prev[GAMEPAD_BTN_X]);
+    const justY = gamepadPressed(pad, GAMEPAD_BTN_Y) && !(prev && prev[GAMEPAD_BTN_Y]);
+    // the snapshot updates unconditionally, right up front, regardless of
+    // which branch below actually reacts to it -- if this only ran on some
+    // paths (e.g. skipped while still on the start menu, or during the
+    // gameOver branch), a button held through a state change could read as
+    // "still just-pressed" the instant that other state's own check starts
+    // running, misfiring on a frame where nothing was actually newly pressed
+    gamepadPrevButtons[i] = pad.buttons.map(b => !!(b && b.pressed));
+    if(justA || justX || justY) dismissSpawnControls(); // any real controller press counts as "the first keypress", same spirit as the keydown handler's own call
+
+    if(gameStarted && gameOver){
+      // matches the real Enter-key handler exactly: only the ordinary
+      // (not-yet-over-budget) death screen responds, and only to A --
+      // the harder two-button choice screen stays deliberately click/tap-only
+      // (both target devices have a touchscreen for that), same as Enter
+      // already does nothing there.
+      if(justA && !awaitingRestartChoice) respawnAfterDeath();
+      continue;
+    }
+    if(!gameStarted || gameOver) continue; // menus stay keyboard/touch/click-only, as decided
+
+    if(justY && !editMode){ // matches the real 'q' handler's own !editMode guard
+      dictionaryOpen = !dictionaryOpen;
+      if(dictionaryOpen) dictFlashT = 0;
+    }
+    if(i === 0){
+      if(justA) onInteractPress();
+      if(justX){ if(combatActive) onCombatSpacePress(); else if(sentenceCombatActive) onSentenceCombatSpacePress(); else onSpacePress(); }
+    } else if(i === 1 && numPlayers === 2){
+      // gamepad2 is only meaningful once a real 2-player game is running --
+      // in solo mode it's inert for buttons, same as Control/'-' already are
+      // on the keyboard (its stick/d-pad still doubles as player1's own
+      // alternate movement via inputHeld('arrowleft') etc below, exactly the
+      // same dual-purpose the arrow keys already have in solo mode)
+      if(justA) onInteractPress2();
+      if(justX){ if(combatActive) onCombatSpacePress2(); else if(sentenceCombatActive) onSentenceCombatSpacePress2(); else onSpacePress2(); }
+    }
+  }
+}
+// `keys[name] || gamepadHeld[name]` at every existing movement call site --
+// see the big comment above for why this is additive-only and never writes
+// into `keys` itself.
+function inputHeld(name){ return !!(keys[name] || gamepadHeld[name]); }
+
+/* ============================================================
    LEVEL EDITOR — DOM wiring. Movement/space are frozen while
    editMode is on; the canvas instead takes plain mouse clicks to
    place or select signs, and the side panel controls their size
@@ -5032,6 +5848,7 @@ const opaqueCheck = document.getElementById('opaqueCheck');
 const stelaCheck = document.getElementById('stelaCheck');
 const questNoteInput = document.getElementById('questNoteInput');
 const levelJsonEl = document.getElementById('levelJson');
+const map0Btn = document.getElementById('map0Btn');
 const map1Btn = document.getElementById('map1Btn');
 const mapNeg1Btn = document.getElementById('mapNeg1Btn');
 const mapNeg2Btn = document.getElementById('mapNeg2Btn');
@@ -5039,6 +5856,7 @@ const map2Btn = document.getElementById('map2Btn');
 const newLvlBtn = document.getElementById('newLvlBtn');
 const combatLvlBtn = document.getElementById('combatLvlBtn');
 function updateMapButtons(){
+  map0Btn.disabled = currentMap === 0;
   map1Btn.disabled = currentMap === 1;
   mapNeg1Btn.disabled = currentMap === -1;
   mapNeg2Btn.disabled = currentMap === -2;
@@ -5324,6 +6142,7 @@ function deleteSelectedObject(){
   selectedObjId = null;
 }
 document.getElementById('deleteBtn').addEventListener('click', deleteSelectedObject);
+map0Btn.addEventListener('click', ()=> setMap(0));
 map1Btn.addEventListener('click', ()=> setMap(1));
 mapNeg1Btn.addEventListener('click', ()=> setMap(-1));
 mapNeg2Btn.addEventListener('click', ()=> setMap(-2));
@@ -7403,6 +8222,7 @@ function tryAutoBoard(){
       if(goatIsPet) loadGoatPetOntoBoat();
       if(southCrocIsPet) loadSouthCrocPetOntoBoat();
       if(hippoIsPet) loadHippoPetOntoBoat();
+      if(dogIsPet) loadDogPetOntoBoat();
       boarded = true;
       boatPilot = 1;
     } else {
@@ -7450,6 +8270,7 @@ function tryAutoBoard2(){
       if(goatIsPet) loadGoatPetOntoBoat();
       if(southCrocIsPet) loadSouthCrocPetOntoBoat();
       if(hippoIsPet) loadHippoPetOntoBoat();
+      if(dogIsPet) loadDogPetOntoBoat();
       boarded = true;
       boatPilot = 2;
     } else {
@@ -7561,20 +8382,20 @@ function updateBoardedMovement(dt){
   const speed = 0.30 * depthFactor * dt;
   let dx=0, dy=0;
   if(numPlayers === 2 && pilot === 2){
-    if(keys['arrowleft']) dx -= 1;
-    if(keys['arrowright']) dx += 1;
-    if(keys['arrowup']) dy -= 1;
-    if(keys['arrowdown']) dy += 1;
+    if(inputHeld('arrowleft')) dx -= 1;
+    if(inputHeld('arrowright')) dx += 1;
+    if(inputHeld('arrowup')) dy -= 1;
+    if(inputHeld('arrowdown')) dy += 1;
   } else if(numPlayers === 2 && pilot === 1){
-    if(keys['a']) dx -= 1;
-    if(keys['d']) dx += 1;
-    if(keys['w']) dy -= 1;
-    if(keys['s']) dy += 1;
+    if(inputHeld('a')) dx -= 1;
+    if(inputHeld('d')) dx += 1;
+    if(inputHeld('w')) dy -= 1;
+    if(inputHeld('s')) dy += 1;
   } else {
-    if(keys['arrowleft']||keys['a']) dx -= 1;
-    if(keys['arrowright']||keys['d']) dx += 1;
-    if(keys['arrowup']||keys['w']) dy -= 1;
-    if(keys['arrowdown']||keys['s']) dy += 1;
+    if(inputHeld('arrowleft')||inputHeld('a')) dx -= 1;
+    if(inputHeld('arrowright')||inputHeld('d')) dx += 1;
+    if(inputHeld('arrowup')||inputHeld('w')) dy -= 1;
+    if(inputHeld('arrowdown')||inputHeld('s')) dy += 1;
   }
   if(dx===0 && dy===0){
     // no key held — fall back to steering toward a tapped spot, if any.
@@ -7650,6 +8471,7 @@ function updateBoardedMovement(dt){
       if(goatIsPet) unloadGoatPetFromBoat();
       if(southCrocIsPet) unloadSouthCrocPetFromBoat();
       if(hippoIsPet) unloadHippoPetFromBoat();
+      if(dogIsPet) unloadDogPetFromBoat();
     };
     // these unload functions read player.x/y to place the pet at the
     // disembark spot — needs player2's own context when HE was the one
@@ -7695,6 +8517,11 @@ function update(dt){
   // doesn't touch currentMap/levelObjects the way a real map switch would.
   if(stelaActive) return;
   if(zoomTransition) return;
+  // The S6 cutscene (lvl 0's "crown challenge", see its own big comment)
+  // freezes the world exactly like stela reading/combat above -- "ther
+  // shoud be a stop in game play" was a direct, explicit part of the
+  // request, not just an implementation convenience.
+  if(s6Cutscene){ updateS6Cutscene(dt); return; }
   if(birdAttack){ updateBirdAttack(dt); return; } // frozen mid-dive until the kick lands
   if(boardCooldown > 0) boardCooldown = Math.max(0, boardCooldown - dt);
   checkTempleDoorCrossing(); // lvl -1 <-> lvl -2 walk-into-it crossing, see its own comment
@@ -7708,10 +8535,10 @@ function update(dt){
   // see isPlayerAboard()).
   if(numPlayers === 2 && !isPlayerAboard(2)){
     let dx2=0, dy2=0;
-    if(keys['arrowleft']) dx2 -= 1;
-    if(keys['arrowright']) dx2 += 1;
-    if(keys['arrowup']) dy2 -= 1;
-    if(keys['arrowdown']) dy2 += 1;
+    if(inputHeld('arrowleft')) dx2 -= 1;
+    if(inputHeld('arrowright')) dx2 += 1;
+    if(inputHeld('arrowup')) dy2 -= 1;
+    if(inputHeld('arrowdown')) dy2 += 1;
     if(dx2 > 0) facing2 = -1;
     else if(dx2 < 0) facing2 = 1;
     if(dx2 && dy2){ dx2 *= 0.7071; dy2 *= 0.7071; }
@@ -7769,15 +8596,15 @@ function update(dt){
     // one player, exactly as before.
     let dx=0, dy=0;
     if(numPlayers === 2){
-      if(keys['a']) dx -= 1;
-      if(keys['d']) dx += 1;
-      if(keys['w']) dy -= 1;
-      if(keys['s']) dy += 1;
+      if(inputHeld('a')) dx -= 1;
+      if(inputHeld('d')) dx += 1;
+      if(inputHeld('w')) dy -= 1;
+      if(inputHeld('s')) dy += 1;
     } else {
-      if(keys['arrowleft']||keys['a']) dx -= 1;
-      if(keys['arrowright']||keys['d']) dx += 1;
-      if(keys['arrowup']||keys['w']) dy -= 1;
-      if(keys['arrowdown']||keys['s']) dy += 1;
+      if(inputHeld('arrowleft')||inputHeld('a')) dx -= 1;
+      if(inputHeld('arrowright')||inputHeld('d')) dx += 1;
+      if(inputHeld('arrowup')||inputHeld('w')) dy -= 1;
+      if(inputHeld('arrowdown')||inputHeld('s')) dy += 1;
     }
     const keyHeld = dx!==0 || dy!==0;
     if(!keyHeld){
@@ -7850,6 +8677,7 @@ function update(dt){
   updatePetGoat(dt);
   updatePetSouthCroc(dt);
   updatePetHippo(dt);
+  updatePetDog(dt);
   updateHippoSway(dt);
   updateLocustHop(dt);
   updateFollowedLocustHop(dt);
@@ -7864,6 +8692,8 @@ function update(dt){
   updateSunGuardian(dt);
   updateDropGrace(dt);
   updateMummyGlow(dt);
+  updateS6Glow(dt);
+  updateNeg2ArcherAmbush(dt);
 }
 
 /* ============================================================
@@ -8886,6 +9716,8 @@ function questItemMatch(key, item){
     // both guardian statues want the exact same thing -- the mummy -- see
     // the big GUARDIAN STATUES QUEST comment above tryGiveMummyToStatues()
     case 'sethAnimal': case 'horusFalcon': return item.kind === 'level' && item.id === BODY_ID;
+    case 'npc1249': return item.kind === 'level' && item.id === STONE_ITEM_ID;
+    case 'npc1356': return item.kind === 'level' && item.id === HEART_ID;
     default: return false; // riverMan has no item of his own to ask for
   }
 }
@@ -8978,6 +9810,29 @@ function computeNpcAsks(){
   if(currentMap === -2 && horusFalconObj && !mummyQuestDone){
     offer('horusFalcon', horusFalconObj, GUARDIAN_STATUE_TALK_RANGE, GUARDIAN_QUEST_LINE_2, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(horusFalconObj.y) * horusFalconObj.scale);
   }
+  // "find one stone" / "find for me one heart" -- the two new lvl -2 npcs
+  // from the 1609 export data (ids 1249, 1356), same offer() pattern as
+  // every other quest-giver above
+  if(currentMap === -2 && npc1249Obj && !stoneQuestDone){
+    offer('npc1249', npc1249Obj, NPC1249_TALK_RANGE, NPC1249_ASK_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(npc1249Obj.y) * npc1249Obj.scale);
+  }
+  if(currentMap === -2 && npc1356Obj && !heartQuestDone){
+    offer('npc1356', npc1356Obj, NPC1356_TALK_RANGE, NPC1356_ASK_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(npc1356Obj.y) * npc1356Obj.scale);
+  }
+  // the climbing dog (id 1332) -- talk to it (E) once to tame it; see the
+  // taming side-effect right where 'dog' wins as tryTalkToNpc()'s closest
+  // ask below. No map gate, same as every other tameable animal's own
+  // ask/feed check (e.g. tryGiveFlowerToGoat's own comment: "wherever
+  // GOAT_ID currently rests on the active map") -- picking it up and
+  // dropping it anywhere else still lets you tame it there. Looked up live
+  // in levelObjects rather than a cached module var, same as
+  // npc1249Obj/npc1356Obj's own pattern, since it stops existing there the
+  // instant it's tamed (!dogIsPet already covers that, but the lookup
+  // itself also just naturally returns undefined afterward).
+  if(!dogIsPet){
+    const liveDogObj = levelObjects.find(o => o.id === NEG2_CLIMBER_ID);
+    if(liveDogObj) offer('dog', liveDogObj, DOG_TALK_RANGE, DOG_SPEECH_LINE, Math.min(W,H) * LEVEL_OBJ_BASE_MULT * scaleForY(liveDogObj.y) * liveDogObj.scale);
+  }
   return asks;
 }
 
@@ -9005,6 +9860,16 @@ function tryTalkToNpc(isP2){
   // bring-me-the-cows ask that shares the same 'npc' key.
   if(closestKey === 'npc' && cowDelivered) npcCowLineRead = true;
   if(closestKey === 'riverMan') riverManLineRead = true;
+  // talking to lvl -2's climbing dog tames it on the spot, right as it
+  // speaks its own name -- "pressing e should tame the dog, dog says(...)".
+  // asks['dog'].x/y/size/etc below were already captured as plain numbers
+  // by computeNpcAsks() this frame, so becomeDogPet() pulling the live
+  // object out of levelObjects right here doesn't affect the bubble that's
+  // about to be shown.
+  if(closestKey === 'dog' && !dogIsPet){
+    const liveDogObj = levelObjects.find(o => o.id === NEG2_CLIMBER_ID);
+    if(liveDogObj) becomeDogPet(liveDogObj);
+  }
   activeNpcSpeechKey = closestKey;
   activeNpcSpeechText = asks[closestKey].line;
   activeNpcSpeechX = asks[closestKey].x;
@@ -9547,20 +10412,20 @@ function updateSentenceCombat(dt){
   }
 
   let dx=0, dy=0;
-  if(keys['a'] || (numPlayers===1 && keys['arrowleft'])) dx -= 1;
-  if(keys['d'] || (numPlayers===1 && keys['arrowright'])) dx += 1;
-  if(keys['w'] || (numPlayers===1 && keys['arrowup'])) dy -= 1;
-  if(keys['s'] || (numPlayers===1 && keys['arrowdown'])) dy += 1;
+  if(inputHeld('a') || (numPlayers===1 && inputHeld('arrowleft'))) dx -= 1;
+  if(inputHeld('d') || (numPlayers===1 && inputHeld('arrowright'))) dx += 1;
+  if(inputHeld('w') || (numPlayers===1 && inputHeld('arrowup'))) dy -= 1;
+  if(inputHeld('s') || (numPlayers===1 && inputHeld('arrowdown'))) dy += 1;
   if(dx && dy){ dx *= 0.7071; dy *= 0.7071; }
   sentenceCombatPlayerX = Math.max(0.03, Math.min(0.97, sentenceCombatPlayerX + dx*SENTENCE_COMBAT_PLAYER_SPEED*dt));
   sentenceCombatPlayerY = Math.max(0.32, Math.min(0.95, sentenceCombatPlayerY + dy*SENTENCE_COMBAT_PLAYER_SPEED*dt));
 
   if(numPlayers === 2){
     let dx2=0, dy2=0;
-    if(keys['arrowleft']) dx2 -= 1;
-    if(keys['arrowright']) dx2 += 1;
-    if(keys['arrowup']) dy2 -= 1;
-    if(keys['arrowdown']) dy2 += 1;
+    if(inputHeld('arrowleft')) dx2 -= 1;
+    if(inputHeld('arrowright')) dx2 += 1;
+    if(inputHeld('arrowup')) dy2 -= 1;
+    if(inputHeld('arrowdown')) dy2 += 1;
     if(dx2 && dy2){ dx2 *= 0.7071; dy2 *= 0.7071; }
     sentenceCombatPlayer2X = Math.max(0.03, Math.min(0.97, sentenceCombatPlayer2X + dx2*SENTENCE_COMBAT_PLAYER_SPEED*dt));
     sentenceCombatPlayer2Y = Math.max(0.32, Math.min(0.95, sentenceCombatPlayer2Y + dy2*SENTENCE_COMBAT_PLAYER_SPEED*dt));
@@ -10253,6 +11118,7 @@ function render(time){
   // after registerWordsSeen
   updateZoomTransition(dt);
   updateCanvasZoomStyle();
+  updateGamepadInput(); // runs every frame regardless of anything else, same reasoning as the two lines above -- see its own big comment
   if(dictFlashT > 0) dictFlashT = Math.max(0, dictFlashT - dt); // runs regardless of pause state, so it never gets stuck mid-flash
   // periodic autosave while actively editing either scratch slot ("+ New
   // Lvl" or "Combat Arena") — runs regardless of editMode's own update(dt)
@@ -10316,6 +11182,7 @@ function render(time){
   drawPlantWash();
   if(!debugSunLightDisabled) drawSunLight(); // lvl -1 / lvl 1 only, see its own big comment — drawn before every depth-sorted object below so it reads as light behind the scene, not an overlay on top of it. debugSunLightDisabled is a TEMPORARY F4 test toggle, see its own comment.
   drawMummyGlow(); // lvl -2 only, once delivered — see the big GUARDIAN STATUES QUEST comment; same "drawn before every object below" reasoning as drawSunLight() above
+  drawS6Glow(); // lvl 0 only, until the S6 item's picked up — see its own big comment; same "drawn before every object below" reasoning as drawSunLight() above
   debugMark('background/washes/sun');
 
   if(fontsReady){
@@ -10378,6 +11245,10 @@ function render(time){
     // see updatePetHippo() — except while boarded, when it rides drawn as
     // boat cargo instead (drawGroundBoat/drawStackedItems already cover that)
     if(hippoIsPet && !boarded) drawList.push({ y: hippoObj.y, draw: () => drawLevelObject(hippoObj) });
+    // the dog, once tamed, follows across every map the same way — see
+    // updatePetDog() — except while boarded, when it rides drawn as boat
+    // cargo instead (drawGroundBoat/drawStackedItems already cover that)
+    if(dogIsPet && !boarded) drawList.push({ y: dogObj.y, draw: () => drawLevelObject(dogObj) });
     // the man dances in place the moment the 2nd fish is delivered, then
     // walks out to confront the elephant and back again — dynamically
     // positioned/drawn throughout, same idea as the elephant above
@@ -10720,6 +11591,8 @@ function render(time){
     drawBirdAttack();
     drawFishJump();
     drawSunGuardian();
+    drawS6Cutscene();
+    drawNeg2ArcherArrows();
     drawDebugOverlay();
     drawRiverDraft();
 
@@ -10852,6 +11725,21 @@ try{
     sessionStorage.removeItem(RESPAWN_MAP_KEY);
     const mapId = parseInt(respawnMap, 10);
     if(!Number.isNaN(mapId)) setMap(mapId);
+  } else {
+    // A genuine fresh session (no death/reload has happened yet this
+    // visit) -- lvl 0 ("pharaoh's home") is the game's new starting level.
+    // This is deliberately NOT baked into `player`'s or `currentMap`'s own
+    // initial declarations near the top of the file: several other
+    // module-level consts (duckObj, ladyObj, riverManObj) do a ONE-TIME
+    // levelObjects.find() right at script-load time and need levelObjects
+    // to still be MAP1_OBJECTS at that exact moment (see levelObjects' own
+    // initial-declaration comment) -- pointing it at MAP0_OBJECTS instead
+    // silently broke all three (a real regression test catching a null
+    // riverManObj on lvl 1 is what surfaced this). Doing the actual switch
+    // to lvl 0 down here, after every one of those has already run against
+    // MAP1_OBJECTS, gets the real starting behavior without disturbing
+    // that fragile assumption at all.
+    setMap(0);
   }
 }catch(e){}
 
