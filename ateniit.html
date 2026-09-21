@@ -23,6 +23,41 @@
   #resizeFreeze { display:none; z-index:10; pointer-events:none; }
   #resizeFreeze.visible { display:block; }
 
+  /* 2026-09-21, revised same day: "well kinda works, lets just have the
+     camra follow as now, and after thats done fade to black and titel
+     screen, hold for 3 sec and start lvl 1" -- REPLACES the previous
+     "title overlay during play" design (a translucent band shown for the
+     whole hit+travel scene -- see the S7 cutscene's own big comment further
+     down for that history and why this is a DOM overlay, not canvas-drawn:
+     short version, the camera zoom is a CSS transform on #game itself, and
+     anything drawn on that canvas gets carried along with it). The camera-
+     follow/clamp behavior itself is untouched by this revision. This
+     element no longer shows anything during the hit+travel scene at all --
+     it now IS the fade-to-black: a solid-black background whose opacity
+     transitions from 0 to 1 once travel finishes (see s7Phase()'s 'fade'
+     phase), then the title text fades in on top and holds ('title' phase)
+     for S7_TITLE_HOLD seconds before the deferred lvl0->lvl1 transition
+     finally fires. Still sized/positioned every frame to exactly match
+     #game's own on-screen box (same convention as #resizeFreeze above),
+     which is enough to black out the whole visible frame since the page
+     behind it is already black (see html,body's own background above). */
+  #s7TitleOverlay {
+    display:none; z-index:11; pointer-events:none; position:absolute; overflow:hidden;
+    background:#140e08; opacity:0;
+    transition: opacity 0.7s linear; /* keep in sync with S7_FADE_DURATION below */
+  }
+  #s7TitleOverlay.visible { display:block; }
+  #s7TitleOverlay.blackout { opacity:1; }
+  #s7TitleOverlay div {
+    position:absolute; left:0; width:100%; text-align:center;
+    font-family: system-ui, sans-serif; color:#e9e0cd;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    opacity:0; transition: opacity 0.4s ease;
+  }
+  #s7TitleOverlay div.shown { opacity:1; }
+  #s7TitleName { top:45%; font-weight:700; }
+  #s7TitleSubtitle { top:56%; font-weight:400; color:rgba(233,224,205,0.85); }
+
   /* The canvas itself never resizes just because the editor opened — it stays
      the same full width it always was, so nothing on the map gets squished
      into a different aspect ratio while you're trying to place things
@@ -134,7 +169,7 @@
 </style>
 </head>
 <body>
-<div id="gameWrap"><canvas id="game"></canvas><canvas id="resizeFreeze"></canvas></div>
+<div id="gameWrap"><canvas id="game"></canvas><canvas id="resizeFreeze"></canvas><div id="s7TitleOverlay"><div id="s7TitleName"></div><div id="s7TitleSubtitle"></div></div></div>
 <div id="startupCover"><div class="dots"><span></span><span></span><span></span></div></div><div id="preGameLoadCover" class="hidden"><div class="dots"><span></span><span></span><span></span></div></div><div id="editor" hidden>
   <h2>Level Editor</h2>
   <p class="hint">Press R to close. Click the map to place the selected sign, click a placed sign to select it, then drag it to move it. Del removes the selection.</p>
@@ -1549,11 +1584,12 @@ function updateS6Cutscene(dt){
   s6Cutscene.t += dt;
   if(s6Cutscene.t >= s6SpeechStartT() + S6_SPEECH_DURATION){
     s6Cutscene = null;
-    // the exact same transition CORRECTION 22 added right after the old
-    // immediate setMap(1) call -- now fires here instead, once the scene's
-    // actually finished, per "trigger a scene and then you spawn at lvl 1"
-    setMap(1);
-    arriveAtMap1();
+    // 2026-09-21: this used to fire setMap(1)+arriveAtMap1() directly right
+    // here -- now the S7 cutscene (the cart/stick-hit/title-card scene, see
+    // its own big comment below) plays first, and THAT scene is what fires
+    // the deferred transition once it finishes. "the sceen is after lvl 0"/
+    // "keep both, new scene after" -- S7 runs after S6, not instead of it.
+    triggerS7Cutscene();
   }
 }
 
@@ -1613,6 +1649,365 @@ function drawS6Cutscene(){
     }
   }
 }
+
+
+/* ============================================================
+   S7 CUTSCENE -- plays immediately after S6 (the soldiers/messenger scene
+   above) finishes, right where the old code used to fire setMap(1) directly;
+   that transition is now deferred to the END of this scene instead.
+   2026-09-21: "this is for the cut sceen between lv 0 and start of lvl 1.
+   the man with stick hits the head of te player laying on the ground and the
+   cart moves true the landscape in front of it, delete the boat and player
+   on it, narrow camera on the cart and titel screen (Ateniit and the quest
+   to get home." Clarified via AskUserQuestion: plays AFTER the existing
+   soldiers/messenger scene (not replacing it); the title card is just for
+   this moment, not the game's overall opening screen; "the boat and player
+   on it" turned out to live only in the user's own browser localStorage for
+   lvl 3 (NEW_LVL_ID, the "+New Lvl" scratch slot -- see
+   NEW_LVL_OBJECTS/loadNewLvlObjects() above), never shipped in this file at
+   all, so there was nothing here to delete -- that's the user's own to
+   remove in the level editor (Delete/Backspace on the selected object).
+   REVISED same day, follow-up feedback: "the cut sceen need to be on a the
+   background of the map i gave you, and the character need to move with the
+   cart and camera zoom in at start and slow the cart moving by 70%". Four
+   changes from the first version:
+   1. BACKGROUND: the scene now genuinely shows lvl 3 as its backdrop,
+      instead of drawing a duplicate copy of its cart/figures/landscape
+      objects over lvl 0's own courtyard. currentMap/levelObjects are
+      pointed at NEW_LVL_ID/NEW_LVL_OBJECTS directly (see triggerS7Cutscene
+      below) so the ordinary per-object render pipeline draws whatever the
+      user actually has on lvl 3 -- no custom drawing code needed for the
+      cart, the stick-man, the landscape, any of it any more. Deliberately
+      NOT done via the real setMap(NEW_LVL_ID): that function always wipes
+      NEW_LVL_OBJECTS to [] the instant you enter this specific slot (a
+      maker-tool convenience -- see its own big comment -- so "+New Lvl"
+      always starts blank), which would silently destroy the user's real
+      saved lvl-3 content the moment this cutscene played. Bypassing setMap
+      here means only ever READING NEW_LVL_OBJECTS, never triggering that
+      wipe; updateS7Cutscene()'s own end-of-scene block restores everything
+      before the real, un-bypassed setMap(1) fires.
+   2. MOVEMENT: "the character need to move with the cart" -- the fallen
+      player figure (id 1638) now travels WITH the cart+draft-animal group
+      instead of being left behind, and the real player sprite is hidden for
+      the duration (see the `if(!s7Cutscene)` guard around drawPlayer() in
+      render() below) so this one figure is the only visible stand-in for
+      "the player" throughout.
+   3. CAMERA: zoom now starts easing in from the very first frame (t=0, see
+      s7CameraScale()) instead of waiting for the cart to start moving, and
+      tracks the cart's own anchor position (id 1636, the draft animal) the
+      whole time -- which sits still at its own resting spot during the hit
+      pause, so the zoom is already centered on the tableau by the time the
+      cart starts moving.
+   4. PACING: "slow the cart moving by 70%" -- same math as S6's own "slow
+      down... by 60%" (CORRECTION 35): duration / (1 - 0.70) = duration *
+      3.333. S7_CART_TRAVEL_DURATION 4.5 -> 15.
+   REVISED AGAIN same day: "ok stop the camera so it dosent show the black
+   side, and display the titel over the sceen as it plays, lots of dead
+   space over the sceen to play the titel". Two more changes:
+   5. CAMERA CLAMP: with the cart's anchor tracked all the way out to
+      S7_ANCHOR_END_X=-0.25 while the zoom was still held near S7_ZOOM_MAX,
+      canvas.style.transformOrigin was landing well outside the canvas's own
+      0-100% box (a negative percentage). Scaling around a point outside an
+      element's own box shifts the whole element toward the opposite side
+      instead of just cropping it, which is what was uncovering the page's
+      black background down that side. Fixed with s7CameraOrigin() below --
+      the same anchor, clamped into [0,1] purely for the CAMERA's own
+      transform-origin -- so once the cart nears either edge the camera
+      simply holds there instead of continuing to pan past it; the cart and
+      landscape (drawn as ordinary level objects, unaffected by this clamp)
+      keep moving underneath/through the now-still frame exactly as before.
+   6. TITLE OVERLAY (revised again, same day -- see #7): the title card
+      briefly became a translucent band shown for the whole hit+travel scene
+      ("display the title over the scene as it plays"). Superseded by #7
+      below; kept only as history of why this is a DOM overlay, not
+      canvas-drawn: a first attempt drew it on the #game canvas's own 2D
+      context, and the camera-clamp fix above (#5) doesn't save it -- the
+      camera zoom is a CSS transform on the WHOLE canvas element, so title
+      text drawn near the top of that same canvas gets swept off-screen the
+      instant the zoom centers on the cart down near the bottom (confirmed
+      by an actual screenshot before this fix, not guessed). Moved to
+      #s7TitleOverlay, a plain DOM sibling of #game synced to its on-screen
+      box every frame -- completely unaffected by #game's own transform.
+   REVISED AGAIN same day: "well kinda works, lets just have the camra
+   follow as now, and after thats done fade to black and titel screen, hold
+   for 3 sec and start lvl 1". The camera-follow/clamp behavior (#5) is
+   untouched -- only the title's own timing changes:
+   7. FADE + HOLD: the title overlay no longer shows anything during the
+      hit+travel scene at all. Once travel's own duration elapses, the
+      scene fades to black (S7_FADE_DURATION, a plain opacity transition on
+      #s7TitleOverlay -- see its own CSS comment), then the title text fades
+      in on top of the now-solid-black frame and holds there for
+      S7_TITLE_HOLD ("hold for 3 sec") before the deferred lvl0->lvl1
+      transition finally fires. See s7Phase()'s 'fade'/'title' phases and
+      updateS7TitleOverlayDom()'s class-toggling below.
+   Four phases, driven purely by s7Cutscene.t like S6's own t-driven state:
+     1. HIT (0..S7_HIT_PAUSE): everything sits exactly where the user placed
+        it on lvl 3. The stick-man (id 1637) has already "struck" -- no
+        separate swing animation any more, since he's a real, normally-
+        rendered level object now rather than a custom-drawn glyph.
+     2. TRAVEL (S7_HIT_PAUSE..+S7_CART_TRAVEL_DURATION): the cart's 7 parts,
+        its draft animal, and the fallen player (S7_MOVING_IDS below) slide
+        left together as one rigid group -- each object keeps its own fixed
+        offset from the draft animal, which leads the group and anchors
+        everyone else's motion -- off past the left edge, through the
+        landscape (which itself never moves; it's the backdrop the group
+        travels through). The camera holds its zoom, tracking the moving
+        anchor (clamped, see s7CameraOrigin()), then eases back out to
+        normal right as the group exits, back to scale 1 by the time travel
+        ends -- so the fade+title beats below always play over an
+        un-zoomed frame.
+     3. FADE (+S7_FADE_DURATION): every moved object has already been
+        restored to exactly where the user's own editor left it and lvl 3
+        has stopped being the active background (both happen the instant
+        travel ends, before this phase's own timer even starts, for the
+        same "never persist mid-travel positions" reason as before) --
+        meanwhile the screen itself eases to solid black over this overlay.
+     4. TITLE (+S7_TITLE_HOLD, +however long the map-switch resize takes):
+        fully black; the title text fades in and holds. The instant
+        S7_TITLE_HOLD elapses, the exact same setMap(1)+arriveAtMap1() that
+        used to fire right after S6 finally fires here instead
+        (s7Cutscene.mapSwitched marks this) -- but the cutscene itself, and
+        #s7TitleOverlay's blackout, deliberately keep running until
+        `refreshShrinkInProgress` (declared with performRefreshShrink()
+        further down this file) goes back to false, before the overlay
+        actually clears. REVISED TWICE more same day ("well there are som
+        flashes of old map after cut sceen and titel sceen" / "nope did
+        noting to the map flash" / "still see it"): (a) clearing the
+        overlay the SAME instant setMap(1) fired (the very first version)
+        meant #s7TitleOverlay vanished before setMap()'s own
+        performRefreshShrink() call -- which every map switch triggers --
+        had finished its snapshot-and-shrink cycle, exposing #resizeFreeze's
+        stale lvl-0 snapshot (the canvas itself never stopped rendering
+        lvl 0 underneath our separate DOM overlay) for whatever was left of
+        it. (b) A first fix guessed a fixed extra delay comfortably past
+        that cycle's documented ~400ms -- verified working with this
+        sandbox's own real-wall-clock timing, but NOT on the user's actual
+        (known weak-iGPU, perf-constrained) hardware, because a plain
+        setTimeout has no guaranteed floor: its callback can fire arbitrarily
+        late on a congested main thread, so any fixed guess can still be
+        too short there even where it measured comfortable here. The actual
+        fix waits on the REAL flag that function itself flips back to false
+        the instant its cycle genuinely completes, however long that really
+        took on whatever hardware is running it -- no guessed duration
+        involved at all.
+   ============================================================ */
+const S7_HIT_PAUSE = 1.5; // seconds the tableau holds before the cart moves
+const S7_CART_TRAVEL_DURATION = 15; // 4.5 / (1-0.70) -- "slow the cart moving by 70%", same formula as S6's own "slow down...by 60%" (CORRECTION 35)
+const S7_ZOOM_IN_DURATION = 1; // seconds to ease the camera in -- now starts at t=0 ("camera zoom in at start"), not once the cart starts moving
+const S7_ZOOM_OUT_DURATION = 1; // seconds to ease back to normal right as the cart finishes its exit
+const S7_ZOOM_MAX = 1.7; // gentler than combat's ZOOM_MAX=2.4 -- this needs to hold on a moving target, not blink past it
+const S7_FADE_DURATION = 0.7; // seconds to fade the scene to black once travel finishes -- keep in sync with #s7TitleOverlay's own CSS transition-duration
+const S7_TITLE_HOLD = 3; // seconds the title screen holds, fully black, before lvl 1 starts -- "hold for 3 sec"
+const S7_TITLE_NAME = 'ATENIIT';
+const S7_TITLE_SUBTITLE = 'and the quest to get home';
+const S7_ANCHOR_ID = 1636; // the draft animal -- leads the group, every other moving id's offset is relative to this one's own original position
+const S7_MOVING_IDS = [1607, 1608, 1609, 1611, 1612, 1613, 1614, 1636, 1638]; // the cart's 7 parts + the draft animal itself + the fallen player ("the character") -- NOT the stick-man (1637) or the landscape (1641-1650), which stay put
+const S7_ANCHOR_END_X = -0.25; // well past the left edge, past every landscape piece on lvl 3
+
+let s7Cutscene = null; // { t } | null, exactly like s6Cutscene above
+let s7PrevMap = null; // whatever map was active before the cutscene borrowed lvl 3's background (lvl 0, in practice) -- restored when it ends
+let s7PrevLevelObjects = null; // ...and the matching levelObjects reference
+let s7AnchorOriginal = null; // { x, y } -- the draft animal's own real position on lvl 3, read once at trigger time
+let s7OriginalPositions = null; // { [id]: {x,y} } for every id in S7_MOVING_IDS, so they can be restored exactly once the scene ends
+let s7Offsets = null; // { [id]: {dx,dy} } -- each moving id's fixed offset from the anchor's own original position
+// the title's own DOM overlay (see #s7TitleOverlay's CSS comment + this
+// scene's own "TITLE OVERLAY" note above for why it's DOM, not canvas) --
+// text content set once, right here, from the same S7_TITLE_NAME/SUBTITLE
+// constants the old canvas version used, so there's exactly one source of
+// truth for the actual copy
+const s7TitleOverlayEl = document.getElementById('s7TitleOverlay');
+const s7TitleNameEl = document.getElementById('s7TitleName');
+const s7TitleSubtitleEl = document.getElementById('s7TitleSubtitle');
+s7TitleNameEl.textContent = S7_TITLE_NAME;
+s7TitleSubtitleEl.textContent = S7_TITLE_SUBTITLE;
+
+function triggerS7Cutscene(){
+  s7PrevMap = currentMap;
+  s7PrevLevelObjects = levelObjects;
+  currentMap = NEW_LVL_ID;
+  levelObjects = NEW_LVL_OBJECTS; // see this function's own big comment above -- reading lvl 3's real content directly, never through setMap() itself
+
+  const anchorObj = levelObjects.find(o => o.id === S7_ANCHOR_ID);
+  s7AnchorOriginal = anchorObj ? { x: anchorObj.x, y: anchorObj.y } : { x: 0, y: 0 };
+  s7OriginalPositions = {};
+  s7Offsets = {};
+  for(const id of S7_MOVING_IDS){
+    const obj = levelObjects.find(o => o.id === id);
+    if(!obj) continue;
+    s7OriginalPositions[id] = { x: obj.x, y: obj.y };
+    s7Offsets[id] = { dx: obj.x - s7AnchorOriginal.x, dy: obj.y - s7AnchorOriginal.y };
+  }
+  s7Cutscene = { t: 0 };
+}
+
+// the draft animal's own current position -- sits still at its original spot
+// through the hit pause, then eases (ease-in, t*t -- a heavy cart getting
+// going) toward S7_ANCHOR_END_X for the rest of the travel duration
+function s7CartAnchor(){
+  const travelT = Math.max(0, Math.min(1, (s7Cutscene.t - S7_HIT_PAUSE) / S7_CART_TRAVEL_DURATION));
+  const eased = travelT * travelT;
+  return {
+    x: s7AnchorOriginal.x + (S7_ANCHOR_END_X - s7AnchorOriginal.x) * eased,
+    y: s7AnchorOriginal.y,
+  };
+}
+
+// same anchor as above, but clamped into the canvas's own [0,1] box -- used
+// ONLY for the camera's transform-origin (see updateCanvasZoomStyle's own
+// s7 branch), never for the cart/props' actual drawn position, which keeps
+// moving past this range unclamped. See this file's "CAMERA CLAMP" comment
+// above for why: an origin outside [0,1] shifts the whole canvas element
+// toward the far side instead of just cropping it, uncovering the page's
+// own black background there. Clamping means the camera simply holds still
+// once the cart nears either edge, rather than panning past it.
+function s7CameraOrigin(){
+  const anchor = s7CartAnchor();
+  return { x: Math.max(0, Math.min(1, anchor.x)), y: anchor.y };
+}
+
+function updateS7Cutscene(dt){
+  if(!s7Cutscene) return;
+  s7Cutscene.t += dt;
+
+  const activeEnd = S7_HIT_PAUSE + S7_CART_TRAVEL_DURATION;
+
+  if(!s7Cutscene.restored){
+    const anchor = s7CartAnchor();
+    for(const id of S7_MOVING_IDS){
+      const obj = levelObjects.find(o => o.id === id);
+      const off = s7Offsets[id];
+      if(!obj || !off) continue;
+      obj.x = anchor.x + off.dx;
+      obj.y = anchor.y + off.dy;
+    }
+  }
+
+  if(!s7Cutscene.restored && s7Cutscene.t >= activeEnd){
+    // restore every moved object to exactly where the user's own editor
+    // left it -- this must happen before leaving lvl 3, since the real
+    // setMap() below saves NEW_LVL_OBJECTS to localStorage the instant it
+    // sees currentMap === NEW_LVL_ID (its normal leaving-a-scratch-slot
+    // behavior), and that save must never persist mid-travel positions.
+    // Fires the moment travel itself ends -- well before the fade+title
+    // phases' own timer runs out below -- since lvl 3 has no reason to
+    // keep being the active background once the fade overlay is about to
+    // cover the screen anyway.
+    for(const id of S7_MOVING_IDS){
+      const obj = levelObjects.find(o => o.id === id);
+      const orig = s7OriginalPositions[id];
+      if(obj && orig){ obj.x = orig.x; obj.y = orig.y; }
+    }
+    currentMap = s7PrevMap;
+    levelObjects = s7PrevLevelObjects;
+    s7Cutscene.restored = true;
+  }
+
+  const total = activeEnd + S7_FADE_DURATION + S7_TITLE_HOLD;
+  if(!s7Cutscene.mapSwitched && s7Cutscene.t >= total){
+    // the same deferred transition S6 used to fire directly -- now this
+    // scene, fade and held title included, is the last thing that happens
+    // before it. currentMap is already back to lvl 0 (restored above), so
+    // this behaves exactly like an ordinary, un-bypassed lvl0->lvl1
+    // transition -- WHICH MEANS it also triggers setMap()'s own
+    // performRefreshShrink() call, same as any other map switch: a fixed
+    // ~400ms cycle that snapshots the canvas's CURRENT pixels into
+    // #resizeFreeze (still showing lvl 0 -- our own overlay is a separate
+    // DOM element, not baked into the canvas, so the canvas itself never
+    // stopped rendering lvl 0 underneath it) and displays that frozen
+    // snapshot while the backing store briefly shrinks and regrows.
+    // s7Cutscene deliberately does NOT end here -- s7Cutscene.mapSwitched
+    // just marks that the switch has fired, while s7Phase() keeps
+    // returning 'title' and #s7TitleOverlay stays fully opaque on top of
+    // all of it until performRefreshShrink()'s own cycle has genuinely
+    // finished (see below). Ending the cutscene (and clearing the overlay)
+    // here instead, before that cycle finishes, is exactly what caused
+    // "flashes of old map after cut sceen and titel sceen": our own
+    // overlay would vanish first, exposing #resizeFreeze's stale lvl-0
+    // snapshot for whatever's left of its cycle.
+    setMap(1);
+    arriveAtMap1();
+    s7Cutscene.mapSwitched = true;
+  }
+  // 2026-09-21 ("nope did noting to the map flash" / "still see it"): a
+  // FIRST attempt at this fix guessed a fixed S7_REVEAL_GUARD delay past
+  // `total`, long enough to comfortably outlast performRefreshShrink()'s
+  // documented ~400ms setTimeout -- and it measurably worked in this
+  // sandbox's own real-wall-clock verification. It still didn't fix it on
+  // the user's real (known-weak-iGPU, perf-constrained -- see this file's
+  // whole performRefreshShrink() saga) hardware, because a plain
+  // setTimeout has no guaranteed floor: on a congested main thread its
+  // callback can fire arbitrarily late, so ANY fixed guess can still be too
+  // short there even though it was generous here. The actual fix is to
+  // never guess at all -- `refreshShrinkInProgress` (declared with
+  // performRefreshShrink() itself, further down this file) is the REAL,
+  // ground-truth flag that function flips back to false the instant its
+  // own cycle genuinely completes, however long that really took. Waiting
+  // on that directly means #s7TitleOverlay clears exactly when it's safe,
+  // on any hardware, with no timing guess involved at all.
+  if(s7Cutscene.mapSwitched && !refreshShrinkInProgress){
+    s7Cutscene = null;
+  }
+}
+
+// camera scale -- eases in from the very start of the scene ("camera zoom
+// in at start"), holds through the hit pause and travel, eases back out to
+// normal right as the cart finishes its exit, back to 1 for the title card
+function s7CameraScale(){
+  if(!s7Cutscene) return 1;
+  const t = s7Cutscene.t;
+  const activeEnd = S7_HIT_PAUSE + S7_CART_TRAVEL_DURATION; // zoom only matters before the title card
+  if(t >= activeEnd) return 1;
+  if(t < S7_ZOOM_IN_DURATION) return 1 + (S7_ZOOM_MAX-1) * (t/S7_ZOOM_IN_DURATION);
+  if(t > activeEnd - S7_ZOOM_OUT_DURATION){
+    const outT = (t - (activeEnd - S7_ZOOM_OUT_DURATION)) / S7_ZOOM_OUT_DURATION;
+    return S7_ZOOM_MAX - (S7_ZOOM_MAX-1) * outT;
+  }
+  return S7_ZOOM_MAX;
+}
+
+function s7Phase(){
+  if(!s7Cutscene) return null;
+  const t = s7Cutscene.t;
+  const activeEnd = S7_HIT_PAUSE + S7_CART_TRAVEL_DURATION;
+  if(t < S7_HIT_PAUSE) return 'hit';
+  if(t < activeEnd) return 'travel';
+  if(t < activeEnd + S7_FADE_DURATION) return 'fade';
+  return 'title';
+}
+
+// 2026-09-21, revised same day ("...fade to black and titel screen, hold
+// for 3 sec and start lvl 1"): this used to be drawn on the #game canvas's
+// own 2D context, then moved to this plain DOM overlay (#s7TitleOverlay, a
+// sibling of #game -- see its own CSS comment) to escape the scene's own
+// camera-zoom transform. It was originally shown throughout hit+travel;
+// now it stays hidden through both of those phases and only becomes the
+// fade-to-black + held title for the 'fade'/'title' phases at the end.
+// Called every frame from updateCanvasZoomStyle() (same call site that
+// drives the camera itself), not from render()'s own draw list, since it's
+// DOM housekeeping (sync class/position/size), not a canvas draw call.
+function updateS7TitleOverlayDom(){
+  const phase = s7Phase();
+  const blackedOut = phase === 'fade' || phase === 'title';
+  const titleShown = phase === 'title';
+
+  s7TitleOverlayEl.classList.toggle('visible', blackedOut);
+  s7TitleOverlayEl.classList.toggle('blackout', blackedOut);
+  s7TitleNameEl.classList.toggle('shown', titleShown);
+  s7TitleSubtitleEl.classList.toggle('shown', titleShown);
+
+  if(!blackedOut) return;
+  // matches #game's own on-screen box exactly, same copying convention
+  // #resizeFreeze already uses above
+  s7TitleOverlayEl.style.left = canvas.style.left;
+  s7TitleOverlayEl.style.top = canvas.style.top;
+  s7TitleOverlayEl.style.width = canvas.style.width;
+  s7TitleOverlayEl.style.height = canvas.style.height;
+  const hpx = parseFloat(canvas.style.height) || H;
+  s7TitleNameEl.style.fontSize = (hpx*0.075).toFixed(1)+'px';
+  s7TitleSubtitleEl.style.fontSize = (hpx*0.03).toFixed(1)+'px';
+}
+
+
 
 // "make the s6 glow slightly to draw the player to it" (2026-09-20) -- a
 // gentle "look here" beacon on the S6 item itself, so it stands out on lvl
@@ -3736,7 +4131,26 @@ function currentZoomScale(){
 }
 
 function updateCanvasZoomStyle(){
+  updateS7TitleOverlayDom(); // DOM housekeeping, independent of the canvas transform branches below -- see its own comment
   if(!zoomTransition){
+    // 2026-09-21: the S7 cutscene's own "narrow camera on the cart" reuses
+    // this exact canvas-transform mechanism -- a second, independent writer
+    // to canvas.style.transform, added here as its own branch rather than
+    // touching the zoomTransition math above at all. The two can never be
+    // active at the same time in practice (s7Cutscene only runs once the
+    // world's already frozen for S6/S7, well outside of combat), so there's
+    // no real conflict, but zoomTransition still takes priority if it ever
+    // somehow overlapped.
+    if(s7Cutscene){
+      // s7CameraOrigin(), not the raw s7CartAnchor() -- clamped into [0,1]
+      // so the camera holds at the edge instead of panning past it and
+      // uncovering the page's own background (see this scene's own
+      // "CAMERA CLAMP" comment above)
+      const origin = s7CameraOrigin();
+      canvas.style.transformOrigin = (origin.x*100).toFixed(2)+'% '+(origin.y*100).toFixed(2)+'%';
+      canvas.style.transform = 'scale('+s7CameraScale().toFixed(3)+')';
+      return;
+    }
     if(canvas.style.transform){ canvas.style.transform = ''; canvas.style.transformOrigin = ''; }
     return;
   }
@@ -6960,6 +7374,51 @@ function feetHitbox(sx, sy, size, r){
   return { x:sx, y:sy+size*0.40, r };
 }
 
+/* ---------- invisible walls ----------
+   A second, independent collision source alongside obstacleCircles()'s own
+   per-object ellipses below -- deliberately kept as its own separate check
+   rather than folded into that function or its list, per this project's
+   standing "don't touch obstacleCircles()'s hitbox math" rule: this ADDS a
+   new kind of obstacle (a line segment with thickness) without changing how
+   any existing object collides.
+   2026-09-21: "we need to add some invisible walls to lvl 0 marked in red
+   where i need a no go zone" -- the five-segment shape below traces the
+   red line from the user's own annotated screenshot exactly (not eyeballed):
+   a python color-mask scan took every image column containing red pixels,
+   averaged each column's row, then read the piecewise-linear corners off
+   that curve -- same technique as the s6-cutscene soldier paths (CORRECTION
+   34). It runs along the base of lvl 0's two temple pylons and up to the gap
+   between them (the raised entrance/ramp), keeping the ordinary courtyard
+   floor open on both sides while walling off the elevated threshold itself.
+   Coordinates are fractional (0..1) world-space, same convention as every
+   object's own x/y. */
+const MAP0_WALL_SEGMENTS = [
+  [0.0056, 0.4303, 0.3563, 0.4467],
+  [0.3563, 0.4467, 0.4885, 0.1145],
+  [0.4885, 0.1145, 0.5272, 0.1133],
+  [0.5272, 0.1133, 0.6650, 0.4285],
+  [0.6650, 0.4285, 0.9994, 0.4103],
+];
+const WALL_HALF_THICKNESS = 12; // px at the fixed BASE_W=1917,BASE_H=889 backing store -- thick enough to reliably stop a player moving at normal speed without puffing out far from the traced line
+function collidesWithWalls(fx, fy){
+  let segs;
+  if(currentMap === 0) segs = MAP0_WALL_SEGMENTS;
+  else return false;
+  const size = Math.min(W,H) * PLAYER_SIZE_MULT * scaleForY(fy);
+  const foot = feetHitbox(fx*W, fy*H, size, size*0.16);
+  const r = WALL_HALF_THICKNESS + foot.r; // same Minkowski-sum idea as collidesAt()'s own ellipse test -- fold the player's own foot radius into the wall's half-thickness
+  return segs.some(([x1,y1,x2,y2]) => {
+    const ax = x1*W, ay = y1*H, bx = x2*W, by = y2*H;
+    const dx = bx-ax, dy = by-ay;
+    const lenSq = dx*dx + dy*dy;
+    let t = lenSq > 0 ? ((foot.x-ax)*dx + (foot.y-ay)*dy) / lenSq : 0;
+    t = Math.max(0, Math.min(1, t));
+    const px = ax + t*dx, py = ay + t*dy;
+    const ddx = foot.x-px, ddy = foot.y-py;
+    return ddx*ddx + ddy*ddy < r*r;
+  });
+}
+
 function obstacleCircles(){
   // the npc never leaves lvl 1 — without this gate his fixed x/y would
   // still fall inside every other map's own 0..1 space too, leaving an
@@ -6998,6 +7457,7 @@ function obstacleCircles(){
   return list;
 }
 function collidesAt(fx, fy){
+  if(collidesWithWalls(fx, fy)) return true; // invisible walls -- see their own comment above; a separate check, ahead of and independent from the per-object ellipses below
   const size = Math.min(W,H) * PLAYER_SIZE_MULT * scaleForY(fy);
   const foot = feetHitbox(fx*W, fy*H, size, size*0.16);
   // Obstacles are either a plain circle ({r}, the npc/cow) or an ellipse
@@ -9419,6 +9879,7 @@ function update(dt){
   // shoud be a stop in game play" was a direct, explicit part of the
   // request, not just an implementation convenience.
   if(s6Cutscene){ updateS6Cutscene(dt); return; }
+  if(s7Cutscene){ updateS7Cutscene(dt); return; } // the cart/stick-hit/title-card scene that now plays right after S6 -- see its own big comment
   if(birdAttack){ updateBirdAttack(dt); return; } // frozen mid-dive until the kick lands
   if(boardCooldown > 0) boardCooldown = Math.max(0, boardCooldown - dt);
   checkTempleDoorCrossing(); // lvl -1 <-> lvl -2 walk-into-it crossing, see its own comment
@@ -12532,8 +12993,10 @@ function render(time){
     behindPlayer.sort((a,b)=> a.y-b.y);
     behindPlayer.forEach(e=>e.draw());
     debugMark('draw '+behindPlayer.length+' behind-player objects');
-    drawPlayer();
-    if(numPlayers === 2) drawPlayer2(); // same "never hidden by ordinary scenery" treatment as player1, right next to him in the draw order
+    if(!s7Cutscene){ // "the character need to move with the cart" -- the fallen-player level object (id 1638, in S7_MOVING_IDS) is the sole visual stand-in for the player during S7, so the real sprite is hidden for the scene's duration
+      drawPlayer();
+      if(numPlayers === 2) drawPlayer2(); // same "never hidden by ordinary scenery" treatment as player1, right next to him in the draw order
+    }
     debugMark('draw player(s)');
     occludingPlayer.sort((a,b)=> a.y-b.y);
     occludingPlayer.forEach(e=>e.draw());
@@ -12591,7 +13054,7 @@ function render(time){
     if(gameStarted) drawHearts(W/2, 14, 'center');
 
     // small corner marker so it's visible which map you're in
-    if(currentMap !== 1){
+    if(currentMap !== 1 && !s7Cutscene){ // during S7, currentMap is temporarily repointed to lvl 3 (NEW_LVL_ID) to show its background -- showing "lvl 3" here would be a confusing regression, not an actual map change
       ctx.save();
       ctx.font = '600 16px system-ui, sans-serif';
       ctx.textAlign = 'left';
