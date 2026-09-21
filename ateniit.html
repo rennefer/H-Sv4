@@ -1671,21 +1671,29 @@ function drawS6Cutscene(){
    background of the map i gave you, and the character need to move with the
    cart and camera zoom in at start and slow the cart moving by 70%". Four
    changes from the first version:
-   1. BACKGROUND: the scene now genuinely shows lvl 3 as its backdrop,
-      instead of drawing a duplicate copy of its cart/figures/landscape
-      objects over lvl 0's own courtyard. currentMap/levelObjects are
-      pointed at NEW_LVL_ID/NEW_LVL_OBJECTS directly (see triggerS7Cutscene
-      below) so the ordinary per-object render pipeline draws whatever the
-      user actually has on lvl 3 -- no custom drawing code needed for the
-      cart, the stick-man, the landscape, any of it any more. Deliberately
-      NOT done via the real setMap(NEW_LVL_ID): that function always wipes
-      NEW_LVL_OBJECTS to [] the instant you enter this specific slot (a
-      maker-tool convenience -- see its own big comment -- so "+New Lvl"
-      always starts blank), which would silently destroy the user's real
-      saved lvl-3 content the moment this cutscene played. Bypassing setMap
-      here means only ever READING NEW_LVL_OBJECTS, never triggering that
-      wipe; updateS7Cutscene()'s own end-of-scene block restores everything
-      before the real, un-bypassed setMap(1) fires.
+   1. BACKGROUND: the scene shows its own dedicated backdrop -- originally
+      (this paragraph, historical) that meant genuinely borrowing lvl 3's
+      live content: currentMap/levelObjects pointed at NEW_LVL_ID/
+      NEW_LVL_OBJECTS directly (see triggerS7Cutscene below) so the ordinary
+      per-object render pipeline drew whatever the user had on lvl 3 -- no
+      custom drawing code needed for the cart, the stick-man, the landscape,
+      any of it. Deliberately NOT done via the real setMap(NEW_LVL_ID): that
+      function always wipes NEW_LVL_OBJECTS to [] the instant you enter this
+      specific slot (a maker-tool convenience -- see its own big comment --
+      so "+New Lvl" always starts blank), which would silently destroy the
+      user's real saved lvl-3 content the moment this cutscene played.
+      Bypassing setMap meant only ever READING NEW_LVL_OBJECTS, never
+      triggering that wipe; updateS7Cutscene()'s own end-of-scene block
+      restored everything before the real, un-bypassed setMap(1) fired.
+      SUPERSEDED by CORRECTION 63 below -- this whole design turned out to
+      be fragile in exactly the way it looks: "+New Lvl" is a general-
+      purpose scratch slot, explicitly meant to be reused/wiped for building
+      OTHER levels, and the user did exactly that (for lvl -2), silently
+      overwriting this scene's content. The ordinary per-object render
+      pipeline still draws it with no custom drawing code, but the source is
+      now S7_SCENE_OBJECTS, a dedicated constant baked permanently into this
+      file -- see that constant's own comment, right where it's declared,
+      for the full story and the fix.
    2. MOVEMENT: "the character need to move with the cart" -- the fallen
       player figure (id 1638) now travels WITH the cart+draft-animal group
       instead of being left behind, and the real player sprite is hidden for
@@ -1790,6 +1798,15 @@ function drawS6Cutscene(){
         the instant its cycle genuinely completes, however long that really
         took on whatever hardware is running it -- no guessed duration
         involved at all.
+   CORRECTION 63, same day ("ok for some reason the animation cut sceen
+   zooms in on lvl -2 on the live version. no animation, just a zoom inn on
+   top lefth on lv -2"): a completely separate bug from the flash above,
+   found in the BACKGROUND item (#1) rather than the TITLE phase (#4) --
+   see S7_SCENE_OBJECTS's own comment, right where it's declared just below,
+   for the full root cause and fix. Short version: the scene's backdrop data
+   moved out of the mutable, general-purpose "+New Lvl" scratch slot and
+   into a dedicated constant baked permanently into this file, so it can
+   never again be silently overwritten by unrelated editor work.
    ============================================================ */
 const S7_HIT_PAUSE = 1.5; // seconds the tableau holds before the cart moves
 const S7_CART_TRAVEL_DURATION = 15; // 4.5 / (1-0.70) -- "slow the cart moving by 70%", same formula as S6's own "slow down...by 60%" (CORRECTION 35)
@@ -1803,6 +1820,34 @@ const S7_TITLE_SUBTITLE = 'and the quest to get home';
 const S7_ANCHOR_ID = 1636; // the draft animal -- leads the group, every other moving id's offset is relative to this one's own original position
 const S7_MOVING_IDS = [1607, 1608, 1609, 1611, 1612, 1613, 1614, 1636, 1638]; // the cart's 7 parts + the draft animal itself + the fallen player ("the character") -- NOT the stick-man (1637) or the landscape (1641-1650), which stay put
 const S7_ANCHOR_END_X = -0.25; // well past the left edge, past every landscape piece on lvl 3
+
+// CORRECTION 63 (2026-09-21, "ok for some reason the animation cut sceen
+// zooms in on lvl -2 on the live version. no animation, just a zoom inn on
+// top lefth on lv -2"): the scene used to read its whole backdrop straight
+// out of NEW_LVL_OBJECTS (the "+New Lvl" scratch slot's live, real content --
+// see triggerS7Cutscene's old comment, superseded below). That slot is
+// explicitly a general-purpose maker tool, never meant to hold anything
+// permanent -- its own setMap() entry always wipes it blank on purpose (see
+// setMap's "always load completly blank lvl" comment) precisely so it CAN be
+// reused for building any other level. The user evidently did reuse it at
+// some point (for lvl -2 work), silently overwriting the cart/stickman/
+// landscape paste this cutscene depended on -- S7_ANCHOR_ID (1636) then
+// wasn't found, s7AnchorOriginal defaulted to {x:0,y:0}, and none of
+// S7_MOVING_IDS existed either, exactly matching the reported symptom: a
+// static zoom on the top-left corner of whatever WAS in that slot (lvl -2's
+// own content), no cart motion at all. Fixed by baking the already-verified
+// 20-object scene permanently into this file instead, as its own dedicated
+// constant below -- the exact same shape/values the user originally pasted
+// into "+New Lvl" for this purpose -- so the cutscene never again depends on
+// mutable, general-purpose editor state that's explicitly designed to get
+// reused/wiped. S7_SCENE_MAP_ID is a brand new sentinel value (never a real
+// map, never NEW_LVL_ID) so this no longer aliases the scratch slot at all --
+// every currentMap-keyed check elsewhere in this file is an exact match
+// against a specific real id, so a novel id like this still no-ops all of
+// them exactly as NEW_LVL_ID happened to before, without any of the actual
+// coupling.
+const S7_SCENE_MAP_ID = 99;
+const S7_SCENE_OBJECTS = [{"id":1607,"glyph":"𓋫","x":0.8676310419338629,"y":0.8661776400683224,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":1608,"glyph":"𓋪","x":0.8445511419338629,"y":0.9017266400683225,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":1609,"glyph":"𓋪","x":0.8918101419338629,"y":0.8993567400683224,"scale":1,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":1611,"glyph":"𓏱","x":0.8291644419338629,"y":0.8424783400683225,"scale":0.8,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":1612,"glyph":"𓌅","x":0.8390558419338628,"y":0.8164090400683225,"scale":0.5,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1613,"glyph":"𓏴","x":0.8918101419338629,"y":0.8803972400683224,"scale":0.5,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1614,"glyph":"𓏴","x":0.8445511419338629,"y":0.8803972400683224,"scale":0.5,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1636,"glyph":"𓃵","x":0.7972921419338629,"y":0.8424783400683225,"scale":1.15,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":1637,"glyph":"𓀝","x":0.9302767113276291,"y":0.8448482739668234,"scale":1.35,"pickup":false,"mirror":false,"noHitbox":true,"items":[]},{"id":1638,"glyph":"𓀒","x":0.8676310877289128,"y":0.8329986044743186,"scale":1.1,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1641,"glyph":"𓇉","x":0.6467228360913343,"y":0.7903397943013013,"scale":1.1,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1642,"glyph":"𓇉","x":0.5719877061840938,"y":0.8898770180383416,"scale":1.1,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1643,"glyph":"𓇉","x":0.4466964589866611,"y":0.7784901248087965,"scale":1.1,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1644,"glyph":"𓇉","x":0.32690044192946677,"y":0.6671032315792513,"scale":1.1,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1645,"glyph":"𓇉","x":0.21040156295641535,"y":0.8353685383728195,"scale":1.1,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1646,"glyph":"𓇚","x":0.5533039237072837,"y":0.7026522400567657,"scale":1.1,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1647,"glyph":"𓆐","x":0.4060317559488979,"y":0.9088364892263493,"scale":0.55,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1648,"glyph":"𓆐","x":0.02905896832855234,"y":0.9159462909218522,"scale":0.55,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1649,"glyph":"𓆐","x":0.10489314426384051,"y":0.7073921078537677,"scale":0.55,"pickup":false,"mirror":true,"noHitbox":true,"items":[]},{"id":1650,"glyph":"𓆐","x":0.9698423683373447,"y":0.7358313146357792,"scale":0.55,"pickup":false,"mirror":true,"noHitbox":true,"items":[]}];
 
 let s7Cutscene = null; // { t } | null, exactly like s6Cutscene above
 let s7PrevMap = null; // whatever map was active before the cutscene borrowed lvl 3's background (lvl 0, in practice) -- restored when it ends
@@ -1824,8 +1869,8 @@ s7TitleSubtitleEl.textContent = S7_TITLE_SUBTITLE;
 function triggerS7Cutscene(){
   s7PrevMap = currentMap;
   s7PrevLevelObjects = levelObjects;
-  currentMap = NEW_LVL_ID;
-  levelObjects = NEW_LVL_OBJECTS; // see this function's own big comment above -- reading lvl 3's real content directly, never through setMap() itself
+  currentMap = S7_SCENE_MAP_ID;
+  levelObjects = S7_SCENE_OBJECTS; // CORRECTION 63: baked permanently into this file (see S7_SCENE_OBJECTS's own comment above) -- no longer the "+New Lvl" scratch slot
 
   const anchorObj = levelObjects.find(o => o.id === S7_ANCHOR_ID);
   s7AnchorOriginal = anchorObj ? { x: anchorObj.x, y: anchorObj.y } : { x: 0, y: 0 };
@@ -1883,15 +1928,16 @@ function updateS7Cutscene(dt){
   }
 
   if(!s7Cutscene.restored && s7Cutscene.t >= activeEnd){
-    // restore every moved object to exactly where the user's own editor
-    // left it -- this must happen before leaving lvl 3, since the real
-    // setMap() below saves NEW_LVL_OBJECTS to localStorage the instant it
-    // sees currentMap === NEW_LVL_ID (its normal leaving-a-scratch-slot
-    // behavior), and that save must never persist mid-travel positions.
-    // Fires the moment travel itself ends -- well before the fade+title
-    // phases' own timer runs out below -- since lvl 3 has no reason to
-    // keep being the active background once the fade overlay is about to
-    // cover the screen anyway.
+    // CORRECTION 63: restore every moved object back to S7_SCENE_OBJECTS's
+    // own baked-in original position -- no longer a "must happen before
+    // leaving lvl 3" localStorage-save race (S7_SCENE_MAP_ID is a dedicated,
+    // never-saved constant, not the "+New Lvl" scratch slot any more), just
+    // ordinary idempotent bookkeeping so a second S7 playthrough in the same
+    // session starts from the exact same tableau as the first. Fires the
+    // moment travel itself ends -- well before the fade+title phases' own
+    // timer runs out below -- since the scene has no reason to keep being
+    // the active background once the fade overlay is about to cover the
+    // screen anyway.
     for(const id of S7_MOVING_IDS){
       const obj = levelObjects.find(o => o.id === id);
       const orig = s7OriginalPositions[id];
@@ -4188,9 +4234,68 @@ function updateCanvasZoomStyle(){
    real on-foot movement block), since there's no player2 to claim arrows. */
 const COMBAT_DURATION = 30; // seconds on the clock — 20 → 30, per request (more time to find/place the letters)
 const COMBAT_PICKUP_RANGE = 0.08; // fraction of min(W,H) — 0.05 raised to 0.08 (per request) so players don't have to stand right on top of a letter tile to grab it; still comfortably under half the 0.12 minimum spacing between spawned tiles, so nearby tiles never both come into range at once
-const COMBAT_SLOT_DROP_RANGE = 0.08; // fraction of min(W,H) — kept matching COMBAT_PICKUP_RANGE (see above): how close you actually have to stand to a specific empty slot to drop a letter into it (see combatSpaceAction's own comment — placing no longer accepts any matching slot anywhere in the word, only the one you're physically at)
 const COMBAT_SLOT_GAP = 8; // px between adjacent MDC slot boxes (and between clustered slots under one biliteral/triliteral sign) — shared by drawCombatScene's own slot boxes and computeCombatWordLayout()'s hit-test geometry, so the two can never drift out of sync
 function combatSlotSize(){ return Math.min(W,H)*0.075; } // side length of one MDC slot box, in px — same sharing reason as COMBAT_SLOT_GAP above
+function combatPlayerSize(){ return Math.min(W,H)*0.09; } // side length of the player's own on-screen glyph, in px — factored out of drawCombatScene() so combatSpaceAction() can build the exact same bounding box the character is actually drawn with (see CORRECTION's own comment on that function)
+
+// CORRECTION (2026-09-21, six rounds, all on the SAME single scenario --
+// confirmed by the user: "thats the only problem area, no other situastions
+// causes problems, just boxes over eachother like this, so the character
+// stands over more then one in wertical direction"). Only sentenceCombatSpaceAction()'s
+// stacked "say"/"to" column is affected -- every other slot layout in this
+// file is one box per column/row, so a character can only ever be over ONE
+// box at a time there and the ordinary max-overlap logic already works.
+// History: (1) box symmetric around (px,py); (2) "exclude the bottom 20%,
+// feetHitbox()-style" on a GUESSED nominal box; (3) measure the glyph's own
+// REAL ink via ctx.measureText, but over the character's WHOLE body -- "it
+// is reading the characters foot as the placment not the body"; (4)
+// narrowed to a tiny head-point -- overcorrected per the immediate
+// follow-up, "no body decides, but not feet"; (5) real ink again, excluding
+// the bottom 20% OF THAT GLYPH'S OWN ink span -- still reads wrong on a
+// character whose own body/descent is proportionally much taller than its
+// head/ascent (a walking figure with a small head and long legs): 20% of a
+// LARGE descent can still be a large absolute distance, comfortably
+// reaching straight through the real 14px gap into the box below. A
+// percentage of THIS GLYPH's own ink can never be a reliable "feet" cutoff
+// across every character/pose the user might select, since the ratio of
+// head to body varies per glyph. Fixed by tying the cutoff to a FIXED,
+// glyph-independent distance instead: feetHitbox() elsewhere in this file
+// already defines exactly where "feet" begin in absolute terms -- its own
+// foot zone (center 0.40*size below the character's own center, radius
+// 0.16*size) starts at 0.24*size below center, regardless of any
+// individual glyph's own proportions. This footprint's bottom edge is
+// capped at that exact same boundary (cy + fontPx*0.24) -- using the real
+// ink's own bottom (cy+descent) whenever it doesn't reach that far (a
+// short/compact glyph, unaffected), but never letting it extend past that
+// fixed line for a glyph whose real ink goes further, however tall its own
+// body happens to be. Horizontal (left/right) still uses the full real ink
+// width -- not implicated in the "more than one in the vertical direction"
+// report. Retains CORRECTION 67's safety fallback (degenerate ink --
+// confirmed this sandbox always hits that, see the standing sandbox
+// caveat -- fontPx*0.5 ascent/descent, so the same fixed 0.24*fontPx cap
+// applies there too) so placement can never silently collapse to
+// permanently impossible. Shared by both combatSpaceAction() (single-letter
+// combat's one shared row never triggers this -- it doesn't use top/bottom
+// at all) and sentenceCombatSpaceAction() (where it matters).
+function playerGlyphFootprint(pxFrac, pyFrac, glyphChar, fontPx){
+  ctx.font = fontPx.toFixed(1)+'px '+HIERO_FONT;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const m = ctx.measureText(glyphChar);
+  let left = m.actualBoundingBoxLeft, right = m.actualBoundingBoxRight;
+  let ascent = m.actualBoundingBoxAscent, descent = m.actualBoundingBoxDescent;
+  const minSpan = fontPx * 0.15;
+  if(!(left+right > minSpan) || !(ascent+descent > minSpan)){
+    // no usable ink measured (font not loaded, or a genuinely blank glyph)
+    // -- fall back to the plain nominal glyph square rather than a footprint
+    // that can never overlap anything
+    left = right = fontPx*0.5;
+    ascent = descent = fontPx*0.5;
+  }
+  const cx = pxFrac*W, cy = pyFrac*H;
+  const feetStartY = cy + fontPx*0.24; // where feetHitbox() itself already considers "feet" to begin, in fixed nominal-size terms -- same magnitude everywhere else in this file, independent of this specific glyph's own proportions
+  return { left: cx-left, right: cx+right, top: cy-ascent, bottom: Math.min(cy+descent, feetStartY) };
+}
 const COMBAT_PLAYER_SPEED = 0.35; // fraction of canvas width/sec, flat — no depth/water in this arena
 const COMBAT_SLOT_Y = 0.30; // fraction of H where the word + its empty MDC slots sit — 0.24 → 0.27 → 0.30 (moved down still further, per request) so the word clears the timer/crocodile animations creeping across the top of the arena; the scattered letter tiles' own spawn range was pushed down to match (see its own comment below)
 const COMBAT_CROC_Y = 0.08; // fraction of H — same row the goat sits on, across the top
@@ -4378,35 +4483,58 @@ function combatSpaceAction(isP2){
   if(py > COMBAT_SLOT_Y + 0.12) return; // has to actually walk up to the word to place a letter
   if(combatSlots.every(s => s !== null)) return; // shouldn't happen — winning already clears combatActive
   const dropped = combatLetters[heldIdx];
-  // Placement is now position-accurate: only the specific empty slot you're
+  // Placement is position-accurate: only the specific empty slot you're
   // actually standing at can take the letter. It used to be that ANY empty
   // slot anywhere in the word whose required letter matched what you were
   // holding would accept it, regardless of where you physically dropped it
   // (e.g. holding 'm' and dropping while standing at the 'H' slot would
   // silently jump the letter over into the distant 'm' slot) — reported as
   // a bug ("the character m landed in the m boks when dropt in H box") and
-  // removed. Find the nearest still-empty slot to where you're standing;
-  // if none is close enough, nothing happens (you haven't walked up to an
-  // empty slot yet); if one is close enough, dropping there only succeeds
-  // if it's actually the slot that wants this letter — otherwise it's a
-  // wrong placement (immediate loss), even though the letter you're
-  // holding would have been correct somewhere else in the word.
+  // removed.
+  //
+  // CORRECTION (2026-09-21, "we need to check what box most of the player is
+  // over for right placment... right now it only check closest to hitbox,
+  // but thats not that obivus for the player"): "the specific slot you're
+  // standing at" used to mean "whichever slot's own CENTER POINT is nearest
+  // your own x position" -- a single point-to-point distance that ignores
+  // how wide either box actually is. That's misleading wherever slot boxes
+  // aren't all the same width and evenly spaced (a biliteral/triliteral
+  // MDC cluster is wider than a plain single-letter slot — see
+  // computeCombatWordLayout's own comment), since the nearest CENTER isn't
+  // necessarily the box your character's own on-screen glyph is actually
+  // covering the most of. Fixed by comparing real bounding-box overlap
+  // instead of center-to-point distance: build the player's own on-screen
+  // footprint (playerGlyphFootprint() below -- the glyph's own real drawn
+  // ink, see that function's own comment) and, of every still-empty slot,
+  // pick whichever one that footprint overlaps the MOST along x (every slot
+  // in this single row shares the same y, so x-overlap is the whole story).
+  // If the footprint doesn't overlap any empty slot at all, nothing happens
+  // (you haven't walked up far enough yet) — replacing the old separate
+  // fixed COMBAT_SLOT_DROP_RANGE reach constant entirely, since "some real
+  // overlap exists" is itself the reach check now. Dropping at the box
+  // you're standing over only succeeds if it's actually the slot that wants
+  // this letter — otherwise it's a wrong placement (immediate loss), even
+  // though the letter you're holding would have been correct somewhere else
+  // in the word.
   const { slotCenters } = computeCombatWordLayout();
-  const pxPix = px*W;
-  let nearestIdx = -1, nearestDist = Infinity;
+  const slotSize = combatSlotSize();
+  const heldGlyphChar = isP2 ? player2Glyph : currentGlyph();
+  const footprint = playerGlyphFootprint(px, py, heldGlyphChar, combatPlayerSize());
+  const playerLeft = footprint.left, playerRight = footprint.right;
+  let bestIdx = -1, bestOverlap = 0;
   for(let i=0;i<combatSlots.length;i++){
     if(combatSlots[i] !== null) continue;
-    const d = Math.abs(slotCenters[i] - pxPix);
-    if(d < nearestDist){ nearestDist = d; nearestIdx = i; }
+    const slotLeft = slotCenters[i] - slotSize/2, slotRight = slotCenters[i] + slotSize/2;
+    const overlap = Math.min(playerRight, slotRight) - Math.max(playerLeft, slotLeft);
+    if(overlap > bestOverlap){ bestOverlap = overlap; bestIdx = i; }
   }
-  const dropRangePx = Math.min(W,H)*COMBAT_SLOT_DROP_RANGE;
-  if(nearestIdx === -1 || nearestDist > dropRangePx) return; // not actually standing at any empty slot yet
-  if(combatWord.t[nearestIdx] === dropped.char){
-    combatSlots[nearestIdx] = dropped.char;
+  if(bestIdx === -1) return; // not actually standing over any empty slot yet
+  if(combatWord.t[bestIdx] === dropped.char){
+    combatSlots[bestIdx] = dropped.char;
     if(isP2) combatHeldIdx2 = null; else combatHeldIdx = null;
     if(combatSlots.every(s => s !== null)) resolveCombat(true);
   } else {
-    resolveCombat(false); // wrong letter for the specific slot you're standing at — immediate "wrong", not just a miss
+    resolveCombat(false); // wrong letter for the specific slot you're standing over — immediate "wrong", not just a miss
   }
 }
 
@@ -4482,6 +4610,23 @@ function combatWordVerticalMetrics(){
 // equal-count fallback > centered fallback) — see the `segs` doc comment
 // above EGYPT_DICTIONARY for the full explanation of why a simple glyph
 // count can't always be trusted.
+//
+// CORRECTION (2026-09-21, "no box can overlay each other eider, right now
+// some boxes lay over each other"): the per-glyph branches used to center
+// each glyph's own MDC slot (or slot CLUSTER, for a biliteral/triliteral
+// sign) under that glyph's own rendered pixel center, spaced purely by the
+// glyphs' own natural text widths. A cluster's real width (n*slotSize +
+// (n-1)*slotGap, easily wider than a single glyph's own narrow ink) was
+// never accounted for when spacing glyphs apart in the first place — so a
+// wide 2-or-3-letter cluster sitting under a narrow glyph could genuinely
+// overflow into a neighboring glyph's own cluster (or even, for a plain
+// single-letter slot under a narrow glyph, into its own next-door plain
+// slot), overlapping it. Fixed by reserving each glyph position its own
+// slice of horizontal space equal to whichever is WIDER, its natural glyph
+// width or its own slot/cluster's real width — laid out left to right with
+// a slotGap between consecutive slices — then centering both the glyph and
+// its slot(s) within that same reserved slice. Two adjacent slices can
+// still sit right next to each other, but never inside each other.
 function computeCombatWordLayout(){
   const slotSize = combatSlotSize(), slotGap = COMBAT_SLOT_GAP;
   const wordChars = [...combatWord.e];
@@ -4493,25 +4638,38 @@ function computeCombatWordLayout(){
 
   let glyphCenters = null, slotCenters;
   if(perGlyph){
-    const widths = wordChars.map(c => ctx.measureText(c).width);
-    const totalW = widths.reduce((a,b)=>a+b, 0);
+    const glyphWidths = wordChars.map(c => ctx.measureText(c).width);
+    // how many MDC slots (if any) sit clustered under each glyph position --
+    // 0 for a determinative/phonetic-complement glyph with segs (no slot at
+    // all), 1 for every glyph in the no-segs equal-count fallback (exactly
+    // one slot per glyph, same as slotCenters=glyphCenters used to assume),
+    // seg.length otherwise (a biliteral/triliteral cluster)
+    const slotCounts = wordChars.map((_, i) => segs ? (segs[i] ? segs[i].length : 0) : 1);
+    const clusterWidths = slotCounts.map(n => n>0 ? n*slotSize + (n-1)*slotGap : 0);
+    // each position reserves whichever is wider -- its own glyph ink or its
+    // own slot cluster -- so neither a wide cluster under a narrow glyph nor
+    // a plain slot wider than its own glyph can ever spill into a neighbor
+    const reservedWidths = glyphWidths.map((w,i) => Math.max(w, clusterWidths[i]));
+    const totalW = reservedWidths.reduce((a,b)=>a+b, 0) + (reservedWidths.length-1)*slotGap;
     let cursor = W/2 - totalW/2;
     glyphCenters = [];
+    const reservedCenters = [];
     for(let i=0;i<wordChars.length;i++){
-      glyphCenters.push(cursor + widths[i]/2);
-      cursor += widths[i];
+      const center = cursor + reservedWidths[i]/2;
+      glyphCenters.push(center);
+      reservedCenters.push(center);
+      cursor += reservedWidths[i] + slotGap;
     }
     if(segs){
       slotCenters = [];
       for(let i=0;i<wordChars.length;i++){
-        const seg = segs[i];
-        if(!seg) continue; // determinative/phonetic complement -- no MDC slot beneath it at all
-        // this one glyph covers seg.length consecutive MDC letters -- cluster
-        // that many slots centered under the glyph's own x (almost always
-        // just 1, but a biliteral/triliteral sign needs more than one)
-        const n = seg.length;
-        const clusterW = n*slotSize + (n-1)*slotGap;
-        const sx0 = glyphCenters[i] - clusterW/2 + slotSize/2;
+        const n = slotCounts[i];
+        if(n === 0) continue; // determinative/phonetic complement -- no MDC slot beneath it at all
+        // this one glyph covers n consecutive MDC letters -- cluster that
+        // many slots centered within the glyph's own reserved slice (almost
+        // always just 1, but a biliteral/triliteral sign needs more than one)
+        const clusterW = clusterWidths[i];
+        const sx0 = reservedCenters[i] - clusterW/2 + slotSize/2;
         for(let k=0;k<n;k++) slotCenters.push(sx0 + k*(slotSize+slotGap));
       }
     } else {
@@ -4692,7 +4850,7 @@ function drawCombatScene(){
   }
 
   // the player(s), and whichever letter (if any) each is currently carrying
-  const pSize = Math.min(W,H)*0.09;
+  const pSize = combatPlayerSize(); // shared with combatSpaceAction()'s own placement hit-test -- see that function's comment
   ctx.font = pSize.toFixed(1)+'px '+HIERO_FONT;
   ctx.fillStyle = '#2a1f14';
   ctx.fillText(currentGlyph(), combatPlayerX*W, combatPlayerY*H);
@@ -11669,7 +11827,20 @@ function drawMummyGlow(){
    file. And: "completing removes the (!) over the npcs head" -- see
    drawGodNpcMarker()'s own sentenceCombatWordsLearned check: once this
    challenge has been won for the first time, the floating (!) stops
-   drawing for good. */
+   drawing for good.
+
+   FOURTH CORRECTION (2026-09-21): "the fix need to be on the god statue as
+   well, well he need the charactrer chaek the most" -- follow-up to the
+   single-letter combat's own box-overlap placement fix (see
+   combatSpaceAction()'s comment), applied here too. sentenceCombatSpaceAction()'s
+   drop hit-test was nearest-slot-CENTER-within-a-flat-radius (this file's
+   THIRD CORRECTION above only fixed that distance from x-only to full 2D --
+   it never addressed the "nearest center, not most overlap" shape of the
+   check itself). Rewritten to compare the player's own on-screen footprint
+   (new sentenceCombatPlayerSize()) against each empty slot's real box and
+   pick whichever it overlaps the most by AREA (2D, since "say"/"to" stack
+   at different y's here) -- SENTENCE_COMBAT_SLOT_DROP_RANGE removed
+   entirely, same reasoning as COMBAT_SLOT_DROP_RANGE's own removal. */
 const GOD_LINE_WORDS = [
   { e: "𓊢𓂝𓈖", m: "and then" },
   { e: "𓁣𓅆", m: "seth" },
@@ -11725,7 +11896,6 @@ let sentenceCombatWordsLearned = false;
 
 const SENTENCE_COMBAT_DURATION = 45; // seconds -- more words to place than the single-word challenge's letters, so a bit more time than COMBAT_DURATION
 const SENTENCE_COMBAT_PICKUP_RANGE = 0.14; // fraction of min(W,H) -- widened from 0.08 (which matched COMBAT_PICKUP_RANGE, sized for the single-letter challenge's much smaller tiles) after the user reported "the boxes are so large but the place and pickup spot is extremely tight" -- kept at 0.14 even after sentenceCombatSlotSize shrank back down (see its own comment) since a generous pickup/drop radius was the whole point of that fix
-const SENTENCE_COMBAT_SLOT_DROP_RANGE = 0.14; // fraction of min(W,H) -- same widening, same reason, for dropping into a slot
 const SENTENCE_COMBAT_SLOT_GAP = 14; // px between adjacent word-slot boxes -- wider than COMBAT_SLOT_GAP since these hold whole multi-glyph words, not single MDC letters
 const SENTENCE_COMBAT_PLAYER_SPEED = 0.35; // fraction of canvas width/sec -- same as COMBAT_PLAYER_SPEED
 const SENTENCE_COMBAT_SLOT_Y = 0.44; // fraction of H -- moved down from 0.30 (COMBAT_SLOT_Y's own row) to make room above for the restored crocodile/goat timer row + numeric timer + the manuscript photo, all stacked above this row now (see SENTENCE_COMBAT_CROC_Y/TIMER_Y/IMAGE_Y below) -- the say/to shared column still ends up in roughly the same place relative to the tile-scatter zone as before, since sentenceCombatSlotSize shrank by about the same amount this moved down by
@@ -11873,31 +12043,83 @@ function sentenceCombatSpaceAction(isP2){
   }
   if(sentenceCombatSlots.every(s => s !== null)) return; // shouldn't happen -- winning already clears sentenceCombatActive
   const held = sentenceCombatTiles[heldIdx];
-  // Full 2D nearest-empty-slot search against each slot's own {x,y} (pixel
-  // space) -- replaced the old "x-only distance + a separate fixed-y-band
-  // guard" check, which broke once "to" got its own y below "say" (see
-  // computeSentenceCombatLayout's own big comment): a single shared
-  // vertical band can't cover two slots stacked at different heights. This
-  // also directly fixes the user's "extremely tight... hard to place"
-  // report for every OTHER slot too, since a real 2D radius around the
-  // slot's own center is far more forgiving near a big square box's
-  // corners than an x-only check plus an unrelated y-band ever was.
-  const pxPix = px*W, pyPix = py*H;
+  // FOURTH CORRECTION (2026-09-21, "the fix need to be on the god statue as
+  // well, well he need the charactrer chaek the most"): this used to be a
+  // full 2D nearest-empty-slot-CENTER search, accepted within a flat
+  // SENTENCE_COMBAT_SLOT_DROP_RANGE radius -- the same "closest point,
+  // arbitrary threshold" shape combatSpaceAction() had before its own
+  // correction (see that function's own comment for the full reasoning),
+  // just already upgraded from x-only to full 2D here for a different
+  // reason (the THIRD CORRECTION above). It has the identical flaw: the
+  // nearest slot CENTER isn't necessarily the box the player's own on-
+  // screen glyph is actually covering the most of, and a flat radius can
+  // still fire from within the real gap between two boxes. Fixed the same
+  // way -- build the player's own on-screen footprint and pick whichever
+  // still-empty slot box it overlaps THE MOST. Slots here aren't all on one
+  // shared row like the single-letter game's are ("say"/"to" stack in one
+  // column -- see computeSentenceCombatLayout's own comment), so this
+  // compares real 2D overlap AREA (both x-overlap and y-overlap have to be
+  // positive) rather than just an x-span, and requires genuine overlap to
+  // exist at all -- replacing SENTENCE_COMBAT_SLOT_DROP_RANGE entirely, same
+  // as COMBAT_SLOT_DROP_RANGE was replaced there.
+  //
+  // FIFTH/SIXTH CORRECTION (2026-09-21, "it still checking closest to
+  // character feet(hitbox) it need to check the top part of the character
+  // not the hitbox" / "NOPE YOUR STILL USING THE HITBOX AS A REFFERENCE not
+  // the character image"): the footprint above was a naive box symmetric
+  // around (px,py) for both axes, then a fixed "top 80%" geometric guess --
+  // both still just approximations of the glyph's shape, not the glyph's
+  // real shape, which is what was actually being asked for both times. Now
+  // uses playerGlyphFootprint()'s own measured ink (see its big comment for
+  // the fallback that keeps this safe if the font somehow isn't loaded).
+  // Matters most here since "say"/"to" stack only SENTENCE_COMBAT_SLOT_GAP
+  // apart -- the real character image's own actual vertical extent is what
+  // should decide which of the two you're really standing over.
+  // CORRECTION (2026-09-21, "its stillonly checking the hit box of the
+  // feet" -- the actual bug, found only now, six rounds after it was first
+  // introduced back in the FOURTH CORRECTION above): slotPositions[i].y is
+  // NOT the slot box's own CENTER -- computeSentenceCombatLayout() builds it
+  // as the box's TOP edge (slot 4/"to" is placed at `slotsY + slotSize +
+  // slotGap`, which only makes sense as a top-to-top stacking distance), and
+  // drawSentenceCombatScene() draws each box the same way: `roundedRectPath
+  // (sx, pos.y, slotSize, slotSize, 4)` with pos.y as roundedRectPath's own
+  // top-left y parameter, not a center. This hit-test, ever since it was
+  // first written, treated that same pos.y as a CENTER instead (slotTop =
+  // sy-slotSize/2), putting its own idea of each box a full slotSize/2
+  // (~44px) higher than where the box is actually drawn on screen. Every
+  // round since (5th/6th, the playerGlyphFootprint tuning above) was
+  // reshaping the PLAYER's side of this comparison while the SLOT's own
+  // side was silently off by an amount no footprint tweak could ever have
+  // fixed -- explaining why the exact same "wrong box" symptom survived
+  // every one of those changes untouched. Fixed by matching the real drawn
+  // geometry: top = sy, bottom = sy+slotSize (x was never wrong -- draw's
+  // own `sx = pos.x - slotSize/2` already agrees this hit-test's slotLeft/
+  // slotRight was using pos.x as a center correctly all along).
+  const heldGlyphChar = isP2 ? player2Glyph : currentGlyph();
+  const footprint = playerGlyphFootprint(px, py, heldGlyphChar, sentenceCombatPlayerSize());
+  const playerLeft = footprint.left, playerRight = footprint.right;
+  const playerTop = footprint.top, playerBottom = footprint.bottom;
   const { slotPositions } = computeSentenceCombatLayout();
-  let nearestIdx = -1, nearestDist = Infinity;
+  const slotSize = sentenceCombatSlotSize();
+  let bestIdx = -1, bestArea = 0;
   for(let i=0;i<sentenceCombatSlots.length;i++){
     if(sentenceCombatSlots[i] !== null) continue;
-    const d = Math.hypot(slotPositions[i].x - pxPix, slotPositions[i].y - pyPix);
-    if(d < nearestDist){ nearestDist = d; nearestIdx = i; }
+    const sx = slotPositions[i].x, sy = slotPositions[i].y;
+    const slotLeft = sx-slotSize/2, slotRight = sx+slotSize/2;
+    const slotTop = sy, slotBottom = sy+slotSize; // sy is the box's TOP edge, matching drawSentenceCombatScene()'s own roundedRectPath(sx, pos.y, slotSize, slotSize, 4) -- NOT a center
+    const overlapX = Math.min(playerRight, slotRight) - Math.max(playerLeft, slotLeft);
+    const overlapY = Math.min(playerBottom, slotBottom) - Math.max(playerTop, slotTop);
+    if(overlapX <= 0 || overlapY <= 0) continue; // no real overlap with this box at all
+    const area = overlapX*overlapY;
+    if(area > bestArea){ bestArea = area; bestIdx = i; }
   }
-  const dropRangePx = Math.min(W,H)*SENTENCE_COMBAT_SLOT_DROP_RANGE;
-  if(nearestIdx === -1 || nearestDist > dropRangePx) return; // not actually standing close enough to any empty slot yet
-  if(held.idx === nearestIdx){
-    sentenceCombatSlots[nearestIdx] = held.e;
+  if(bestIdx === -1) return; // not actually standing over any empty slot yet
+  if(held.idx === bestIdx){
+    sentenceCombatSlots[bestIdx] = held.e;
     if(isP2) sentenceHeldIdx2 = null; else sentenceHeldIdx = null;
     if(sentenceCombatSlots.every(s => s !== null)) resolveSentenceCombat(true);
   } else {
-    resolveSentenceCombat(false); // wrong word for the specific slot you're standing at -- immediate "wrong", same rule combatSpaceAction() uses
+    resolveSentenceCombat(false); // wrong word for the specific slot you're standing over -- immediate "wrong", same rule combatSpaceAction() uses
   }
 }
 
@@ -11937,6 +12159,14 @@ function actuallyExitSentenceCombat(){
 // letter combat's own combatSlotSize() (0.075) since these still hold
 // multi-sign stacked words, just not oversized for it anymore.
 function sentenceCombatSlotSize(){ return Math.min(W,H)*0.10; }
+// side length of the player's own on-screen glyph in the god-statue puzzle,
+// in px -- factored out of drawSentenceCombatScene()'s own previously-inline
+// pSize literal (same 0.09 value combatPlayerSize() uses for the single-
+// letter challenge) so sentenceCombatSpaceAction() can build the exact same
+// bounding box the character is actually drawn with -- see FOURTH CORRECTION
+// on GOD_LINE_WORDS above for why this needs to match combatPlayerSize()'s
+// own reasoning here too.
+function sentenceCombatPlayerSize(){ return Math.min(W,H)*0.09; }
 
 // Pure geometry for the six word-slots' own centers -- factored out of
 // drawSentenceCombatScene() itself so sentenceCombatSpaceAction() can hit-
@@ -12205,7 +12435,7 @@ function drawSentenceCombatScene(){
   }
 
   // the player(s), and whichever word (if any) each is currently carrying
-  const pSize = Math.min(W,H)*0.09;
+  const pSize = sentenceCombatPlayerSize(); // shared with sentenceCombatSpaceAction()'s own placement hit-test -- see that function's comment
   ctx.font = pSize.toFixed(1)+'px '+HIERO_FONT;
   ctx.fillStyle = '#2a1f14';
   ctx.textAlign = 'center';
@@ -13054,7 +13284,7 @@ function render(time){
     if(gameStarted) drawHearts(W/2, 14, 'center');
 
     // small corner marker so it's visible which map you're in
-    if(currentMap !== 1 && !s7Cutscene){ // during S7, currentMap is temporarily repointed to lvl 3 (NEW_LVL_ID) to show its background -- showing "lvl 3" here would be a confusing regression, not an actual map change
+    if(currentMap !== 1 && !s7Cutscene){ // during S7, currentMap is temporarily repointed to S7_SCENE_MAP_ID to show its dedicated backdrop -- showing that sentinel id here would be a confusing regression, not an actual map change
       ctx.save();
       ctx.font = '600 16px system-ui, sans-serif';
       ctx.textAlign = 'left';
