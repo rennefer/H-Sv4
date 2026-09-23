@@ -605,6 +605,10 @@ footer{
   background:rgba(244,236,214,.88); padding:2px 8px; border-radius:10px; color:var(--ink-soft);
   pointer-events:none;
 }
+.line-credit{
+  font-size:10.5px; color:var(--ink-faint); font-style:italic;
+  margin-top:6px; line-height:1.4;
+}
 .ref.ref-link{
   cursor:pointer;
   text-decoration:underline dotted;
@@ -1171,7 +1175,7 @@ function createLineTab(data, ids, photoAlt){
           <div class="layer">${layerInner}</div>
           <span class="gs-caption">Transcription</span>
           <div class="gs-handle"></div>
-        </div>`;
+        </div><div class="line-credit">(special thanks to 𓄛)</div>`;
       } else {
         const note = w.combined
           ? `<div class="pending">Photograph and hieroglyphic transcription are combined in the image above; these lines are not yet split individually.</div>`
