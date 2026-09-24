@@ -826,6 +826,15 @@ document.getElementById('signSearch').addEventListener('input', ()=>{
 renderCats();
 renderSigns();
 
+/* deep-link support: ?sign=N (used by the manuscript pages' pop-out search) */
+(function(){
+  var params = new URLSearchParams(location.search);
+  var num = params.get('sign');
+  if(!num) return;
+  var sign = SIGNS.find(function(s){ return s.number === num.toLowerCase(); });
+  if(sign) openSignModal(sign);
+})();
+
 </script>
 
 <script>
