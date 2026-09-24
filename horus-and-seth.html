@@ -43,16 +43,6 @@ body{
   min-height:100vh;
   position:relative;
 }
-body::before{
-  content:"";
-  position:fixed; inset:0;
-  pointer-events:none;
-  opacity:.5;
-  background-image:
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 68px),
-    repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 68px);
-  z-index:0;
-}
 .wrap{position:relative; z-index:1; max-width:1100px; margin:0 auto; padding:0 22px 90px;}
 
 /* ---------- header ---------- */
@@ -991,6 +981,10 @@ body.wc-hidden .word-crops{
 .paleo-row .paleo-ph{ font-family:'EB Garamond',serif; font-style:italic; font-size:13.5px; color:var(--ink-on-dark); }
 .paleo-row .paleo-ref{ font-size:10.5px; color:var(--ink-faint-on-dark); font-family:'Inter',sans-serif; margin-top:2px; }
 .paleo-credit{ font-size:10.5px; color:var(--ink-faint-on-dark); font-style:italic; text-align:center; padding-top:6px; border-top:1px solid var(--panel-line); margin-top:2px; }
+.paleo-more-link{ font-size:11.5px; text-align:center; margin:2px 0 0; }
+.paleo-more-link a{ color:var(--rubric-deep); text-decoration:none; display:inline-flex; align-items:center; gap:5px; justify-content:center; }
+.paleo-more-link a:hover{ text-decoration:underline; }
+.paleo-more-link .pml-glyph{ font-family:'Noto Sans Egyptian Hieroglyphs'; font-size:13px; }
 .paleo-zoom{
   position:fixed; z-index:80; display:none;
   background:var(--panel-bg); border:1px solid var(--panel-line); border-radius:6px;
@@ -1053,6 +1047,7 @@ body.wc-hidden .word-crops{
   <p class="search-hint" id="paleoHint">Start typing to search hieratic sign forms by reading, Gardiner code, or Möller number.</p>
   <div class="search-results" id="paleoResults"></div>
   <p class="paleo-credit">Sign forms &amp; images: Hieratische Paläographie DB project (Möller), via IIIF.</p>
+  <p class="paleo-more-link"><a href="https://aku-pal.uni-mainz.de/graphemes" target="_blank" rel="noopener"><span class="pml-glyph">𓅧</span>Also browse sign forms on AKU-PAL (Mainz) ↗</a></p>
 </aside>
 <div class="paleo-zoom" id="paleoZoom" aria-hidden="true">
   <img id="paleoZoomImg" src="" alt="">
