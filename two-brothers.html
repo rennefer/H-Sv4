@@ -892,6 +892,16 @@ nav.tabs a::before{
   var SGLOSS = JSON.parse(document.getElementById('search-glossary-data').textContent);
 
   function normIJ(s){ return (s||'').toLowerCase().replace(/j/g,'i').replace(/w/g,'u'); }
+  function normTranslit(s){ return normIJ(s).replace(/e/g,'').replace(/x/g,'h'); }  /* drop the filler e between consonants, and fold x/X (kh) together with h/H so either can be typed for the same sound */
+  function matchTier(norm, nq){
+    /* 0 = exact match, 1 = starts with query, 2 = contains query elsewhere, 9 = no match */
+    if(!norm || !nq) return 9;
+    var idx = norm.indexOf(nq);
+    if(idx === -1) return 9;
+    if(norm === nq) return 0;
+    if(idx === 0) return 1;
+    return 2;
+  }
   function escapeHtml(str){
     return String(str).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; });
   }
@@ -1041,21 +1051,66 @@ nav.tabs a::before{
     hint.style.display = 'none';
 
     var nq = normIJ(q);
+    var nqT = normTranslit(q);
+
+    function dictRank(e){
+      var headTier = Math.min(
+        e.mdc ? matchTier(normTranslit(e.mdc), nqT) : 9,
+        e.alt ? matchTier(normTranslit(e.alt), nqT) : 9,
+        (e.eg && e.eg.indexOf(q) !== -1) ? 1 : 9
+      );
+      var tier = headTier;
+      if(tier > 2){
+        var otherTier = Math.min(
+          e.en ? matchTier(normIJ(e.en), nq) : 9,
+          e.gard ? matchTier(normIJ(e.gard), nq) : 9
+        );
+        tier = otherTier === 9 ? 9 : 3 + otherTier;
+      }
+      var len = (e.mdc || e.alt || '').length;
+      return tier * 1000 + Math.min(len, 999);
+    }
     var dictHits = SDICT.filter(function(e){
       return (e.eg && e.eg.indexOf(q) !== -1) ||
-             (e.mdc && normIJ(e.mdc).indexOf(nq) !== -1) ||
-             (e.alt && normIJ(e.alt).indexOf(nq) !== -1) ||
+             (e.mdc && normTranslit(e.mdc).indexOf(nqT) !== -1) ||
+             (e.alt && normTranslit(e.alt).indexOf(nqT) !== -1) ||
              (e.en && normIJ(e.en).indexOf(nq) !== -1) ||
              (e.gard && normIJ(e.gard).indexOf(nq) !== -1);
     });
+    dictHits.sort(function(a,b){ return dictRank(a) - dictRank(b); });
+
+    function signRank(s){
+      var tier = Math.min(
+        s.n ? matchTier(normIJ(s.n), nq) : 9,
+        s.c ? matchTier(normIJ(s.c), nq) : 9
+      );
+      var len = (s.n || '').length;
+      return tier * 1000 + Math.min(len, 999);
+    }
     var signHits = SSIGNS.filter(function(s){
       return normIJ(s.n).indexOf(nq) !== -1 || (s.c && normIJ(s.c).indexOf(nq) !== -1);
     });
+    signHits.sort(function(a,b){ return signRank(a) - signRank(b); });
+
+    function glossRank(e){
+      var headTier = Math.min(
+        e.mdc ? matchTier(normTranslit(e.mdc), nqT) : 9,
+        e.orig ? matchTier(normTranslit(e.orig), nqT) : 9
+      );
+      var tier = headTier;
+      if(tier > 2){
+        var enTier = e.en ? matchTier(normIJ(e.en), nq) : 9;
+        tier = enTier === 9 ? 9 : 3 + enTier;
+      }
+      var len = (e.orig || e.mdc || '').length;
+      return tier * 1000 + Math.min(len, 999);
+    }
     var glossHits = SGLOSS.filter(function(e){
-      return (e.mdc && normIJ(e.mdc).indexOf(nq) !== -1) ||
-             (e.orig && normIJ(e.orig).indexOf(nq) !== -1) ||
+      return (e.mdc && normTranslit(e.mdc).indexOf(nqT) !== -1) ||
+             (e.orig && normTranslit(e.orig).indexOf(nqT) !== -1) ||
              (e.en && normIJ(e.en).indexOf(nq) !== -1);
     });
+    glossHits.sort(function(a,b){ return glossRank(a) - glossRank(b); });
 
     var dictSection = buildDictSection(q, nq, dictHits);
     var signsSection = buildSignsSection(q, nq, signHits);
