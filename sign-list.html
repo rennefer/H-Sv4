@@ -22,6 +22,10 @@
   --rubric-deep: #c25f2c;
   --malachite: #7a9c82;
   --line: #463d30;
+  --panel-bg: #2f2a22;
+  --panel-line: #55493a;
+  --panel-input-bg: #241f19;
+  --panel-hover: rgba(239,230,210,0.05);
   --card: #f4ecd6;
   --silver-trim: #c9cdd3;
   --shadow: rgba(0,0,0,0.5);
@@ -68,9 +72,10 @@ header{
 .glyph-strip{
   font-family:'Noto Sans Egyptian Hieroglyphs';
   font-size:26px;
-  color:var(--rubric);
+  color:var(--ink-on-dark);
   letter-spacing:6px;
-  opacity:.85;
+  opacity:1;
+  text-shadow:0 2px 6px rgba(0,0,0,.85), 0 0 2px rgba(0,0,0,.6);
   margin-bottom:14px;
 }
 h1{
@@ -637,25 +642,25 @@ nav.tabs a::before{
 .sb-handle .bar{ width:3px; height:34px; background:rgba(244,236,214,.85); border-radius:2px; }
 .sidebar{
   position:fixed; top:0; left:0; height:100vh; width:270px; z-index:49;
-  background:var(--card); border-right:1px solid var(--line); box-shadow:4px 0 24px var(--shadow);
+  background:var(--panel-bg); border-right:1px solid var(--panel-line); box-shadow:4px 0 24px var(--shadow);
   padding:30px 24px; overflow-y:auto;
   transform:translateX(-100%); transition:transform .22s ease;
 }
 .sb-zone:hover ~ .sidebar, .sidebar:hover{ transform:translateX(0); }
 .sb-zone:hover .sb-handle{ background:var(--rubric); }
-.sb-brand{ display:flex; align-items:center; gap:10px; margin-bottom:22px; text-decoration:none; color:var(--ink); }
+.sb-brand{ display:flex; align-items:center; gap:10px; margin-bottom:22px; text-decoration:none; color:var(--ink-on-dark); }
 .sb-brand .g{ font-family:'Noto Sans Egyptian Hieroglyphs'; font-size:19px; color:var(--rubric-deep); }
 .sb-brand .n{ font-family:'Spectral',serif; font-weight:700; font-size:19px; }
 .sb-logo{ height:30px; width:auto; display:block; flex:none; filter:drop-shadow(0 1px 2px var(--shadow)); }
 .sb-nav{ display:flex; flex-direction:column; gap:1px; }
 .sb-link{
-  display:flex; align-items:center; gap:10px; padding:8px 8px; text-decoration:none; color:var(--ink-soft);
+  display:flex; align-items:center; gap:10px; padding:8px 8px; text-decoration:none; color:var(--ink-soft-on-dark);
   font-size:14.5px; border-radius:4px;
 }
 .sb-link .g{ font-family:'Noto Sans Egyptian Hieroglyphs'; font-size:15px; color:var(--rubric-deep); width:20px; text-align:center; }
 .sb-link.active{ background:var(--papyrus-deep); color:var(--ink); font-weight:700; }
-.sb-group{ margin:16px 0 6px; padding-left:8px; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); font-weight:600; }
-.sb-group-items{ display:flex; flex-direction:column; gap:9px; padding-left:14px; border-left:2px solid var(--line); margin-left:16px; }
+.sb-group{ margin:16px 0 6px; padding-left:8px; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint-on-dark); font-weight:600; }
+.sb-group-items{ display:flex; flex-direction:column; gap:9px; padding-left:14px; border-left:2px solid var(--panel-line); margin-left:16px; }
 .sb-group-items .sb-link{ flex-direction:column; align-items:flex-start; gap:3px; padding:6px 8px; }
 .sb-group-items .sb-link .g{ width:auto; font-size:16px; line-height:1; }
 </style>
