@@ -42,6 +42,12 @@ body{
   min-height:100vh;
   position:relative;
 }
+html{ scrollbar-width:thin; scrollbar-color:var(--rubric-deep) var(--panel-bg); }
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-track{ background:var(--panel-bg); }
+::-webkit-scrollbar-thumb{ background:var(--rubric-deep); border-radius:6px; border:2px solid var(--panel-bg); }
+::-webkit-scrollbar-thumb:hover{ background:var(--rubric); }
+::-webkit-scrollbar-corner{ background:var(--panel-bg); }
 .wrap{position:relative; z-index:1; max-width:1100px; margin:0 auto; padding:0 22px 90px;}
 
 /* ---------- header ---------- */
