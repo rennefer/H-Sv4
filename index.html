@@ -807,5 +807,21 @@ if ('serviceWorker' in navigator) {
   }catch(e){}
 })();
 </script>
+
+<div id="ateniit-view-count" style="text-align:center; padding:0 0 24px; font-family:'Inter',sans-serif; font-size:10px; color:var(--ink-faint); opacity:.45;"></div>
+<script>
+(function(){
+  var el = document.getElementById('ateniit-view-count');
+  if(!el) return;
+  el.textContent = '0';
+  try{
+    fetch('https://countapi.mileshilliard.com/api/v1/get/horus-seth-ateniit-game-views-2026-x3f')
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if(data && typeof data.value === 'number') el.textContent = data.value;
+      }).catch(function(){});
+  }catch(e){}
+})();
+</script>
 </body>
 </html>
