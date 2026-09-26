@@ -21,6 +21,8 @@
   --rubric-deep: #c25f2c;
   --malachite: #7a9c82;
   --malachite-deep: #5c7a64;
+  --lapis: #4c6f92;
+  --lapis-deep: #385371;
   --line: #463d30;
   --card: #f4ecd6;
   --panel-bg: #2f2a22;
@@ -760,9 +762,12 @@ nav.tabs a::before{
   transition:background .15s ease;
 }
 .search-handle.paleo-handle{ background:var(--rubric-deep); }
+.search-handle.budge-handle{ background:var(--lapis-deep); }
 .search-handle .sh-glyph{ font-family:'Noto Sans Egyptian Hieroglyphs'; font-size:15px; color:rgba(244,236,214,.9); }
 .search-zone:hover .search-handle, .search-zone.open .search-handle{ background:var(--malachite); }
 .search-zone.paleo-zone:hover .search-handle, .search-zone.paleo-zone.open .search-handle{ background:var(--rubric); }
+.search-zone.budge-zone{ transform:translateY(150px); }
+.search-zone.budge-zone:hover .search-handle{ background:var(--lapis); }
 
 .search-panel{
   position:fixed; top:0; right:0; height:100vh; width:370px; max-width:88vw; z-index:60;
@@ -903,6 +908,9 @@ nav.tabs a::before{
 <div class="search-zone paleo-zone" id="paleoZone">
   <div class="search-handle paleo-handle"><span class="sh-glyph">𓀢</span></div>
 </div>
+<a class="search-zone budge-zone" id="budgeZone" href="https://rennefer.github.io/H-Sv3/" target="_blank" rel="noopener" title="Budge Dictionary (raw, beta) — opens in a new tab">
+  <div class="search-handle budge-handle"><span class="sh-glyph">𓋈</span></div>
+</a>
 <aside class="search-panel" id="paleoPanel" aria-hidden="true">
   <div class="search-panel-head">
     <h3>Hieratic Paleography</h3>
@@ -931,7 +939,7 @@ nav.tabs a::before{
     if(paleoInput.value.trim()) renderPaleoResults(paleoInput.value.trim());
   }).catch(function(){ /* sign forms are optional; rest of search still works without them */ });
 
-  function normIJ(s){ return (s||'').toLowerCase().replace(/j/g,'i').replace(/w/g,'u'); }
+  function normIJ(s){ return (s||'').toLowerCase().replace(/j/g,'i').replace(/w/g,'u').replace(/z/g,'d'); }  /* fold z (older transliteration, e.g. Moldenke) together with d/D (MdC ḏ) so either can be typed for the same sound */
   function normTranslit(s){ return normIJ(s).replace(/e/g,'').replace(/x/g,'h'); }  /* drop the filler e between consonants, and fold x/X (kh) together with h/H so either can be typed for the same sound */
   function matchTier(norm, nq){
     /* 0 = exact match, 1 = starts with query, 2 = contains query elsewhere, 9 = no match */
