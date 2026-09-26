@@ -923,6 +923,11 @@ body.wc-hidden .word-crops{
 .search-zone.paleo-zone:hover .search-handle, .search-zone.paleo-zone.open .search-handle{ background:var(--rubric); }
 .search-zone.budge-zone{ transform:translateY(150px); }
 .search-zone.budge-zone:hover .search-handle{ background:var(--lapis); }
+.search-panel.budge-panel{ padding:0; width:640px; max-width:92vw; }
+.budge-panel-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:26px 22px 14px; flex-shrink:0; }
+.budge-panel-head h3{ font-family:'Spectral',serif; font-size:19px; margin:0; color:var(--ink-on-dark); font-weight:700; }
+.budge-frame-wrap{ flex:1; min-height:0; }
+.budge-frame-wrap iframe{ width:100%; height:100%; border:0; display:block; }
 
 .search-panel{
   position:fixed; top:0; right:0; height:100vh; width:370px; max-width:88vw; z-index:60;
@@ -1064,9 +1069,9 @@ body.wc-hidden .word-crops{
 <div class="search-zone paleo-zone" id="paleoZone">
   <div class="search-handle paleo-handle"><span class="sh-glyph">𓀢</span></div>
 </div>
-<a class="search-zone budge-zone" id="budgeZone" href="https://rennefer.github.io/H-Sv3/" target="_blank" rel="noopener" title="Budge Dictionary (raw, beta) — opens in a new tab">
+<div class="search-zone budge-zone" id="budgeZone" title="Budge Dictionary (raw, beta)">
   <div class="search-handle budge-handle"><span class="sh-glyph">𓋈</span></div>
-</a>
+</div>
 <aside class="search-panel" id="paleoPanel" aria-hidden="true">
   <div class="search-panel-head">
     <h3>Hieratic Paleography</h3>
@@ -1077,6 +1082,15 @@ body.wc-hidden .word-crops{
   <div class="search-results" id="paleoResults"></div>
   <p class="paleo-credit">Sign forms &amp; images: Hieratische Paläographie DB project (Möller), via IIIF.</p>
   <p class="paleo-more-link"><a href="https://aku-pal.uni-mainz.de/graphemes" target="_blank" rel="noopener"><span class="pml-glyph">𓅧</span>Also browse sign forms on AKU-PAL (Mainz) ↗</a></p>
+</aside>
+<aside class="search-panel budge-panel" id="budgePanel" aria-hidden="true">
+  <div class="budge-panel-head">
+    <h3>Budge Dictionary <span style="font-weight:400;font-style:italic;font-size:12px;color:var(--ink-faint-on-dark)">(raw, beta)</span></h3>
+    <button class="search-close" id="budgeClose" aria-label="Close Budge Dictionary search">&times;</button>
+  </div>
+  <div class="budge-frame-wrap">
+    <iframe id="budgeFrame" title="Budge Dictionary — raw extraction browser" loading="lazy"></iframe>
+  </div>
 </aside>
 <div class="paleo-zoom" id="paleoZoom" aria-hidden="true">
   <img id="paleoZoomImg" src="" alt="">
@@ -1127,6 +1141,12 @@ body.wc-hidden .word-crops{
   var paleoZoomImg = document.getElementById('paleoZoomImg');
   var paleoZoomCap = document.getElementById('paleoZoomCap');
 
+  var budgeZone = document.getElementById('budgeZone');
+  var budgePanel = document.getElementById('budgePanel');
+  var budgeCloseBtn = document.getElementById('budgeClose');
+  var budgeFrame = document.getElementById('budgeFrame');
+  var budgeFrameLoaded = false;
+
   /* dictionary example photos load separately (kept out of the page itself so it stays a reasonable size) */
   var DICT_IMAGES = {};
   fetch('dict-images.json').then(function(r){ return r.ok ? r.json() : {}; }).then(function(m){
@@ -1136,6 +1156,7 @@ body.wc-hidden .word-crops{
 
   function openPanel(){
     closePaleoPanel();
+    closeBudgePanel();
     zone.classList.add('open');
     panel.classList.add('open');
     panel.setAttribute('aria-hidden','false');
@@ -1152,6 +1173,7 @@ body.wc-hidden .word-crops{
 
   function openPaleoPanel(){
     closePanel();
+    closeBudgePanel();
     paleoZone.classList.add('open');
     paleoPanel.classList.add('open');
     paleoPanel.setAttribute('aria-hidden','false');
@@ -1164,6 +1186,23 @@ body.wc-hidden .word-crops{
     hidePaleoZoom(true);
   }
 
+  function openBudgePanel(){
+    closePanel();
+    closePaleoPanel();
+    if(!budgeFrameLoaded){
+      budgeFrame.src = 'https://rennefer.github.io/H-Sv3/?embed=1';
+      budgeFrameLoaded = true;
+    }
+    budgeZone.classList.add('open');
+    budgePanel.classList.add('open');
+    budgePanel.setAttribute('aria-hidden','false');
+  }
+  function closeBudgePanel(){
+    budgeZone.classList.remove('open');
+    budgePanel.classList.remove('open');
+    budgePanel.setAttribute('aria-hidden','true');
+  }
+
   zone.addEventListener('click', function(e){
     if(panel.classList.contains('open')) return; // clicking zone while open shouldn't toggle-close (panel itself handles it)
     openPanel();
@@ -1172,17 +1211,24 @@ body.wc-hidden .word-crops{
     if(paleoPanel.classList.contains('open')) return;
     openPaleoPanel();
   });
+  budgeZone.addEventListener('click', function(e){
+    if(budgePanel.classList.contains('open')) return;
+    openBudgePanel();
+  });
   closeBtn.addEventListener('click', closePanel);
   paleoCloseBtn.addEventListener('click', closePaleoPanel);
+  budgeCloseBtn.addEventListener('click', closeBudgePanel);
   document.addEventListener('keydown', function(e){
     if(e.key === 'Escape'){
       if(panel.classList.contains('open')) closePanel();
       if(paleoPanel.classList.contains('open')) closePaleoPanel();
+      if(budgePanel.classList.contains('open')) closeBudgePanel();
     }
   });
   document.addEventListener('click', function(e){
     if(panel.classList.contains('open') && !panel.contains(e.target) && !zone.contains(e.target)) closePanel();
     if(paleoPanel.classList.contains('open') && !paleoPanel.contains(e.target) && !paleoZone.contains(e.target)) closePaleoPanel();
+    if(budgePanel.classList.contains('open') && !budgePanel.contains(e.target) && !budgeZone.contains(e.target)) closeBudgePanel();
   });
 
   /* auto open/close on hover, mirroring the left nav pull-out */
@@ -1205,6 +1251,7 @@ body.wc-hidden .word-crops{
   }
   wireHoverPanel(zone, panel, openPanel, closePanel);
   wireHoverPanel(paleoZone, paleoPanel, openPaleoPanel, closePaleoPanel);
+  wireHoverPanel(budgeZone, budgePanel, openBudgePanel, closeBudgePanel);
 
   function looksLikeSignCode(q){
     // Gardiner sign codes are letter group(s) + a number, e.g. "a1", "g17", "aa15", "n35a"
