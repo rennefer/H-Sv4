@@ -1092,7 +1092,7 @@ body.wc-hidden .word-crops{
   var PALEO = [];
   fetch('paleo-data.json').then(function(r){ return r.ok ? r.json() : []; }).then(function(m){
     PALEO = m || [];
-    if(paleoInput.value.trim()) renderPaleoResults(paleoInput.value.trim());
+    renderPaleoResults(paleoInput.value.trim());  /* always refresh, even with an empty box, so a slow fetch doesn't leave images stuck missing */
   }).catch(function(){ /* sign forms are optional; rest of search still works without them */ });
 
   function normIJ(s){ return (s||'').toLowerCase().replace(/j/g,'i').replace(/w/g,'u').replace(/z/g,'d'); }  /* fold z (older transliteration, e.g. Moldenke) together with d/D (MdC ḏ) so either can be typed for the same sound */
@@ -1131,7 +1131,7 @@ body.wc-hidden .word-crops{
   var DICT_IMAGES = {};
   fetch('dict-images.json').then(function(r){ return r.ok ? r.json() : {}; }).then(function(m){
     DICT_IMAGES = m || {};
-    if(input.value.trim()) renderResults(input.value.trim());
+    renderResults(input.value.trim());  /* always refresh, even with an empty box, so a slow fetch doesn't leave images stuck missing */
   }).catch(function(){ /* photos are optional; search still works without them */ });
 
   function openPanel(){
