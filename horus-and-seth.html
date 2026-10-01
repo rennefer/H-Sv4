@@ -1023,6 +1023,28 @@ body.wc-hidden .word-crops{
   max-width:min(1120px, 92vw);
 }
 .paleo-zoom.show{ display:block; }
+/* phone / touch: the enlarged image opens as its own full-screen overlay */
+.paleo-zoom .pz-close{ display:none; }
+.paleo-zoom.pz-overlay{
+  position:fixed; inset:0; top:0 !important; left:0 !important; z-index:200;
+  max-width:none; width:100%; height:100%; box-sizing:border-box;
+  border:0; border-radius:0; box-shadow:none; padding:64px 16px 28px;
+  background:#16120e;
+  flex-direction:column; align-items:center; justify-content:center; overflow-y:auto;
+}
+.paleo-zoom.pz-overlay.show{ display:flex; }
+.paleo-zoom.pz-overlay img{ width:100%; max-width:720px; max-height:68vh; padding:8px; box-sizing:border-box; }
+.paleo-zoom.pz-overlay .paleo-zoom-cap{ margin-top:16px; font-size:15px; }
+.paleo-zoom.pz-overlay .paleo-zoom-cap .pz-l1{ font-size:18px; }
+.paleo-zoom.pz-overlay .paleo-zoom-cap .pz-l2{ font-size:13px; }
+.paleo-zoom.pz-overlay .pz-close{
+  display:flex; align-items:center; justify-content:center;
+  position:absolute; top:12px; right:12px; width:48px; height:48px;
+  border:1px solid var(--panel-line); border-radius:50%; background:var(--panel-bg);
+  color:var(--ink-on-dark); font-size:30px; line-height:1; font-family:'Inter',sans-serif; cursor:pointer; padding:0;
+}
+.paleo-zoom.pz-overlay .pz-close:focus-visible{ outline:2px solid var(--rubric); outline-offset:2px; }
+html.pz-lock, html.pz-lock body{ overflow:hidden; }
 .paleo-zoom img{ display:block; width:auto; height:auto; max-width:100%; max-height:85vh; object-fit:contain; background:var(--card); border-radius:3px; margin:0 auto; }
 .paleo-zoom .paleo-zoom-cap{ margin-top:20px; font-family:'Inter',sans-serif; font-size:25px; color:var(--ink-soft-on-dark); text-align:center; }
 .paleo-zoom .paleo-zoom-cap .pz-l1{ font-size:27px; color:var(--ink-on-dark); font-weight:600; margin-bottom:4px; }
@@ -1093,6 +1115,7 @@ body.wc-hidden .word-crops{
   </div>
 </aside>
 <div class="paleo-zoom" id="paleoZoom" aria-hidden="true">
+  <button type="button" class="pz-close" id="paleoZoomClose" aria-label="Close enlarged image">&times;</button>
   <img id="paleoZoomImg" src="" alt="">
   <div class="paleo-zoom-cap" id="paleoZoomCap"></div>
 </div>
@@ -1226,13 +1249,17 @@ body.wc-hidden .word-crops{
     }
   });
   document.addEventListener('click', function(e){
-    if(panel.classList.contains('open') && !panel.contains(e.target) && !zone.contains(e.target)) closePanel();
-    if(paleoPanel.classList.contains('open') && !paleoPanel.contains(e.target) && !paleoZone.contains(e.target)) closePaleoPanel();
+    if(panel.classList.contains('open') && !panel.contains(e.target) && !zone.contains(e.target) && !paleoZoom.contains(e.target)) closePanel();
+    if(paleoPanel.classList.contains('open') && !paleoPanel.contains(e.target) && !paleoZone.contains(e.target) && !paleoZoom.contains(e.target)) closePaleoPanel();
     if(budgePanel.classList.contains('open') && !budgePanel.contains(e.target) && !budgeZone.contains(e.target)) closeBudgePanel();
   });
 
   /* auto open/close on hover, mirroring the left nav pull-out */
+  /* phones and tablets have no real hover: open the side tabs by tapping
+     only, close with the x or a tap outside. Enlarged images open full-screen. */
+  window.PZ_TOUCH = !!(window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches);
   function wireHoverPanel(zoneEl, panelEl, openFn, closeFn){
+    if(window.PZ_TOUCH) return;
     var closeTimer = null;
     function cancelClose(){ if(closeTimer){ clearTimeout(closeTimer); closeTimer = null; } }
     function scheduleClose(){
@@ -1449,12 +1476,22 @@ body.wc-hidden .word-crops{
   }
   function showPaleoZoom(thumb, pin){
     if(!thumb.src) return;
+    if(window.PZ_TOUCH && !pin) return; /* touch: only a real tap opens it */
     paleoZoomImg.src = thumb.src;
     paleoZoomImg.alt = thumb.alt || '';
     var cap = paleoZoomCaption(thumb);
     paleoZoomCap.innerHTML = (cap.l1 ? '<div class="pz-l1">' + cap.l1 + '</div>' : '') +
       (cap.l2 ? '<div class="pz-l2">' + cap.l2 + '</div>' : '');
     paleoZoom.classList.add('show');
+    if(window.PZ_TOUCH){
+      paleoZoomPinned = true;
+      paleoZoom._openedAt = Date.now();
+      paleoZoom.classList.add('pz-overlay');
+      paleoZoom.setAttribute('aria-hidden','false');
+      paleoZoom.style.top = ''; paleoZoom.style.left = '';
+      document.documentElement.classList.add('pz-lock');
+      return;
+    }
     var r = thumb.getBoundingClientRect();
     var pw = paleoZoom.offsetWidth || 320;
     var ph = paleoZoom.offsetHeight || 200;
@@ -1469,6 +1506,9 @@ body.wc-hidden .word-crops{
   function hidePaleoZoom(force){
     if(paleoZoomPinned && !force) return;
     paleoZoom.classList.remove('show');
+    paleoZoom.classList.remove('pz-overlay');
+    paleoZoom.setAttribute('aria-hidden','true');
+    document.documentElement.classList.remove('pz-lock');
     paleoZoomPinned = false;
   }
   paleoResults.addEventListener('mouseover', function(e){
@@ -1491,6 +1531,15 @@ body.wc-hidden .word-crops{
   document.addEventListener('keydown', function(e){
     if(e.key === 'Escape') hidePaleoZoom(true);
   });
+  /* close button and tap-on-backdrop for the full-screen (touch) version */
+  (function(){
+    var pzClose = document.getElementById('paleoZoomClose');
+    if(pzClose) pzClose.addEventListener('click', function(e){ e.stopPropagation(); hidePaleoZoom(true); });
+    paleoZoom.addEventListener('click', function(e){
+      if(paleoZoom.classList.contains('pz-overlay') && e.target === paleoZoom && Date.now() - (paleoZoom._openedAt||0) > 400){ e.stopPropagation(); hidePaleoZoom(true); }
+    });
+  })();
+
 })();
 </script>
 
