@@ -559,6 +559,18 @@ footer{
   overflow-x:auto;
 }
 .wenamun-line .photo-stage{ margin-bottom:8px; }
+/* whiteboard: a note field between the hieratic photo and the transcription, shown only in whiteboard mode */
+.wb-note{
+  display:none; width:100%; box-sizing:border-box; resize:none; overflow:hidden;
+  font-family:'EB Garamond',serif; font-size:18px; line-height:1.4;
+  padding:8px 12px; margin:0 0 8px; min-height:0;
+  background:#fffaf0; color:var(--ink); caret-color:var(--ink);
+  border:1px solid #b3a283; border-radius:3px; outline:none;
+}
+.wb-note::placeholder{ color:#9a8a6c; opacity:1; font-style:italic; }
+.wb-note:focus{ border-color:var(--rubric); box-shadow:0 0 0 2px rgba(217,122,69,0.15); }
+body.wb-on .wb-note{ display:block; }
+#wbToggle[aria-pressed="true"]{ background:var(--rubric); color:#fffaf0; border-color:var(--rubric); }
 .wenamun-line .photo-stage img, .wenamun-line .glyph-stage img{
   display:block; max-width:100%; height:auto; margin:0 auto;
 }
@@ -1404,6 +1416,7 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
   <section class="panel active" id="panel-wenamun">
 
     <div class="al-bar">
+      <button class="col-toggle" id="wbToggle" type="button" aria-pressed="false">✎ Whiteboard</button>
       <button class="col-toggle" id="alToggle">+ Add a new line</button>
       <button class="col-toggle" id="ghToggle">⚙ GitHub connection <span id="ghStatusDot">⚪</span></button>
       <button class="col-toggle" id="ghPush">☁ Save to GitHub now</button>
@@ -1531,6 +1544,43 @@ function escapeHtml(str){
 }
 
 
+/* ---------- whiteboard ----------
+   One button at the top turns whiteboard mode on. Each line then shows a note
+   field between the hieratic photo and the transcription. The field is one
+   line tall and grows with what is written. Notes are kept in this browser
+   only (localStorage); they are not part of the page saved to GitHub. */
+const WB_KEY = 'wenamunWhiteboard_v1', WB_ON_KEY = 'wenamunWhiteboardOn_v1';
+let WB_NOTES = {};
+try { WB_NOTES = JSON.parse(localStorage.getItem(WB_KEY) || '{}') || {}; } catch(e) { WB_NOTES = {}; }
+function wbGet(k){ return WB_NOTES[k] || ''; }
+function wbResize(t){ t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
+function wbResizeAll(root){
+  if(!document.body.classList.contains('wb-on')) return;
+  (root || document).querySelectorAll('.wb-note').forEach(wbResize);
+}
+function wbSet(on){
+  document.body.classList.toggle('wb-on', on);
+  const b = document.getElementById('wbToggle');
+  if(b) b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  try { localStorage.setItem(WB_ON_KEY, on ? '1' : '0'); } catch(e) {}
+  wbResizeAll();
+}
+document.addEventListener('input', e=>{
+  const t = e.target;
+  if(!t.classList || !t.classList.contains('wb-note')) return;
+  wbResize(t);
+  if(t.value) WB_NOTES[t.dataset.wb] = t.value; else delete WB_NOTES[t.dataset.wb];
+  try { localStorage.setItem(WB_KEY, JSON.stringify(WB_NOTES)); } catch(err) {}
+});
+document.addEventListener('DOMContentLoaded', ()=>{
+  const b = document.getElementById('wbToggle');
+  if(b) b.addEventListener('click', ()=> wbSet(!document.body.classList.contains('wb-on')));
+  let on = false;
+  try { on = localStorage.getItem(WB_ON_KEY) === '1'; } catch(e) {}
+  wbSet(on);
+});
+window.addEventListener('resize', ()=> wbResizeAll());
+
 function initGlyphSliders(container){
   container.querySelectorAll('.glyph-slider').forEach(slider=>{
     const handle = slider.querySelector('.gs-handle');
@@ -1635,9 +1685,10 @@ function createLineTab(data, ids, photoAlt, pagePhotos){
       const photo = w.photo
         ? `<div class="photo-stage"><img src="data:image/jpeg;base64,${w.photo}" alt="${photoAlt}, line ${label}"></div>`
         : '';
+      const wbNote = `<textarea class="wb-note" rows="1" data-wb="${w.page}.${w.line}" placeholder="Write here…" aria-label="Whiteboard note for line ${label}">${escapeHtml(wbGet(w.page + '.' + w.line))}</textarea>`;
       let body;
       if(w.photo && w.glyphs && !w.combined){
-        body = `${photo}<div class="glyph-slider">
+        body = `${photo}${wbNote}<div class="glyph-slider">
           <div class="layer"><img src="data:image/jpeg;base64,${w.glyphs}" alt="hieroglyphic transcription of line ${label}"></div>
           <span class="gs-caption">Transcription</span>
           <div class="gs-handle"></div>
@@ -1646,7 +1697,7 @@ function createLineTab(data, ids, photoAlt, pagePhotos){
         const note = w.combined
           ? `<div class="pending">Photograph and hieroglyphic transcription are combined in the image above; these lines are not yet split individually.</div>`
           : `<div class="pending">Hieroglyphic transcription pending.</div>`;
-        body = photo + note;
+        body = photo + wbNote + note;
       }
       return `<div class="wenamun-line" data-page="${w.page}" data-line="${w.line}">
         <div class="line-head"><span class="line-num">Line ${label}</span>${combinedChip}${draftChip}${removeBtn}</div>
@@ -1654,6 +1705,7 @@ function createLineTab(data, ids, photoAlt, pagePhotos){
       </div>`;
     }).join('');
     initGlyphSliders(box);
+    wbResizeAll(box);
     box.querySelectorAll('.al-remove').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const p = Number(btn.dataset.removePage), l = Number(btn.dataset.removeLine);
@@ -1713,6 +1765,12 @@ function buildExportedHtml(){
      there the next time the page loads. Put those back to their resting
      state for the snapshot, then restore them. */
   const restore = [];
+  if(document.body.classList.contains('wb-on')){
+    document.body.classList.remove('wb-on');
+    const wbBtn = document.getElementById('wbToggle');
+    if(wbBtn) wbBtn.setAttribute('aria-pressed','false');
+    restore.push(()=>{ document.body.classList.add('wb-on'); if(wbBtn) wbBtn.setAttribute('aria-pressed','true'); });
+  }
   ['alSubmit','ghPush','ghSave'].forEach(id=>{
     const b = document.getElementById(id);
     if(b){ const was = b.disabled; b.disabled = false; restore.push(()=>{ b.disabled = was; }); }
