@@ -696,7 +696,9 @@ nav.tabs a::before{
 .loc-chip{ display:inline-flex; align-items:center; gap:5px; font-family:'Inter',sans-serif; font-size:11.5px; font-variant-numeric:tabular-nums; color:var(--ink-soft); text-decoration:none; border:1px solid var(--line); border-radius:3px; padding:2px 7px; background:var(--papyrus-deep); white-space:nowrap; }
 .loc-chip:hover, .loc-chip:focus-visible{ border-color:var(--rubric); color:var(--rubric-deep); background:#f1e3bd; outline:none; }
 .loc-chip.doubt{ color:var(--rubric-deep); border-color:rgba(214,130,0,.6); }
-.loc-chip img{ height:26px; width:auto; max-width:90px; border-radius:2px; display:block; }
+.loc-chip.has-img{ flex-direction:column; gap:3px; padding:4px 5px 2px; background:var(--card); }
+.loc-chip img{ height:40px; width:auto; max-width:150px; object-fit:contain; border-radius:2px; display:block; }
+.loc-chip.pos-doubt img{ outline:1px dashed rgba(214,130,0,.95); outline-offset:1px; }
 .loc-more{ font-family:'Inter',sans-serif; font-size:11.5px; background:none; border:1px dashed var(--line); border-radius:3px; padding:2px 8px; color:var(--ink-soft); cursor:pointer; }
 .loc-more:hover{ border-color:var(--rubric); color:var(--rubric-deep); }
 @media (max-width:640px){ .wi-row{ grid-template-columns:1fr; } .wi-back{ margin-left:0; } }
@@ -759,7 +761,7 @@ nav.tabs a::before{
     <div class="result-count" id="wiCount">Loading the word index…</div>
     <div id="wiResults"></div>
     <button class="load-more" id="wiMore" style="display:none;">Show more words</button>
-    <p class="wi-note">Locations come from the AI annotations on the manuscript pages. Opening one takes you to that line with the word marked. Orange locations are words whose dictionary link is uncertain.</p>
+    <p class="wi-note">Locations come from the AI annotations on the manuscript pages. Opening one takes you to that line with the word marked. Orange locations are words whose dictionary link is uncertain; a dashed frame round a picture means the word's position on the hieratic is uncertain.</p>
   </section>
 
   </div>
@@ -822,8 +824,9 @@ nav.tabs a::before{
 
   function chip(o){
     const im = IMGS && IMGS[imgKey(o)];
-    return '<a class="loc-chip' + ((o[8] & 1) ? ' doubt' : '') + '" href="' + locUrl(o) + '" target="_blank" rel="noopener" title="' +
-      esc(WI.src[o[0]].name + ', page ' + o[1] + ', line ' + o[2] + ' — ' + o[4] + (o[5] ? ' “' + o[5] + '”' : '')) + '">' +
+    const pd = im && (o[8] & 2);
+    return '<a class="loc-chip' + ((o[8] & 1) ? ' doubt' : '') + (im ? ' has-img' : '') + (pd ? ' pos-doubt' : '') + '" href="' + locUrl(o) + '" target="_blank" rel="noopener" title="' +
+      esc(WI.src[o[0]].name + ', page ' + o[1] + ', line ' + o[2] + ' — ' + o[4] + (o[5] ? ' “' + o[5] + '”' : '') + (pd ? ' — position on the hieratic is uncertain' : '')) + '">' +
       (im ? '<img src="' + im + '" alt="" loading="lazy">' : '') + esc(o[1] + '.' + o[2]) + '</a>';
   }
 
