@@ -669,6 +669,13 @@ nav.tabs a::before{
 .sb-group-items{ display:flex; flex-direction:column; gap:9px; padding-left:14px; border-left:2px solid var(--panel-line); margin-left:16px; }
 .sb-group-items .sb-link{ flex-direction:column; align-items:flex-start; gap:3px; padding:6px 8px; }
 .sb-group-items .sb-link .g{ width:auto; font-size:16px; line-height:1; }
+.wi-link{ display:inline-flex; align-items:center; text-decoration:none; }
+.entry .locs{ display:flex; flex-wrap:wrap; align-items:center; gap:4px 5px; margin-top:7px; }
+.entry .locs .locs-label{ font-family:'Inter',sans-serif; font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-faint); margin-right:2px; }
+.loc-chip{ font-family:'Inter',sans-serif; font-size:11px; font-variant-numeric:tabular-nums; color:var(--ink-soft); text-decoration:none; border:1px solid var(--line); border-radius:3px; padding:1px 6px; background:var(--papyrus-deep); white-space:nowrap; }
+.loc-chip:hover, .loc-chip:focus-visible{ border-color:var(--rubric); color:var(--rubric-deep); outline:none; }
+.loc-chip.doubt{ color:var(--rubric-deep); border-color:rgba(214,130,0,.6); }
+.loc-chip.more{ border-style:dashed; }
 </style>
 
 <link rel="manifest" href="manifest.webmanifest">
@@ -682,6 +689,7 @@ nav.tabs a::before{
   <nav class="sb-nav">
     <a class="sb-link" href="index.html"><span class="g">𓊪</span>Home</a>
     <a class="sb-link active" href="dictionary.html"><span class="g">𓏞</span>Dictionary</a>
+    <a class="sb-link" href="word-index.html"><span class="g">𓏜</span>Word Index</a>
     <a class="sb-link" href="sign-list.html"><span class="g">𓊃</span>Sign List</a>
     <div class="sb-group">Manuscripts</div>
     <div class="sb-group-items">
@@ -719,6 +727,7 @@ nav.tabs a::before{
         <option value="reference">Reference</option>
       </select>
       <button type="button" class="col-toggle" id="colToggleBtn">Search by column ▾</button>
+      <a class="col-toggle wi-link" href="word-index.html" title="Every annotated word in the manuscripts, with the lines it occurs on">Word index ↗</a>
     </div>
     <div class="col-search-row" id="colSearchRow">
       <div class="col-field">
@@ -803,6 +812,7 @@ function renderDict(){
     return;
   }
 
+  const locSeen = new Set();
   box.innerHTML = list.map(e=>{
     const alt = e.alt_spelling ? `<span class="alt">(${escapeHtml(e.alt_spelling)})</span>` : '';
     const line = e.line_translation ? `<div class="line-trans">${escapeHtml(e.line_translation)}</div>` : '';
@@ -819,6 +829,7 @@ function renderDict(){
         <div class="translit">${escapeHtml(e.mdc||'')} ${alt}</div>
         <div class="english">${escapeHtml(e.english||'')}</div>
         ${line}
+        ${locsHtml(e, locSeen)}
       </div>
       <div class="meta">
         ${gender}
@@ -839,6 +850,60 @@ function renderDict(){
   });
 }
 
+
+/* ---------------- locations from the AI annotations on the manuscript pages (word-index.json) ---------------- */
+let WI = null;
+const LOC_SHOWN = 10;
+/* The dictionary has many separate entries for the same word (one per photographed example), while an
+   annotation links to just one of them. So locations are shared by every entry with the same transliteration
+   and meaning: the first such entry in the list shows them in full, the repeats below it show one short chip. */
+function locKey(e){ return normIJ(e.mdc||'').replace(/[.\-= ]/g,'') + '|' + normIJ(e.english||'').trim(); }
+function locsHtml(e, seen){
+  if(!WI || !e._occ || !e._occ.length) return '';
+  const n = e._occ.length;
+  if(seen && seen.has(e._gk)){
+    return `<div class="locs"><a class="loc-chip more" href="word-index.html?d=${e._lead}" target="_blank" rel="noopener" title="Same word as above — open its ${n} location${n===1?'':'s'} in the word index">${n} location${n===1?'':'s'} ↑</a></div>`;
+  }
+  if(seen) seen.add(e._gk);
+  const chips = e._occ.slice(0, LOC_SHOWN).map(o=>{
+    const sr = WI.src[o[0]];
+    return `<a class="loc-chip${(o[8] & 1) ? ' doubt' : ''}" href="${sr.page}?page=${o[1]}&line=${o[2]}&word=${o[3]}" target="_blank" rel="noopener" title="Open ${escapeHtml(sr.name)}, page ${o[1]}, line ${o[2]}">${sr.abbr} ${o[1]}.${o[2]}</a>`;
+  }).join('');
+  const more = n > LOC_SHOWN
+    ? `<a class="loc-chip more" href="word-index.html?d=${e._lead}" target="_blank" rel="noopener" title="See all ${n} locations in the word index">+ ${n - LOC_SHOWN} more</a>` : '';
+  return `<div class="locs"><span class="locs-label">Also in</span>${chips}${more}</div>`;
+}
+fetch('word-index.json').then(r=> r.ok ? r.json() : null).then(d=>{
+  if(!d || !d.occ) return;
+  WI = d;
+  const groups = new Map();   /* word key -> {occ, lead, seen} */
+  d.occ.forEach(o=>{ (o[7]||[]).forEach(id=>{
+    const e = DICT[id]; if(!e) return;
+    const k = locKey(e); let g = groups.get(k);
+    if(!g){ g = {occ:[], ids:new Set(), seen:new Set()}; groups.set(k, g); }
+    g.ids.add(id);
+    if(!g.seen.has(o)){ g.seen.add(o); g.occ.push(o); }
+    (e._own = e._own || []).push(o);
+  }); });
+  const order = Object.keys(d.src);
+  groups.forEach(g=> g.occ.sort((a,b)=> order.indexOf(a[0]) - order.indexOf(b[0]) || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]));
+  DICT.forEach(e=>{
+    const g = groups.get(locKey(e));
+    if(g){ e._occ = g.occ; e._gk = locKey(e); e._lead = Array.from(g.ids).join(','); }
+    /* searching by location only finds the entries the annotations actually point at, not every repeat */
+    if(e._own) e._loc = e._own.map(o=> d.src[o[0]].abbr + ' ' + o[1] + '.' + o[2]).join(' | ');
+  });
+  renderDict();
+}).catch(()=>{ /* locations are optional; the dictionary works without them */ });
+document.addEventListener('click', ev=>{ if(ev.target.closest && ev.target.closest('.loc-chip')) ev.stopPropagation(); }, true);
+
+
+/* a full location such as "tb 1.1" must not also match 1.10 */
+function locMatch(e, q){
+  if(!e._loc) return false;
+  const l = normIJ(e._loc);
+  return /^[a-z]+ \d+\.\d+$/.test(q) ? (' | ' + l + ' | ').includes(' | ' + q + ' | ') : l.includes(q);
+}
 
 function highlightActiveCard(){
   document.querySelectorAll('#results .entry').forEach(card=>{
@@ -872,7 +937,7 @@ function doColumnSearch(){
     if(en && !(e.english && normIJ(e.english).includes(en))) return false;
     if(gard && !(e.gardiner && normIJ(e.gardiner).includes(gard))) return false;
     if(gen && !(e.gender && normIJ(e.gender).includes(gen))) return false;
-    if(ref && !(e.reference && normIJ(e.reference).includes(ref))) return false;
+    if(ref && !((e.reference && normIJ(e.reference).includes(ref)) || locMatch(e, ref))) return false;
     return true;
   });
 
@@ -921,8 +986,10 @@ function doSearch(){
              (e.alt_spelling && normIJ(e.alt_spelling).includes(q)) ||
              (e.english && normIJ(e.english).includes(q)) ||
              (e.gardiner && normIJ(e.gardiner).includes(q)) ||
-             (e.reference && normIJ(e.reference).includes(q));
+             (e.reference && normIJ(e.reference).includes(q)) ||
+             locMatch(e, q);
     }
+    if(field === 'reference' && locMatch(e, q)) return true;
     const v = e[field];
     return v && v.toLowerCase ? normIJ(v).includes(q) : (v||'').includes(q);
   });
