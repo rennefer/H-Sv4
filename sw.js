@@ -1,4 +1,4 @@
-const CACHE_NAME = 'horus-and-seth-v11';
+const CACHE_NAME = 'horus-and-seth-v12';
 const APP_SHELL = [
   './',
   './index.html',
@@ -50,6 +50,25 @@ self.addEventListener('fetch', (event) => {
       fetch(event.request).catch(
         () => new Response('{}', { headers: { 'Content-Type': 'application/json' } })
       )
+    );
+    return;
+  }
+
+  // data files (word-index.json, dict-images.json, ...) change whenever the site is updated, so they are
+  // network-first as well: a cache-first copy would stay stale for good and no longer match the pages.
+  // The cached copy (stored without any ?v= query) is only used when offline.
+  if (url.origin === self.location.origin && url.pathname.endsWith('.json')) {
+    const key = url.origin + url.pathname;
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(key, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(key))
     );
     return;
   }

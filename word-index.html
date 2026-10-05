@@ -774,6 +774,7 @@ nav.tabs a::before{
    Optional: word-index-images.json, a map "src:page.line:k" -> picture of that word cut from the hieratic photo.
    If that file exists its pictures are shown on the location chips; without it the page works as text only. */
 (function(){
+  const WI_V = 'fe3858a61a';   /* stamp of the data files; changes on every rebuild so an older cached copy is never used */
   const PAGE_SIZE = 80, CHIPS = 18;   /* chips shown per manuscript before "+ N more" */
   let WI = null, GROUPS = [], shown = PAGE_SIZE, current = [], IMGS = null, src = 'all';
   const $ = id => document.getElementById(id);
@@ -887,10 +888,10 @@ nav.tabs a::before{
     expanded.add(current[Number(b.dataset.g)]); render();
   });
 
-  fetch('word-index.json').then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); }).then(d=>{
+  fetch('word-index.json?v=' + WI_V).then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); }).then(d=>{
     WI = d; build(); filter();
     /* pictures are optional and can be large, so they load after the list is on screen */
-    fetch('word-index-images.json').then(r=> r.ok ? r.json() : null).then(m=>{ if(m && typeof m === 'object'){ IMGS = m; render(); } }).catch(()=>{});
+    fetch('word-index-images.json?v=' + WI_V).then(r=> r.ok ? r.json() : null).then(m=>{ if(m && typeof m === 'object'){ IMGS = m; render(); } }).catch(()=>{});
   }).catch(()=>{
     $('wiCount').textContent = 'The word index could not be loaded';
     $('wiResults').innerHTML = '<div class="empty">word-index.json is missing or unreadable. It has to sit in the same folder as this page.</div>';
