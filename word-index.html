@@ -785,15 +785,17 @@ nav.tabs a::before{
   function locUrl(o){ return WI.src[o[0]].page + '?page=' + o[1] + '&line=' + o[2] + (o[0] === 'hs' ? '&mdc=' + encodeURIComponent(o[4]) : '&word=' + o[3]); }
   function imgKey(o){ return o[0] === 'hs' ? 'hs:' + o[7][0] : o[0] + ':' + o[1] + '.' + o[2] + ':' + o[3]; }
   /* the dictionary repeats a word once per photographed example, so words are grouped by transliteration + meaning, not by entry */
-  function dictWord(id){ const e = WI.dict[id]; return e ? normT(e[1]) + '~' + normIJ(e[2]).trim() : ''; }
+  /* one row per word as it is written in transliteration: every Dd in one row, whatever its meaning or dictionary entry.
+     Case matters in transliteration (H and h, D and d are different sounds); i/j, dots and dashes do not. */
+  function wordKey(s){ return (s||'').replace(/j/g,'i').replace(/[.\-= ]/g,''); }
 
   function build(){
     const map = new Map();
     /* Horus and Seth words come from the dictionary itself: [page, line, word no., dictionary id] */
     const all = WI.occ.concat((WI.occ_hs || []).map(h=>{ const e = WI.dict[h[3]] || ['', '', '']; return ['hs', h[0], h[1], h[2], e[1], e[2], '', [h[3]], 0]; }));
     all.forEach(o=>{
-      const d = o[7] && o[7].length ? dictWord(o[7][0]) : '';
-      const key = normT(o[4]) + '|' + d;
+      const d = '';
+      const key = wordKey(o[4]);
       let g = map.get(key);
       if(!g){ g = {m:o[4], d:d, ds:new Set(), en:new Map(), occ:[], spell:new Map()}; map.set(key, g); }
       g.occ.push(o); (o[7]||[]).forEach(x=>g.ds.add(x));
@@ -848,7 +850,14 @@ nav.tabs a::before{
     box.innerHTML = current.slice(0, shown).map((g, gi)=>{
       const occ = src === 'all' ? g.occ : g.occ.filter(o=>o[0] === src);
       const dict = g.ds.size
-        ? Array.from(g.ds).slice(0, 3).map(id=>{ const e = WI.dict[id] || ['', '#' + id, '']; return '<a href="dictionary.html?entry=' + id + '" target="_blank" rel="noopener" title="Open the dictionary entry">' + (e[0] ? '<span class="g">' + esc(e[0]) + '</span>' : '') + esc(e[1]) + (e[2] ? ' · ' + esc(e[2]) : '') + '</a>'; }).join('') + (g.ds.size > 3 ? '<span class="none">+ ' + (g.ds.size - 3) + ' more dictionary entries</span>' : '')
+        ? (function(){
+            /* the dictionary repeats a word once per photographed example: show each distinct spelling + meaning once */
+            const seen = new Map();
+            Array.from(g.ds).forEach(id=>{ const e = WI.dict[id] || ['', '#' + id, '']; const k = e[0] + '|' + normIJ(e[2]).trim(); if(!seen.has(k)) seen.set(k, [id, e]); });
+            const list = Array.from(seen.values());
+            return list.slice(0, 6).map(x=>{ const id = x[0], e = x[1]; return '<a href="dictionary.html?entry=' + id + '" target="_blank" rel="noopener" title="Open the dictionary entry">' + (e[0] ? '<span class="g">' + esc(e[0]) + '</span>' : '') + esc(e[1]) + (e[2] ? ' · ' + esc(e[2]) : '') + '</a>'; }).join('') +
+              (list.length > 6 ? '<span class="none">+ ' + (list.length - 6) + ' more meanings in the dictionary</span>' : '');
+          })()
         : '<span class="none">no dictionary entry yet</span>';
       let locs = '', used = 0;
       Object.keys(WI.src).forEach(s=>{
