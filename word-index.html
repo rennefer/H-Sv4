@@ -742,7 +742,7 @@ nav.tabs a::before{
     <section class="panel active" id="panel-wi">
     <div class="search-row">
       <div class="search-box">
-        <input id="wiSearch" type="text" placeholder="Search transliteration, English, or a location (e.g. TB 10.2)…" autocomplete="off">
+        <input id="wiSearch" type="text" placeholder="Search transliteration, English, or a location (e.g. TB 10.2 or H&amp;S 5.5)…" autocomplete="off">
       </div>
       <select id="wiSort" class="wi-select" aria-label="Sort">
         <option value="az">A–Z by transliteration</option>
@@ -752,6 +752,7 @@ nav.tabs a::before{
     <div class="wi-filters">
       <div class="wi-seg" id="wiSrc" role="group" aria-label="Manuscript">
         <button type="button" class="on" data-src="all">All manuscripts</button>
+        <button type="button" data-src="hs">Horus and Seth</button>
         <button type="button" data-src="wen">Wenamun</button>
         <button type="button" data-src="tb">Two Brothers</button>
       </div>
@@ -761,7 +762,7 @@ nav.tabs a::before{
     <div class="result-count" id="wiCount">Loading the word index…</div>
     <div id="wiResults"></div>
     <button class="load-more" id="wiMore" style="display:none;">Show more words</button>
-    <p class="wi-note">Locations come from the AI annotations on the manuscript pages. Opening one takes you to that line with the word marked. Orange locations are words whose dictionary link is uncertain; a dashed frame round a picture means the word's position on the hieratic is uncertain.</p>
+    <p class="wi-note">Horus and Seth locations come from the dictionary's own word list; Wenamun and Two Brothers locations come from the AI annotations on those pages. Opening one takes you to that line (with the word marked, for Wenamun and Two Brothers). Orange locations are words whose dictionary link is uncertain; a dashed frame round a picture means the word's position on the hieratic is uncertain.</p>
   </section>
 
   </div>
@@ -773,20 +774,24 @@ nav.tabs a::before{
    Optional: word-index-images.json, a map "src:page.line:k" -> picture of that word cut from the hieratic photo.
    If that file exists its pictures are shown on the location chips; without it the page works as text only. */
 (function(){
-  const PAGE_SIZE = 80, CHIPS = 36;
+  const PAGE_SIZE = 80, CHIPS = 18;   /* chips shown per manuscript before "+ N more" */
   let WI = null, GROUPS = [], shown = PAGE_SIZE, current = [], IMGS = null, src = 'all';
   const $ = id => document.getElementById(id);
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function normIJ(s){ return (s||'').toLowerCase().replace(/j/g,'i'); }
   function normT(s){ return normIJ(s).replace(/[.\-= ]/g,''); }
   function locText(o){ return WI.src[o[0]].abbr + ' ' + o[1] + '.' + o[2]; }
-  function locUrl(o){ return WI.src[o[0]].page + '?page=' + o[1] + '&line=' + o[2] + '&word=' + o[3]; }
-  function imgKey(o){ return o[0] + ':' + o[1] + '.' + o[2] + ':' + o[3]; }
+  function locUrl(o){ return WI.src[o[0]].page + '?page=' + o[1] + '&line=' + o[2] + (o[0] === 'hs' ? '&mdc=' + encodeURIComponent(o[4]) : '&word=' + o[3]); }
+  function imgKey(o){ return o[0] === 'hs' ? 'hs:' + o[7][0] : o[0] + ':' + o[1] + '.' + o[2] + ':' + o[3]; }
+  /* the dictionary repeats a word once per photographed example, so words are grouped by transliteration + meaning, not by entry */
+  function dictWord(id){ const e = WI.dict[id]; return e ? normT(e[1]) + '~' + normIJ(e[2]).trim() : ''; }
 
   function build(){
     const map = new Map();
-    WI.occ.forEach(o=>{
-      const d = o[7] && o[7].length ? o[7][0] : '';
+    /* Horus and Seth words come from the dictionary itself: [page, line, word no., dictionary id] */
+    const all = WI.occ.concat((WI.occ_hs || []).map(h=>{ const e = WI.dict[h[3]] || ['', '', '']; return ['hs', h[0], h[1], h[2], e[1], e[2], '', [h[3]], 0]; }));
+    all.forEach(o=>{
+      const d = o[7] && o[7].length ? dictWord(o[7][0]) : '';
       const key = normT(o[4]) + '|' + d;
       let g = map.get(key);
       if(!g){ g = {m:o[4], d:d, ds:new Set(), en:new Map(), occ:[], spell:new Map()}; map.set(key, g); }
@@ -797,6 +802,8 @@ nav.tabs a::before{
     GROUPS = Array.from(map.values()).map(g=>{
       g.m = Array.from(g.spell.entries()).sort((a,b)=>b[1]-a[1])[0][0];
       g.enList = Array.from(g.en.entries()).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+      const ord = Object.keys(WI.src);
+      g.occ.sort((a,b)=> ord.indexOf(a[0]) - ord.indexOf(b[0]) || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]);
       g.sm = normT(g.m);
       g.sen = normIJ(g.enList.join(' | '));
       g.sloc = g.occ.map(o=>locText(o).toLowerCase()).join(' | ');
@@ -840,14 +847,14 @@ nav.tabs a::before{
     box.innerHTML = current.slice(0, shown).map((g, gi)=>{
       const occ = src === 'all' ? g.occ : g.occ.filter(o=>o[0] === src);
       const dict = g.ds.size
-        ? Array.from(g.ds).map(id=>{ const e = WI.dict[id] || ['', '#' + id, '']; return '<a href="dictionary.html?entry=' + id + '" target="_blank" rel="noopener" title="Open the dictionary entry">' + (e[0] ? '<span class="g">' + esc(e[0]) + '</span>' : '') + esc(e[1]) + (e[2] ? ' · ' + esc(e[2]) : '') + '</a>'; }).join('')
+        ? Array.from(g.ds).slice(0, 3).map(id=>{ const e = WI.dict[id] || ['', '#' + id, '']; return '<a href="dictionary.html?entry=' + id + '" target="_blank" rel="noopener" title="Open the dictionary entry">' + (e[0] ? '<span class="g">' + esc(e[0]) + '</span>' : '') + esc(e[1]) + (e[2] ? ' · ' + esc(e[2]) : '') + '</a>'; }).join('') + (g.ds.size > 3 ? '<span class="none">+ ' + (g.ds.size - 3) + ' more dictionary entries</span>' : '')
         : '<span class="none">no dictionary entry yet</span>';
       let locs = '', used = 0;
       Object.keys(WI.src).forEach(s=>{
         const part = occ.filter(o=>o[0] === s); if(!part.length) return;
         locs += '<span class="wi-srclabel">' + esc(WI.src[s].name) + ' · ' + part.length + '</span>';
-        const open = expanded.has(g) ? part.length : Math.max(0, Math.min(part.length, CHIPS - used));
-        locs += part.slice(0, open).map(chip).join(''); used += open;
+        const open = expanded.has(g) ? part.length : Math.min(part.length, CHIPS);
+        locs += part.slice(0, open).map(chip).join('');
         if(open < part.length) locs += '<button type="button" class="loc-more" data-g="' + gi + '">+ ' + (part.length - open) + ' more</button>';
       });
       return '<div class="wi-row' + (g.ds.size ? '' : ' nodict') + '"><div class="wi-head">' +
