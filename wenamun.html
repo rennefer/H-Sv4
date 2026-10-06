@@ -951,6 +951,7 @@ nav.tabs a::before{
 .sr-idx-head .sr-translit{ font-family:'EB Garamond',serif; font-style:italic; font-size:16px; color:var(--ink-on-dark); flex:none; }
 .sr-idx-head .sr-en{ font-size:12.5px; color:var(--ink-soft-on-dark); min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sr-idx-n{ font-family:'Inter',sans-serif; font-size:10.5px; font-variant-numeric:tabular-nums; color:var(--ink-faint-on-dark); border:1px solid var(--panel-line); border-radius:10px; padding:0 7px; flex:none; }
+.sr-idx-mold{ font-family:'Inter',sans-serif; font-size:9px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-faint-on-dark); border:1px solid var(--panel-line); border-radius:10px; padding:0 6px; flex:none; }
 .sr-idx-src{ margin-top:6px; }
 .sr-idx-ms{ display:block; font-family:'Inter',sans-serif; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint-on-dark); }
 .sr-idx-src .sr-locs{ margin-top:4px; gap:5px; }
@@ -1390,20 +1391,31 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
     var all = d.occ.concat((d.occ_hs || []).map(function(h){ var e = d.dict[h[3]] || ['', '', '']; return ['hs', h[0], h[1], h[2], e[1], e[2], '', [h[3]], 0]; }));
     var map = {}, order = Object.keys(d.src);
     all.forEach(function(o){
-      var k = (o[4]||'').replace(/j/g,'i').replace(/[.\-= ]/g,'');
-      var g = map[k]; if(!g){ g = map[k] = {m:o[4], occ:[], en:{}, sp:{}}; WI_GROUPS.push(g); }
-      g.occ.push(o); g.sp[o[4]] = (g.sp[o[4]]||0) + 1;
+      /* a word linked with certainty to a dictionary entry is filed under the dictionary's spelling (pAy.f with pAiif) */
+      var de = (o[7] && o[7].length && !(o[8] & 1)) ? d.dict[o[7][0]] : null;
+      var canon = (de && de[1]) ? de[1] : o[4];
+      var k = wiWordKey(canon);
+      var g = map[k]; if(!g){ g = map[k] = {m:canon, occ:[], en:{}, sp:{}, wr:{}}; WI_GROUPS.push(g); }
+      g.occ.push(o); g.sp[canon] = (g.sp[canon]||0) + 1; g.wr[o[4]] = (g.wr[o[4]]||0) + 1;
       var en = (o[5]||'').trim(); if(en) g.en[en] = (g.en[en]||0) + 1;
     });
     WI_GROUPS.forEach(function(g){
       g.m = Object.keys(g.sp).sort(function(a,b){ return g.sp[b] - g.sp[a]; })[0];
+      /* found only in the Tale of Two Brothers, no confirmed dictionary entry: named after Moldenke's glossary */
+      if(g.occ.every(function(o){ return o[0] === 'tb' && !(o[7] && o[7].length && !(o[8] & 1)); })){
+        var mo = {}; g.occ.forEach(function(o){ if(o[6]) mo[o[6]] = (mo[o[6]]||0) + 1; });
+        var ms = Object.keys(mo).sort(function(a,b){ return mo[b] - mo[a]; });
+        if(ms.length){ g.m = ms[0]; g.mold = true; }
+      }
       g.enList = Object.keys(g.en).sort(function(a,b){ return g.en[b] - g.en[a]; });
       g.occ.sort(function(a,b){ return order.indexOf(a[0]) - order.indexOf(b[0]) || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]; });
-      g.sm = normTranslit(g.m); g.sen = normIJ(g.enList.join(' | '));
+      g.alts = Object.keys(g.wr).sort(function(a,b){ return g.wr[b] - g.wr[a]; }).filter(function(x){ return wiWordKey(x) !== wiWordKey(g.m); });
+      g.sm = normTranslit(g.m); g.sms = [g.sm].concat(g.alts.map(normTranslit)); g.sen = normIJ(g.enList.join(' | '));
     });
     renderResults(input.value.trim());
   }).catch(function(){ /* locations are optional */ });
   if(WI_SELF === 'two-brothers.html') loadGlossImages();
+  function wiWordKey(x){ return (x||'').replace(/j/g,'i').replace(/[.\-= ]/g,''); }
   function locChip(o){
     var sr = WI.src[o[0]];
     return '<span class="sr-loc' + ((o[8] & 1) ? ' doubt' : '') + '" role="link" tabindex="0" data-pg="' + sr.page + '" data-p="' + o[1] + '" data-l="' + o[2] +
@@ -1442,8 +1454,8 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
   function buildIndexSection(q, nq, nqT, limit){
     var html = '<div class="search-section-label"><span>Word index</span><span class="cnt">';
     if(!WI){ return html + 'loading…</span></div>'; }
-    var hits = WI_GROUPS.filter(function(g){ return (nqT && g.sm.indexOf(nqT) !== -1) || g.sen.indexOf(nq) !== -1; });
-    function rank(g){ var t = g.m === q ? 0 : matchTier(g.sm, nqT); if(t === 9) t = 3 + matchTier(g.sen, nq); return t * 100000 - Math.min(g.occ.length, 99999); }
+    var hits = WI_GROUPS.filter(function(g){ return (nqT && g.sms.some(function(x){ return x.indexOf(nqT) !== -1; })) || g.sen.indexOf(nq) !== -1; });
+    function rank(g){ var t = g.m === q ? 0 : Math.min.apply(null, g.sms.map(function(x){ return matchTier(x, nqT); })); if(t === 9) t = 3 + matchTier(g.sen, nq); return t * 100000 - Math.min(g.occ.length, 99999); }
     hits.sort(function(a,b){ return rank(a) - rank(b); });
     html += (hits.length ? hits.length.toLocaleString() + ' word' + (hits.length===1?'':'s') : 'no matches') + '</span></div>';
     if(!hits.length) return html + '<div class="search-empty">No annotated words match “' + escapeHtml(q) + '”.</div>';
@@ -1459,7 +1471,7 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
       }).join('');
       return '<div class="sr-idx-row">' +
         '<a class="sr-idx-head" href="' + url + '" target="_blank" rel="noopener" title="Open this word in the word index, with pictures">' +
-          '<span class="sr-translit">' + escapeHtml(g.m) + '</span> <span class="sr-en">' + escapeHtml(g.enList.slice(0, 5).join('; ')) + (g.enList.length > 5 ? '; …' : '') + '</span>' +
+          '<span class="sr-translit">' + escapeHtml(g.m) + '</span>' + (g.mold ? '<span class="sr-idx-mold" title="Named after Moldenke’s glossary">Moldenke</span>' : '') + ' <span class="sr-en">' + escapeHtml(g.enList.slice(0, 5).join('; ')) + (g.enList.length > 5 ? '; …' : '') + (g.alts.length ? ' · also written ' + escapeHtml(g.alts.slice(0, 4).join(', ')) : '') + '</span>' +
           '<span class="sr-idx-n">' + g.occ.length + '</span></a>' + locs + '</div>';
     }).join('');
     if(hits.length > shown.length) html += '<div class="search-more-link"><a href="word-index.html?q=' + encodeURIComponent(q) + '" target="_blank" rel="noopener">See all ' + hits.length.toLocaleString() + ' words in the Word Index ↗</a></div>';
