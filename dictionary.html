@@ -894,6 +894,16 @@ fetch('word-index.json').then(r=> r.ok ? r.json() : null).then(d=>{
     if(e._own) e._loc = e._own.map(o=> d.src[o[0]].abbr + ' ' + o[1] + '.' + o[2]).join(' | ');
   });
   renderDict();
+  /* the list was just redrawn: if the page was opened on one entry (?entry=N), bring that entry back into view */
+  const want = parseInt(new URLSearchParams(location.search).get('entry'), 10);
+  if(!Number.isNaN(want)){
+    const target = document.querySelector(`#results .entry[data-id="${want}"]`);
+    if(target){
+      target.scrollIntoView({block:'center'});
+      target.classList.add('hs-flash');
+      setTimeout(()=>target.classList.remove('hs-flash'), 1600);
+    }
+  }
 }).catch(()=>{ /* locations are optional; the dictionary works without them */ });
 document.addEventListener('click', ev=>{ if(ev.target.closest && ev.target.closest('.loc-chip')) ev.stopPropagation(); }, true);
 
