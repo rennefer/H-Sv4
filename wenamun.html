@@ -1415,6 +1415,21 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
     renderResults(input.value.trim());
   }).catch(function(){ /* locations are optional */ });
   if(WI_SELF === 'two-brothers.html') loadGlossImages();
+  /* how far apart two transliterations are: letters added, dropped or changed; a change of case only (h/H, d/D) counts half */
+  function wordDist(a, b){
+    var m = a.length, n = b.length, prev = [], cur = [], i, j;
+    for(j = 0; j <= n; j++) prev[j] = j;
+    for(i = 1; i <= m; i++){
+      cur = [i];
+      for(j = 1; j <= n; j++){
+        var x = a.charAt(i-1), y = b.charAt(j-1);
+        var sub = x === y ? 0 : (x.toLowerCase() === y.toLowerCase() ? 0.5 : 1);
+        cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + sub);
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
   function wiWordKey(x){ return (x||'').replace(/j/g,'i').replace(/[.\-= ]/g,''); }
   function locChip(o){
     var sr = WI.src[o[0]];
@@ -1458,9 +1473,9 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
     function rank(g){ var t = g.m === q ? 0 : Math.min.apply(null, g.sms.map(function(x){ return matchTier(x, nqT); })); if(t === 9) t = 3 + matchTier(g.sen, nq); return t * 100000 - Math.min(g.occ.length, 99999); }
     hits.sort(function(a,b){ return rank(a) - rank(b); });
     html += (hits.length ? hits.length.toLocaleString() + ' word' + (hits.length===1?'':'s') : 'no matches') + '</span></div>';
-    if(!hits.length) return html + '<div class="search-empty">No annotated words match “' + escapeHtml(q) + '”.</div>';
+    if(!hits.length) html += '<div class="search-empty">No annotated words match “' + escapeHtml(q) + '”.</div>';
     var shown = hits.slice(0, limit);
-    html += shown.map(function(g){
+    var rowHtml = function(g){
       var url = 'word-index.html?q=' + encodeURIComponent(g.m);
       var locs = Object.keys(WI.src).map(function(s){
         var part = g.occ.filter(function(o){ return o[0] === s; }); if(!part.length) return '';
@@ -1473,7 +1488,21 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
         '<a class="sr-idx-head" href="' + url + '" target="_blank" rel="noopener" title="Open this word in the word index, with pictures">' +
           '<span class="sr-translit">' + escapeHtml(g.m) + '</span>' + (g.mold ? '<span class="sr-idx-mold" title="Named after Moldenke’s glossary">Moldenke</span>' : '') + ' <span class="sr-en">' + escapeHtml(g.enList.slice(0, 5).join('; ')) + (g.enList.length > 5 ? '; …' : '') + (g.alts.length ? ' · also written ' + escapeHtml(g.alts.slice(0, 4).join(', ')) : '') + '</span>' +
           '<span class="sr-idx-n">' + g.occ.length + '</span></a>' + locs + '</div>';
-    }).join('');
+    };
+    html += shown.map(rowHtml).join('');
+    /* the 10 closest other words, under the real matches (Index tab only) */
+    var kq = wiWordKey(q);
+    if(limit > 3 && kq){
+      var cand = [];
+      WI_GROUPS.forEach(function(g){
+        if(hits.indexOf(g) !== -1) return;
+        var best = Infinity;
+        [g.m].concat(g.alts).forEach(function(x){ var dd = wordDist(kq, wiWordKey(x)); if(dd < best) best = dd; });
+        if(best <= Math.max(2, Math.ceil(kq.length * 0.6))) cand.push([best, g]);
+      });
+      cand.sort(function(a,b){ return a[0] - b[0] || b[1].occ.length - a[1].occ.length; });
+      if(cand.length) html += '<div class="search-section-label"><span>Closest other words</span><span class="cnt">' + Math.min(10, cand.length) + '</span></div>' + cand.slice(0, 10).map(function(c){ return rowHtml(c[1]); }).join('');
+    }
     if(hits.length > shown.length) html += '<div class="search-more-link"><a href="word-index.html?q=' + encodeURIComponent(q) + '" target="_blank" rel="noopener">See all ' + hits.length.toLocaleString() + ' words in the Word Index ↗</a></div>';
     return html;
   }
