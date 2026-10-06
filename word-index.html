@@ -702,6 +702,17 @@ nav.tabs a::before{
 .loc-more{ font-family:'Inter',sans-serif; font-size:11.5px; background:none; border:1px dashed var(--line); border-radius:3px; padding:2px 8px; color:var(--ink-soft); cursor:pointer; }
 .loc-more:hover{ border-color:var(--rubric); color:var(--rubric-deep); }
 @media (max-width:640px){ .wi-row{ grid-template-columns:1fr; } .wi-back{ margin-left:0; } }
+.wi-head .wi-alts{ font-family:'Inter',sans-serif; font-size:11px; color:var(--ink-faint); margin-top:1px; overflow-wrap:anywhere; }
+.wi-mold{ font-family:'Inter',sans-serif; font-style:normal; font-size:9.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-faint); border:1px solid var(--line); border-radius:10px; padding:1px 7px; vertical-align:middle; white-space:nowrap; }
+.wi-fam{ grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; padding-bottom:9px; margin-bottom:3px; border-bottom:1px solid var(--line); }
+.wi-fam-name{ font-family:'Spectral',serif; font-weight:600; font-size:17px; color:var(--ink); }
+.wi-fam-n{ font-family:'Inter',sans-serif; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); }
+.wi-fam-forms{ display:flex; flex-wrap:wrap; gap:5px; flex-basis:100%; }
+.wi-form{ font-family:'EB Garamond',serif; font-style:italic; font-size:15px; color:var(--ink-soft); background:var(--papyrus-deep); border:1px solid var(--line); border-radius:20px; padding:1px 11px; cursor:pointer; }
+.wi-form b{ font-family:'Inter',sans-serif; font-style:normal; font-weight:500; font-size:10.5px; font-variant-numeric:tabular-nums; color:var(--ink-faint); margin-left:2px; }
+.wi-form:hover, .wi-form:focus-visible{ border-color:var(--rubric); color:var(--rubric-deep); outline:none; }
+.wi-form.on{ background:var(--rubric); border-color:var(--rubric-deep); color:#f4ecd6; }
+.wi-form.on b{ color:#f4ecd6; }
 </style>
 
 <link rel="manifest" href="manifest.webmanifest">
@@ -762,7 +773,7 @@ nav.tabs a::before{
     <div class="result-count" id="wiCount">Loading the word index…</div>
     <div id="wiResults"></div>
     <button class="load-more" id="wiMore" style="display:none;">Show more words</button>
-    <p class="wi-note">Horus and Seth locations come from the dictionary's own word list; Wenamun and Two Brothers locations come from the AI annotations on those pages. Opening one takes you to that line (with the word marked, for Wenamun and Two Brothers). Orange locations are words whose dictionary link is uncertain; a dashed frame round a picture means the word's position on the hieratic is uncertain.</p>
+    <p class="wi-note">Words are gathered into families: a base word with its forms (Dd with Ddt and Ddin; pAy with pAiif, pAii.i, pAiik). Pick a form to see its locations. The families are made by rule, so some may be wrong. Horus and Seth locations come from the dictionary's own word list; Wenamun and Two Brothers locations come from the AI annotations on those pages. Opening one takes you to that line (with the word marked, for Wenamun and Two Brothers). Orange locations are words whose dictionary link is uncertain; a dashed frame round a picture means the word's position on the hieratic is uncertain.</p>
   </section>
 
   </div>
@@ -776,7 +787,7 @@ nav.tabs a::before{
 (function(){
   const WI_V = 'fe3858a61a';   /* stamp of the data files; changes on every rebuild so an older cached copy is never used */
   const PAGE_SIZE = 80, CHIPS = 18;   /* chips shown per manuscript before "+ N more" */
-  let WI = null, GROUPS = [], shown = PAGE_SIZE, current = [], IMGS = null, src = 'all';
+  let WI = null, GROUPS = [], FAMS = [], shown = PAGE_SIZE, current = [], IMGS = null, src = 'all';
   const $ = id => document.getElementById(id);
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function normIJ(s){ return (s||'').toLowerCase().replace(/j/g,'i'); }
@@ -794,23 +805,101 @@ nav.tabs a::before{
     /* Horus and Seth words come from the dictionary itself: [page, line, word no., dictionary id] */
     const all = WI.occ.concat((WI.occ_hs || []).map(h=>{ const e = WI.dict[h[3]] || ['', '', '']; return ['hs', h[0], h[1], h[2], e[1], e[2], '', [h[3]], 0]; }));
     all.forEach(o=>{
+      /* A word that is linked (with certainty) to a dictionary entry is filed under the dictionary's spelling,
+         so pAy.f on the manuscript pages lands in the same row as the dictionary's pAiif. */
+      const de = (o[7] && o[7].length && !(o[8] & 1)) ? WI.dict[o[7][0]] : null;
+      const canon = (de && de[1]) ? de[1] : o[4];
       const d = '';
-      const key = wordKey(o[4]);
+      const key = wordKey(canon);
       let g = map.get(key);
-      if(!g){ g = {m:o[4], d:d, ds:new Set(), en:new Map(), occ:[], spell:new Map()}; map.set(key, g); }
+      if(!g){ g = {m:canon, d:d, ds:new Set(), en:new Map(), occ:[], spell:new Map(), written:new Map()}; map.set(key, g); }
       g.occ.push(o); (o[7]||[]).forEach(x=>g.ds.add(x));
       const e = (o[5]||'').trim(); if(e) g.en.set(e, (g.en.get(e)||0)+1);
-      g.spell.set(o[4], (g.spell.get(o[4])||0)+1);
+      g.spell.set(canon, (g.spell.get(canon)||0)+1);
+      g.written.set(o[4], (g.written.get(o[4])||0)+1);
     });
     GROUPS = Array.from(map.values()).map(g=>{
       g.m = Array.from(g.spell.entries()).sort((a,b)=>b[1]-a[1])[0][0];
+      /* A word found only in the Tale of Two Brothers, with no confirmed dictionary entry, is named after
+         Moldenke's glossary (his own spelling); the modern transliteration is kept as "also written". */
+      if(g.occ.every(o=> o[0] === 'tb' && !(o[7] && o[7].length && !(o[8] & 1)))){
+        const mo = new Map(); g.occ.forEach(o=>{ if(o[6]) mo.set(o[6], (mo.get(o[6])||0)+1); });
+        if(mo.size){ g.m = Array.from(mo.entries()).sort((a,b)=>b[1]-a[1])[0][0]; g.mold = true; }
+      }
       g.enList = Array.from(g.en.entries()).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
       const ord = Object.keys(WI.src);
       g.occ.sort((a,b)=> ord.indexOf(a[0]) - ord.indexOf(b[0]) || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]);
+      g.alts = Array.from(g.written.entries()).sort((a,b)=>b[1]-a[1]).map(x=>x[0]).filter(x=> wordKey(x) !== wordKey(g.m));
       g.sm = normT(g.m);
+      g.sms = [g.sm].concat(g.alts.map(normT));
       g.sen = normIJ(g.enList.join(' | '));
       g.sloc = g.occ.map(o=>locText(o).toLowerCase()).join(' | ');
       return g;
+    });
+    buildFamilies();
+  }
+
+  /* ---------- word families ----------
+     A family is a base word with its forms: Dd with Ddt, Ddin, Dd+n; pAy with pAiif, pAii.i, pAiik; iw with iw.f, iw.k.
+     1. always: a suffix pronoun after a dot is dropped (.f .k .i .sn .tw ...), the possessive articles
+        pAy/tAy/nAy collect all their persons, and "word+word" files under its first word;
+     2. endings (t, w, y, i, in, tw ...) are only dropped when the shorter word exists AND shares a meaning,
+        so Ddt joins Dd, but mwt "mother" does not join mw "water". */
+  const FAM_NEVER = new Set([]);   /* transliterations that must stay on their own, if a wrong family ever turns up */
+  function famBase(m){
+    let s = (m||'').replace(/j/g,'i');
+    const plus = s.indexOf('+'); if(plus > 0) s = s.slice(0, plus);
+    const pos = /^(pA|tA|nA)(?:ii|y)\.?(?:i|k|t|f|s|st|sn|tn|n|w)?$/.exec(s);
+    if(pos) return pos[1] + 'y';
+    for(;;){
+      const m2 = /^(.+)\.(?:kwi|tw|ti|st|sn|tn|sy|i|k|t|f|s|n|w)$/.exec(s);
+      if(!m2 || m2[1] === 'i') break;
+      s = m2[1];
+    }
+    return s;
+  }
+  const IRREG = {said:'say', says:'say', spoke:'speak', spoken:'speak', went:'go', gone:'go', came:'come', gave:'give', given:'give', did:'do', done:'do', made:'make', saw:'see', seen:'see', found:'find', brought:'bring', took:'take', taken:'take', told:'tell', stood:'stand', sat:'sit', knew:'know', known:'know', heard:'hear', fell:'fall', slew:'slay', slain:'slay', ate:'eat', drank:'drink', wept:'weep', children:'child', men:'man', women:'woman'};
+  const STOP = new Set('the a an of to is was were be been being are am and in on at it he she his her him you your i my me we our they them their its by for with that this which who as from not no one into upon out up'.split(' '));
+  function meaningTokens(g){
+    const t = new Set();
+    g.enList.forEach(e=> e.toLowerCase().replace(/[^a-z ]+/g,' ').split(/\s+/).forEach(x=>{
+      if(!x || STOP.has(x)) return;
+      x = IRREG[x] || x;
+      x = x.replace(/(?:ing|ed|es|s)$/, '');
+      if(x.length > 1) t.add(x);
+    }));
+    return t;
+  }
+  function buildFamilies(){
+    const fmap = new Map();
+    GROUPS.forEach(g=>{
+      const base = FAM_NEVER.has(g.m) || g.mold ? g.m : famBase(g.m);
+      const k = wordKey(base);
+      let f = fmap.get(k); if(!f){ f = {key:k, base:base, members:[]}; fmap.set(k, f); }
+      f.members.push(g);
+    });
+    const ENDS = ['wt','yt','tw','ti','in','ii','t','w','y','i'];
+    const toks = f => { if(!f.tok){ f.tok = new Set(); f.members.forEach(g=> meaningTokens(g).forEach(x=>f.tok.add(x))); } return f.tok; };
+    const moves = [];
+    fmap.forEach(f=>{
+      if(f.members.some(g=>g.mold || FAM_NEVER.has(g.m))) return;
+      if(/^(pA|tA|nA)y$/.test(f.key)) return;   /* the possessives pAy/tAy/nAy stay apart from the articles pA/tA/nA */
+      for(const e of ENDS){
+        if(!f.key.endsWith(e)) continue;
+        const stem = f.key.slice(0, -e.length);
+        if(stem.length < 2) continue;
+        const t = fmap.get(stem); if(!t || t === f) continue;
+        const a = toks(f), b = toks(t); let share = false; a.forEach(x=>{ if(b.has(x)) share = true; });
+        if(share){ moves.push([f, t]); break; }
+      }
+    });
+    moves.forEach(mv=>{ const f = mv[0]; let t = mv[1]; while(t.into) t = t.into; if(t === f) return; f.into = t; t.members = t.members.concat(f.members); fmap.delete(f.key); });
+    FAMS = Array.from(fmap.values());
+    FAMS.forEach(f=>{
+      f.members.sort((a,b)=> b.occ.length - a.occ.length);
+      const own = f.members.find(g=> wordKey(g.m) === f.key);
+      f.name = own ? own.m : f.base;
+      f.sm = normT(f.name);
     });
   }
 
@@ -818,17 +907,33 @@ nav.tabs a::before{
     const q = $('wiSearch').value.trim(), nq = normIJ(q), nqT = normT(q);
     const noDict = $('wiNoDict').checked, sort = $('wiSort').value;
     const dParam = wantDict;
-    let list = GROUPS.filter(g=>{
+    const isLoc = /^[a-z]+ \d+\.\d+$/.test(nq);
+    const passes = g=>{
       if(src !== 'all' && !g.occ.some(o=>o[0] === src)) return false;
       if(noDict && g.ds.size) return false;
       if(dParam !== null && !dParam.some(id=>g.ds.has(id))) return false;
+      return true;
+    };
+    const matches = g=>{
       if(!q) return true;
-      if(/^[a-z]+ \d+\.\d+$/.test(nq)) return (' | ' + g.sloc + ' | ').indexOf(' | ' + nq + ' | ') !== -1;  /* a full location such as "tb 1.1" must not also match 1.10 */
-      return (nqT && g.sm.indexOf(nqT) !== -1) || g.sen.indexOf(nq) !== -1 || g.sloc.indexOf(nq) !== -1;
-    });
+      if(isLoc) return (' | ' + g.sloc + ' | ').indexOf(' | ' + nq + ' | ') !== -1;  /* a full location such as "tb 1.1" must not also match 1.10 */
+      return (nqT && g.sms.some(x=> x.indexOf(nqT) !== -1)) || g.sen.indexOf(nq) !== -1 || g.sloc.indexOf(nq) !== -1;
+    };
     const n = g => src === 'all' ? g.occ.length : g.occ.filter(o=>o[0] === src).length;
-    function tier(g){ if(!q) return 0; if(g.sm === nqT) return 0; if(nqT && g.sm.indexOf(nqT) === 0) return 1; if(nqT && g.sm.indexOf(nqT) !== -1) return 2; return 3; }
-    list.sort((a,b)=> tier(a) - tier(b) || (sort === 'freq' ? n(b) - n(a) : 0) || a.sm.localeCompare(b.sm) || a.m.localeCompare(b.m));
+    function tier(g){ if(!q) return 0; if(!nqT || !matches(g)) return 4; let t = 3; g.sms.forEach(x=>{ const i = x.indexOf(nqT); if(i === -1) return; t = Math.min(t, x === nqT ? 0 : i === 0 ? 1 : 2); }); return t; }
+    const list = [];
+    FAMS.forEach(f=>{
+      const vis = f.members.filter(passes);
+      if(!vis.length || !vis.some(matches)) return;
+      vis.sort((a,b)=> n(b) - n(a));
+      f.vis = vis; f.n = vis.reduce((s,g)=> s + n(g), 0);
+      f.tier = Math.min.apply(null, vis.map(tier));
+      /* the form shown open: the one the reader picked, else the best match for the search, else the commonest */
+      const pk = picked.get(f);
+      f.sel = (pk && vis.indexOf(pk) !== -1) ? pk : (q ? vis.slice().sort((a,b)=> tier(a) - tier(b) || n(b) - n(a))[0] : vis[0]);
+      list.push(f);
+    });
+    list.sort((a,b)=> a.tier - b.tier || (sort === 'freq' ? b.n - a.n : 0) || a.sm.localeCompare(b.sm) || a.name.localeCompare(b.name));
     current = list; shown = PAGE_SIZE; render();
   }
 
@@ -841,13 +946,20 @@ nav.tabs a::before{
   }
 
   function render(){
-    const total = current.reduce((a,g)=>a + (src === 'all' ? g.occ.length : g.occ.filter(o=>o[0] === src).length), 0);
-    $('wiCount').innerHTML = '<b>' + current.length.toLocaleString() + '</b> word' + (current.length === 1 ? '' : 's') +
-      ' · <b>' + total.toLocaleString() + '</b> location' + (total === 1 ? '' : 's') +
-      (wantDict !== null ? ' · one dictionary word <a href="word-index.html" style="color:inherit">(show all)</a>' : '');
+    const total = current.reduce((a,f)=> a + f.n, 0), words = current.reduce((a,f)=> a + f.vis.length, 0);
+    $('wiCount').innerHTML = '<b>' + current.length.toLocaleString() + '</b> word famil' + (current.length === 1 ? 'y' : 'ies') +
+      ' \u00b7 <b>' + words.toLocaleString() + '</b> word' + (words === 1 ? '' : 's') +
+      ' \u00b7 <b>' + total.toLocaleString() + '</b> location' + (total === 1 ? '' : 's') +
+      (wantDict !== null ? ' \u00b7 one dictionary word <a href="word-index.html" style="color:inherit">(show all)</a>' : '');
     const box = $('wiResults');
     if(!current.length){ box.innerHTML = '<div class="empty">No annotated words match that search.</div>'; $('wiMore').style.display = 'none'; return; }
-    box.innerHTML = current.slice(0, shown).map((g, gi)=>{
+    const cnt = g => src === 'all' ? g.occ.length : g.occ.filter(o=>o[0] === src).length;
+    box.innerHTML = current.slice(0, shown).map((f, gi)=>{
+      const g = f.sel;
+      const fam = f.vis.length > 1
+        ? '<div class="wi-fam"><span class="wi-fam-name">' + esc(f.name) + '</span><span class="wi-fam-n">family \u00b7 ' + f.vis.length + ' forms \u00b7 ' + f.n + ' locations</span>' +
+          '<span class="wi-fam-forms">' + f.vis.map((m, mi)=> '<button type="button" class="wi-form' + (m === g ? ' on' : '') + '" data-f="' + gi + '" data-m="' + mi + '" aria-pressed="' + (m === g) + '">' + esc(m.m) + ' <b>' + cnt(m) + '</b></button>').join('') + '</span></div>'
+        : '';
       const occ = src === 'all' ? g.occ : g.occ.filter(o=>o[0] === src);
       const dict = g.ds.size
         ? (function(){
@@ -867,8 +979,9 @@ nav.tabs a::before{
         locs += part.slice(0, open).map(chip).join('');
         if(open < part.length) locs += '<button type="button" class="loc-more" data-g="' + gi + '">+ ' + (part.length - open) + ' more</button>';
       });
-      return '<div class="wi-row' + (g.ds.size ? '' : ' nodict') + '"><div class="wi-head">' +
-        '<div class="translit">' + esc(g.m) + '</div>' +
+      return '<div class="wi-row' + (g.ds.size ? '' : ' nodict') + '">' + fam + '<div class="wi-head">' +
+        '<div class="translit">' + esc(g.m) + (g.mold ? ' <span class="wi-mold" title="Named after Moldenke\u2019s glossary to the Tale of Two Brothers">Moldenke</span>' : '') + '</div>' +
+        (g.alts.length ? '<div class="wi-alts">also written ' + esc(g.alts.slice(0, 6).join(', ')) + (g.alts.length > 6 ? ', \u2026' : '') + '</div>' : '') +
         '<div class="english">' + esc(g.enList.slice(0, 6).join('; ')) + (g.enList.length > 6 ? '; …' : '') + '</div>' +
         '<div class="wi-cnt">' + occ.length + ' location' + (occ.length === 1 ? '' : 's') + '</div>' +
         '<div class="wi-dict">' + dict + '</div></div>' +
@@ -877,7 +990,7 @@ nav.tabs a::before{
     $('wiMore').style.display = current.length > shown ? 'block' : 'none';
   }
 
-  const expanded = new Set();
+  const expanded = new Set(), picked = new Map();
   const params = new URLSearchParams(location.search);
   let wantDict = params.has('d') ? params.get('d').split(',').map(x=>parseInt(x, 10)).filter(x=>!isNaN(x)) : null;
   if(wantDict && !wantDict.length) wantDict = null;
@@ -893,8 +1006,10 @@ nav.tabs a::before{
   });
   $('wiMore').addEventListener('click', ()=>{ shown += PAGE_SIZE; render(); });
   $('wiResults').addEventListener('click', e=>{
+    const fb = e.target.closest('.wi-form');
+    if(fb){ const f = current[Number(fb.dataset.f)], m = f.vis[Number(fb.dataset.m)]; picked.set(f, m); f.sel = m; render(); return; }
     const b = e.target.closest('.loc-more'); if(!b) return;
-    expanded.add(current[Number(b.dataset.g)]); render();
+    expanded.add(current[Number(b.dataset.g)].sel); render();
   });
 
   fetch('word-index.json?v=' + WI_V).then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); }).then(d=>{
