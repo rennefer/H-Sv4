@@ -713,6 +713,8 @@ nav.tabs a::before{
 .wi-form:hover, .wi-form:focus-visible{ border-color:var(--rubric); color:var(--rubric-deep); outline:none; }
 .wi-form.on{ background:var(--rubric); border-color:var(--rubric-deep); color:#f4ecd6; }
 .wi-form.on b{ color:#f4ecd6; }
+.wi-close-head{ font-family:'Inter',sans-serif; font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-soft-on-dark); margin:18px 2px 2px; padding-top:14px; border-top:1px dashed var(--line); }
+.wi-row.close{ border-left-color:var(--malachite); }
 </style>
 
 <link rel="manifest" href="manifest.webmanifest">
@@ -787,7 +789,7 @@ nav.tabs a::before{
 (function(){
   const WI_V = 'fe3858a61a';   /* stamp of the data files; changes on every rebuild so an older cached copy is never used */
   const PAGE_SIZE = 80, CHIPS = 18;   /* chips shown per manuscript before "+ N more" */
-  let WI = null, GROUPS = [], FAMS = [], shown = PAGE_SIZE, current = [], IMGS = null, src = 'all';
+  let closeStart = 0, WI = null, GROUPS = [], FAMS = [], shown = PAGE_SIZE, current = [], IMGS = null, src = 'all';
   const $ = id => document.getElementById(id);
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function normIJ(s){ return (s||'').toLowerCase().replace(/j/g,'i'); }
@@ -903,6 +905,22 @@ nav.tabs a::before{
     });
   }
 
+  /* how far apart two transliterations are: letters added, dropped or changed; a change of case only (h/H, d/D) counts half */
+  function wordDist(a, b){
+    var m = a.length, n = b.length, prev = [], cur = [], i, j;
+    for(j = 0; j <= n; j++) prev[j] = j;
+    for(i = 1; i <= m; i++){
+      cur = [i];
+      for(j = 1; j <= n; j++){
+        var x = a.charAt(i-1), y = b.charAt(j-1);
+        var sub = x === y ? 0 : (x.toLowerCase() === y.toLowerCase() ? 0.5 : 1);
+        cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + sub);
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+
   function filter(){
     const q = $('wiSearch').value.trim(), nq = normIJ(q), nqT = normT(q);
     const noDict = $('wiNoDict').checked, sort = $('wiSort').value;
@@ -934,6 +952,25 @@ nav.tabs a::before{
       list.push(f);
     });
     list.sort((a,b)=> a.tier - b.tier || (sort === 'freq' ? b.n - a.n : 0) || a.sm.localeCompare(b.sm) || a.name.localeCompare(b.name));
+    /* the 10 closest other words, shown under the real matches (not for a location search) */
+    closeStart = list.length;
+    const kq = wordKey(q);
+    if(kq && !isLoc){
+      const inList = new Set(list), cand = [];
+      FAMS.forEach(f=>{
+        if(inList.has(f)) return;
+        const vis = f.members.filter(passes); if(!vis.length) return;
+        let best = Infinity, bg = null;
+        vis.forEach(g=> [g.m].concat(g.alts).forEach(x=>{ const d = wordDist(kq, wordKey(x)); if(d < best){ best = d; bg = g; } }));
+        if(best <= Math.max(2, Math.ceil(kq.length * 0.6))) cand.push([best, f, vis, bg]);
+      });
+      cand.sort((a,b)=> a[0] - b[0] || b[2].reduce((s,g)=>s+n(g),0) - a[2].reduce((s,g)=>s+n(g),0) || a[1].sm.localeCompare(b[1].sm));
+      cand.slice(0, 10).forEach(c=>{
+        const f = c[1]; f.vis = c[2].sort((a,b)=> n(b) - n(a)); f.n = f.vis.reduce((s,g)=> s + n(g), 0); f.tier = 9;
+        const pk = picked.get(f); f.sel = (pk && f.vis.indexOf(pk) !== -1) ? pk : c[3];
+        list.push(f);
+      });
+    }
     current = list; shown = PAGE_SIZE; render();
   }
 
@@ -946,16 +983,18 @@ nav.tabs a::before{
   }
 
   function render(){
-    const total = current.reduce((a,f)=> a + f.n, 0), words = current.reduce((a,f)=> a + f.vis.length, 0);
-    $('wiCount').innerHTML = '<b>' + current.length.toLocaleString() + '</b> word famil' + (current.length === 1 ? 'y' : 'ies') +
+    const direct = current.slice(0, closeStart);
+    const total = direct.reduce((a,f)=> a + f.n, 0), words = direct.reduce((a,f)=> a + f.vis.length, 0);
+    $('wiCount').innerHTML = '<b>' + direct.length.toLocaleString() + '</b> word famil' + (direct.length === 1 ? 'y' : 'ies') +
       ' \u00b7 <b>' + words.toLocaleString() + '</b> word' + (words === 1 ? '' : 's') +
       ' \u00b7 <b>' + total.toLocaleString() + '</b> location' + (total === 1 ? '' : 's') +
       (wantDict !== null ? ' \u00b7 one dictionary word <a href="word-index.html" style="color:inherit">(show all)</a>' : '');
     const box = $('wiResults');
     if(!current.length){ box.innerHTML = '<div class="empty">No annotated words match that search.</div>'; $('wiMore').style.display = 'none'; return; }
     const cnt = g => src === 'all' ? g.occ.length : g.occ.filter(o=>o[0] === src).length;
+    const closeHead = '<div class="wi-close-head">' + (closeStart ? 'Closest other words' : 'No exact match \u2014 the closest words') + '</div>';
     box.innerHTML = current.slice(0, shown).map((f, gi)=>{
-      const g = f.sel;
+      const g = f.sel, pre = (gi === closeStart) ? closeHead : '';
       const fam = f.vis.length > 1
         ? '<div class="wi-fam"><span class="wi-fam-name">' + esc(f.name) + '</span><span class="wi-fam-n">family \u00b7 ' + f.vis.length + ' forms \u00b7 ' + f.n + ' locations</span>' +
           '<span class="wi-fam-forms">' + f.vis.map((m, mi)=> '<button type="button" class="wi-form' + (m === g ? ' on' : '') + '" data-f="' + gi + '" data-m="' + mi + '" aria-pressed="' + (m === g) + '">' + esc(m.m) + ' <b>' + cnt(m) + '</b></button>').join('') + '</span></div>'
@@ -979,7 +1018,7 @@ nav.tabs a::before{
         locs += part.slice(0, open).map(chip).join('');
         if(open < part.length) locs += '<button type="button" class="loc-more" data-g="' + gi + '">+ ' + (part.length - open) + ' more</button>';
       });
-      return '<div class="wi-row' + (g.ds.size ? '' : ' nodict') + '">' + fam + '<div class="wi-head">' +
+      return pre + '<div class="wi-row' + (g.ds.size ? '' : ' nodict') + (gi >= closeStart ? ' close' : '') + '">' + fam + '<div class="wi-head">' +
         '<div class="translit">' + esc(g.m) + (g.mold ? ' <span class="wi-mold" title="Named after Moldenke\u2019s glossary to the Tale of Two Brothers">Moldenke</span>' : '') + '</div>' +
         (g.alts.length ? '<div class="wi-alts">also written ' + esc(g.alts.slice(0, 6).join(', ')) + (g.alts.length > 6 ? ', \u2026' : '') + '</div>' : '') +
         '<div class="english">' + esc(g.enList.slice(0, 6).join('; ')) + (g.enList.length > 6 ? '; …' : '') + '</div>' +
