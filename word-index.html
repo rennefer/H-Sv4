@@ -42,16 +42,6 @@ body{
   min-height:100vh;
   position:relative;
 }
-body::before{
-  content:"";
-  position:fixed; inset:0;
-  pointer-events:none;
-  opacity:.5;
-  background-image:
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 68px),
-    repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 1px, transparent 68px);
-  z-index:0;
-}
 .wrap{position:relative; z-index:1; max-width:1100px; margin:0 auto; padding:0 22px 90px;}
 
 /* ---------- header ---------- */
@@ -787,7 +777,7 @@ nav.tabs a::before{
    Optional: word-index-images.json, a map "src:page.line:k" -> picture of that word cut from the hieratic photo.
    If that file exists its pictures are shown on the location chips; without it the page works as text only. */
 (function(){
-  const WI_V = 'feb9832208';   /* stamp of the data files; changes on every rebuild so an older cached copy is never used */
+  const WI_V = '20bbf235fc';   /* stamp of the data files; changes on every rebuild so an older cached copy is never used */
   const PAGE_SIZE = 80, CHIPS = 18;   /* chips shown per manuscript before "+ N more" */
   let closeStart = 0, WI = null, GROUPS = [], FAMS = [], shown = PAGE_SIZE, current = [], IMGS = null, src = 'all';
   const $ = id => document.getElementById(id);
