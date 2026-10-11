@@ -427,9 +427,12 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
           <button type="button" data-key="*" title="Put the next sign beside the one before">* <span>beside</span></button>
           <button type="button" data-key="()" title="Group signs, e.g. (𓏏*𓏤):𓆑">( ) <span>group</span></button>
           <button type="button" data-key="-" title="Start a new block here">- <span>new block</span></button>
+          <button type="button" data-key="_" title="Write the sign before low, below the line (k, f; f also gets its long stroke)">_ <span>low</span></button>
           <button type="button" id="lwRed" class="lw-red" title="Red ink: select signs and press to make them red (or black again); with nothing selected, red starts or stops where the cursor is">$r <span>red ink</span></button>
         </div>
         <p class="lw-hint">A space ends a word. The writer guesses the stacking by itself; where it guesses wrong, type the JSesh keys between the signs of that block: <code class="pb-code">𓈖:𓆑</code> puts 𓆑 under 𓈖, <code class="pb-code">𓏏*𓏤</code> sets them side by side, <code class="pb-code">(𓏏*𓏤):𓆑</code> groups, and <code class="pb-code">-</code> starts a new block. Blocks you key yourself are drawn exactly as typed. Sign codes and sound values work too: <code class="pb-code">D:d n f</code>.</p>
+        <p class="lw-hint">You can also type the transliteration: <code class="pb-code">Dd</code> and a space becomes 𓆓𓂧 by itself. If the word has more than one spelling, press <kbd>Shift</kbd>+<kbd>Space</kbd> to go through them (from the dictionary and our reviewed words, then the single signs).</p>
+        <p class="lw-hint">Low signs: type <code class="pb-code">_</code> right after a sign to write it below the line, as the scribes often did with k and f; in hieratic, f then gets its long stroke running on under the next signs (<code class="pb-code">𓎡_</code>, <code class="pb-code">𓆑_</code>).</p>
         <p class="lw-hint">Red ink: <code class="pb-code">$r</code> starts red and <code class="pb-code">$b</code> goes back to black, as in JSesh. Press <em>red ink</em> before typing to write in red, select signs and press it to colour them afterwards, or click a block in the drawing to switch it between red and black.</p>
         <p class="lw-note" id="lwMsg" aria-live="polite"></p>
 
@@ -558,7 +561,7 @@ if ('serviceWorker' in navigator) {
   }
 
   function parseSign(tok, G) {          // CODE[\mods]
-    let mirror = false, rot = 0, size = 100, m;
+    let mirror = false, rot = 0, size = 100, m, drop = false;
     let code = tok;
     const bs = tok.indexOf('\\');
     if (bs >= 0) {
@@ -568,13 +571,14 @@ if ('serviceWorker' in navigator) {
         if (md === '' || md === 'l' || md === 'r') mirror = !mirror;
         else if ((m = /^R(\d+)$/.exec(md))) rot = +m[1];
         else if ((m = /^(\d+)%?$/.exec(md))) size = +m[1];
+        else if (md === 'down') drop = true;
       }
     }
     const c = canon(code, G);
     if (!c) return { kind: 'unknown', code, w: 6, h: 6 };
     const s = G.sign[c]; let w = s[0] * G.scale * size / 100, h = s[1] * G.scale * size / 100;
     if (rot === 90 || rot === 270) { const t = w; w = h; h = t; }
-    return { kind: 'sign', code: c, raw: code, w, h, mirror, rot, plain: size === 100 && !rot };
+    return { kind: 'sign', code: c, raw: code, w, h, mirror, rot, drop, plain: size === 100 && !rot };
   }
 
   /* element of a row: sign, ligature, or bracketed group */
@@ -612,7 +616,7 @@ if ('serviceWorker' in navigator) {
   function shift(b, dx, dy) { return b.glyphs.map(g => ({ ...g, x: g.x + dx, y: g.y + dy })); }
 
   function elementBox(e, G) {
-    if (e.kind === 'sign') return { w: e.w, h: e.h, glyphs: [{ code: e.code, x: 0, y: 0, w: e.w, h: e.h, mirror: e.mirror, rot: e.rot }] };
+    if (e.kind === 'sign') return { w: e.w, h: e.h, glyphs: [{ code: e.code, x: 0, y: 0, w: e.w, h: e.h, mirror: e.mirror, rot: e.rot, drop: e.drop }] };
     if (e.kind === 'unknown') return { w: e.w, h: e.h, glyphs: [{ code: '?' + e.code, x: 0, y: 0, w: e.w, h: e.h }] };
     if (e.kind === 'lig') {
       const L = G.lig && G.lig[e.key];
@@ -698,37 +702,50 @@ if ('serviceWorker' in navigator) {
     let x = SPEC.margin, red = false, shading = false;
     const out = [], quads = [], marks = [];
     let first = true;
+    /* spacing: opts.skip between blocks (default the JSesh skip), opts.wordGap before a word marked "_",
+       opts.tightSkip inside a word marked "_t" (a word the writer knows, written closer as the scribes did) */
+    const SKIP = opts.skip != null ? opts.skip : SPEC.skip, WGAP = opts.wordGap != null ? opts.wordGap : SKIP, TIGHT = opts.tightSkip != null ? opts.tightSkip : SKIP;
+    let curSkip = SKIP, nextGap = null;
+    const gap = () => { if (first) return 0; const g = nextGap != null ? nextGap : curSkip; nextGap = null; return g; };
     for (const it of items) {
       if (typeof it !== 'string') continue;                    // text runs are skipped
       if (it === '!') continue;
+      if (it === '_' || it === '_t') { nextGap = WGAP; curSkip = it === '_t' ? TIGHT : SKIP; continue; }
       if (it === '$r') { red = true; continue; }
       if (it === '$b') { red = false; continue; }
       if (it === '#b') { shading = true; continue; }
       if (it === '#e') { shading = false; continue; }
       if (/^\?\d+$/.test(it) || it === '^^^') continue;
-      if (it === '..' || it === '.') { const w = it === '..' ? SPEC.quadH : SPEC.quadH / 2; if (!first) x += SPEC.skip; quads.push({ x, y: 0, w, h: SPEC.quadH, shade: shading ? '1234' : '' }); x += w; first = false; continue; }
+      if (it === '..' || it === '.') { const w = it === '..' ? SPEC.quadH : SPEC.quadH / 2; x += gap(); quads.push({ x, y: 0, w, h: SPEC.quadH, shade: shading ? '1234' : '' }); x += w; first = false; continue; }
       if (it === '//' || it === 'v/' || it === 'h/') {
         const w = it === 'v/' ? SPEC.quadH / 2 : SPEC.quadH, h = it === 'h/' ? SPEC.quadH / 2 : SPEC.quadH;
-        if (!first) x += SPEC.skip; quads.push({ x, y: SPEC.quadH - h, w, h, shade: '1234', lacuna: true }); x += w; first = false; continue;
+        x += gap(); quads.push({ x, y: SPEC.quadH - h, w, h, shade: '1234', lacuna: true }); x += w; first = false; continue;
       }
       // philology brackets ([[ ]] [{ }] [& &] [" "] [' '] [? ?]) take a narrow place of their own
       const br = /^(\[\[|\]\]|\[\{|\}\]|\[&|&\]|\["|"\]|\['|'\]|\[\?|\?\])(#\d+)?$/.exec(it);
-      if (br) { if (!first) x += SPEC.skip; out.push({ code: br[1], bracket: true, x, y: 0, w: 3, h: SPEC.quadH, red }); quads.push({ x, y: 0, w: 3, h: SPEC.quadH, shade: shading ? '1234' : '', tok: it, n: 1 }); x += 3; first = false; continue; }
+      if (br) { x += gap(); out.push({ code: br[1], bracket: true, x, y: 0, w: 3, h: SPEC.quadH, red }); quads.push({ x, y: 0, w: 3, h: SPEC.quadH, shade: shading ? '1234' : '', tok: it, n: 1 }); x += 3; first = false; continue; }
       let tok = it;
       const cad = parseCadrat(tok, G);
       const b = cadratBox(cad, G, false);
-      if (!first) x += SPEC.skip;
+      x += gap();
       out.push(...shift(b, x, 0).map(g => ({ ...g, red })));
       quads.push({ x, y: 0, w: b.w, h: SPEC.quadH, shade: shading ? '1234' : cad.shade, tok, n: b.glyphs.length });
       x += b.w; first = false;
     }
-    const width = x + SPEC.margin, height = SPEC.quadH;
+    let height = SPEC.quadH;
+    if (opts.lowForms) out.forEach(g => {
+      if (!g.drop) return;
+      g.y += g.h * 0.5;                                          // below the line
+      if (g.code === 'I9' || /^I9_/.test(g.code)) g.tail = SPEC.quadH * 1.4;   // the long stroke of f, running on under the next signs
+      height = Math.max(height, g.y + g.h + (g.tail ? 2 : 0));
+    });
+    const width = x + SPEC.margin;
     if (rtl) {                                                   // right to left: mirror positions and turn the signs to face right
       out.forEach(g => { g.x = width - g.x - g.w; g.mirror = !g.mirror; });
       quads.forEach(q => { q.x = width - q.x - q.w; });
       marks.forEach(m => { m.x = width - m.x - m.w; });
     }
-    return { width, height, glyphs: out, quads, marks };
+    return { width, height, glyphs: out, quads, marks, rtl };
   }
 
   /* ---------------- SVG output ---------------- */
@@ -768,6 +785,11 @@ if ('serviceWorker' in navigator) {
       }
       const fill = s[3] ? (opts.grey || '#a39a8c') : (g.red ? redInk : ink);   // s[3]: a stand-in sign (no hieratic form yet)
       p.push(`<path transform="${t}" d="${s[2]}" fill="${fill}"${opts.ids ? ` data-code="${g.code}"` : ''}/>`);
+      if (g.tail) {                                               // tapered stroke from the foot of the sign, in the reading direction
+        const dir = L.rtl ? -1 : 1, x0 = g.x + g.w * (L.rtl ? 0.35 : 0.65), y0 = g.y + g.h * 0.92, x1 = x0 + dir * g.tail, y1 = y0 + 1.2;
+        const t0 = Math.max(0.9, g.h * 0.09);
+        p.push(`<path d="M ${x0.toFixed(2)} ${(y0 - t0 / 2).toFixed(2)} Q ${((x0 + x1) / 2).toFixed(2)} ${(y0 + 1.6).toFixed(2)} ${x1.toFixed(2)} ${y1.toFixed(2)} Q ${((x0 + x1) / 2).toFixed(2)} ${(y0 + 1.6 + t0).toFixed(2)} ${x0.toFixed(2)} ${(y0 + t0 / 2).toFixed(2)} Z" fill="${fill}"/>`);
+      }
     }
     for (const q of L.quads) for (const r of shadeRects(q)) p.push(`<rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="url(#lwHatch)"/>`);
     for (const m of L.marks) p.push(`<text x="${m.x + m.w / 2}" y="${L.height - 3}" font-size="9" text-anchor="middle" fill="${ink}" font-family="serif">${m.text.replace(/[\[\]]/g, c => c === '[' ? '[' : ']').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</text>`);
@@ -838,19 +860,42 @@ if ('serviceWorker' in navigator) {
       return out.reverse();
     }
     /* the blocks of a line: { m: block code, red, src: [from, to] position in the typed line } */
+    /* the blocks of a line: { m: block code, red, src: [from, to] position in the typed line, word: index of the word, ch: its signs } */
     function toBlocks(units) {
-      return segmentUnits(units).filter(b => !b[0].brk).map(b => ({
-        m: b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code)),
-        red: !!b[0].red, src: [Math.min(...b.map(u => u.src ? u.src[0] : 1e9)), Math.max(...b.map(u => u.src ? u.src[1] : -1))] }));
+      const out = []; let word = 0, started = false;
+      segmentUnits(units).forEach(b => {
+        if (b[0].brk) { if (b[0].word && started) word++; return; }
+        started = true;
+        out.push({ m: b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code)), red: !!b[0].red, word,
+          ch: b.map(u => u.ch || '').join(''),
+          src: [Math.min(...b.map(u => u.src ? u.src[0] : 1e9)), Math.max(...b.map(u => u.src ? u.src[1] : -1))] });
+      });
+      return out;
     }
-    function blocksToMdC(blocks) {
-      const out = []; let red = false;
-      blocks.forEach(b => { if (b.red !== red) { out.push(b.red ? '$r' : '$b'); red = b.red; } out.push(b.m); });
+    /* opt.words: mark word starts for the drawing ("_", or "_t" for a word the writer knows, written closer);
+       opt.known: Set of known spellings; opt.wordGlyph: spelling -> one glyph drawn for the whole word */
+    /* the sign codes of some blocks, in order ("G41 G1"), whatever the stacking keys */
+    function codesOf(bs) { return bs.map(b => (b.m.match(/[A-Z][a-z]?\d+[A-Z]?/g) || []).join(' ')).join(' '); }
+    function blocksToMdC(blocks, opt) {
+      opt = opt || {}; const out = []; let red = false;
+      const words = []; blocks.forEach(b => { (words[b.word] = words[b.word] || []).push(b); });
+      words.filter(Boolean).forEach(ws => {
+        const sp = ws.map(b => b.ch).join('');
+        if (opt.words) out.push(opt.known && opt.known.has(sp) ? '_t' : '_');
+        // a word form replaces its blocks wherever they make up the spelling, also at the start or inside a longer word
+        const list = [];
+        for (let i = 0; i < ws.length; ) {
+          let hit = 0, code = null;
+          if (opt.wordGlyph) for (let j = ws.length; j > i; j--) { const c = opt.wordGlyph[codesOf(ws.slice(i, j))]; if (c) { hit = j; code = c; break; } }
+          if (code) { list.push({ m: code, red: ws[i].red }); i = hit; } else { list.push(ws[i]); i++; }
+        }
+        list.forEach(b => { if (b.red !== red) { out.push(b.red ? '$r' : '$b'); red = b.red; } out.push(b.m); });
+      });
       if (red) out.push('$b');
       return out.join('-');
     }
     function toMdC(units) { return blocksToMdC(toBlocks(units)); }
-    return { cls, p, arrange, segmentUnits, toBlocks, blocksToMdC, toMdC };
+    return { cls, p, arrange, segmentUnits, toBlocks, blocksToMdC, toMdC, codesOf };
   }
 
   /* reading the input. Signs are typed as Unicode hieroglyphs or as sign codes / sound values.
@@ -875,45 +920,49 @@ if ('serviceWorker' in navigator) {
         if (ch === HJ || ch === '*') { toks.push({ op: '*' }); i++; continue; }
         if (ch === '(' || ch === ')') { toks.push({ op: ch }); i++; continue; }
         if (ch === '-') { toks.push({ brk: 'block' }); i++; continue; }
+        if (ch === '_') { toks.push({ low: true }); i++; continue; }
         if (ch === SB || ch === SE) { i++; continue; }
-        if (isHiero(ch)) { const cd = M.uni[ch]; if (cd) toks.push({ s: cd, at: [offs[i], offs[i + 1]] }); else unknown.push(ch); i++; continue; }
+        if (isHiero(ch)) { const cd = M.uni[ch]; if (cd) toks.push({ s: cd, ch, at: [offs[i], offs[i + 1]] }); else unknown.push(ch); i++; continue; }
         // a typed code or sound value: letters, digits, dots, but not the keys above
-        let j = i; while (j < chars.length && !/[\s:*()\-$]/.test(chars[j]) && !isHiero(chars[j]) && chars[j] !== VJ && chars[j] !== HJ) j++;
+        let j = i; while (j < chars.length && !/[\s:*()\-$_]/.test(chars[j]) && !isHiero(chars[j]) && chars[j] !== VJ && chars[j] !== HJ) j++;
         if (j === i) { i++; continue; }
         const t = chars.slice(i, j).join('');
         if (hiero && !/[A-Za-z0-9]/.test(t)) { i = j; continue; }
-        const cd = lookup(t); if (cd) toks.push({ s: cd, at: [offs[i], offs[j]] }); else unknown.push(t);
+        const cd = lookup(t); if (cd) toks.push({ s: cd, ch: cd + ' ', at: [offs[i], offs[j]] }); else unknown.push(t);
         i = j;
       }
       // 2. blocks: signs tied together by keys become one fixed block; lone signs are left to the stacker
-      const pushBrk = () => { if (units.length && !units[units.length - 1].brk) units.push({ brk: true }); };
+      const pushBrk = word => { const l = units[units.length - 1];
+        if (units.length && !l.brk) units.push({ brk: true, word: !!word }); else if (l && l.brk && word) l.word = true; };
       const signM = cd => (/[-:*\\]/.test(cd) ? '(' + cd + ')' : cd);
       i = 0; let red = false;
       while (i < toks.length) {
         const t = toks[i];
-        if (t.red !== undefined) { if (t.red !== red) { red = t.red; pushBrk(); } i++; continue; }   // colour changes end a block
-        if (t.brk) { pushBrk(); i++; continue; }
-        if (t.op === ')' || t.op === ':' || t.op === '*') { i++; continue; }      // stray key
+        if (t.red !== undefined) { if (t.red !== red) { red = t.red; pushBrk(false); } i++; continue; }   // colour changes end a block
+        if (t.brk) { pushBrk(t.brk === 'word'); i++; continue; }
+        if (t.op === ')' || t.op === ':' || t.op === '*' || t.low) { i++; continue; }      // stray key
         // gather a group: sign or '(' ... continuing while signs are joined by a key
-        let j = i, depth = 0, m = '', signs = 0, wantSign = true, a = 1e9, z = -1;
+        let j = i, depth = 0, m = '', signs = 0, wantSign = true, a = 1e9, z = -1, chs = '';
         while (j < toks.length) {
           const u = toks[j];
+          if (u.low) break;
           if (u.brk || u.red !== undefined) { if (depth > 0) { j++; continue; } break; }
           if (u.op === '(') { if (!wantSign) break; depth++; m += '('; j++; continue; }
           if (u.op === ')') { if (depth === 0) break; depth--; m += ')'; j++; wantSign = false; continue; }
           if (u.op === ':' || u.op === '*') { if (wantSign) { j++; continue; } m += u.op; wantSign = true; j++; continue; }
-          if (u.s !== undefined) { if (!wantSign) break; m += signM(u.s); signs++; wantSign = false; a = Math.min(a, u.at[0]); z = Math.max(z, u.at[1]); j++; continue; }
+          if (u.s !== undefined) { if (!wantSign) break; m += signM(u.s); chs += u.ch; signs++; wantSign = false; a = Math.min(a, u.at[0]); z = Math.max(z, u.at[1]); j++; continue; }
           j++;
         }
         while (depth-- > 0) m += ')';
         m = m.replace(/[:*]+$/, '');
         if (signs === 0) { i = j; continue; }
-        const src = [a, z];
+        const src = [a, z], low = toks[j] && toks[j].low;
         if (signs === 1 && !/[:*]/.test(m)) {                                   // a lone sign: auto stacking
           const cd = m.replace(/[()]/g, '');
-          if (/[-:*\\]/.test(cd)) units.push({ fixed: cd, red, src }); else units.push({ code: cd, red, src });
-        } else units.push({ fixed: m, typed: true, red, src });
-        i = j;
+          if (low) units.push({ fixed: cd + '\\down', red, src, ch: chs, typed: true });   // written low, below the line
+          else if (/[-:*\\]/.test(cd)) units.push({ fixed: cd, red, src, ch: chs }); else units.push({ code: cd, red, src, ch: chs });
+        } else units.push({ fixed: m, typed: true, red, src, ch: chs });
+        i = j; if (low) i++;
         if (toks[i] && toks[i].brk === 'block') { units.push({ brk: true, soft: true }); i++; }
       }
       while (units.length && units[units.length - 1].brk) units.pop();
@@ -926,7 +975,8 @@ if ('serviceWorker' in navigator) {
      in Hry-ib and before the suffixes f (I9), i (A1, B1) and k (V31) it is  D2 D21 Z1  written  (D2:D21)*Z1 */
   const HR_SUFFIX = { I9: 1, A1: 1, B1: 1, V31: 1 };
   function hardRules(units) {
-    const out = [], c = i => units[i] && units[i].code;
+    const out = [], c = i => { const u = units[i]; if (!u) return undefined; if (u.code) return u.code;
+      const m = u.fixed && /^([A-Za-z]+\d+[A-Za-z]*)\\down$/.exec(u.fixed); return m ? m[1] + (i === 0 ? '' : '') : undefined; };
     for (let i = 0; i < units.length; i++) {
       if (c(i) === 'D2') {
         let j = i + 1, mid = null;
@@ -935,7 +985,7 @@ if ('serviceWorker' in navigator) {
           const after = [c(j + 1), c(j + 2), c(j + 3)];
           const special = mid === 'D21' || HR_SUFFIX[after[0]] || after.includes('F34');
           const src = [units[i].src ? units[i].src[0] : 0, units[j].src ? units[j].src[1] : 0];
-          out.push({ fixed: special ? '(D2:D21)*Z1' : '(D2:Z4)*Z1', red: units[i].red, src, rule: 'Hr' });
+          out.push({ fixed: special ? '(D2:D21)*Z1' : '(D2:Z4)*Z1', red: units[i].red, src, rule: 'Hr', ch: units.slice(i, j + 1).map(u => u.ch || '').join('') });
           i = j; continue;
         }
       }
@@ -965,12 +1015,73 @@ if ('serviceWorker' in navigator) {
     const unit = +$('lwSize').value;
     let L;
     const GD = hier && GH ? GH : G;
-    try { L = LW.layoutLine(mdc, GD, { direction: rtl ? 'rtl' : 'ltr' }); } catch (e) { $('lwMsg').textContent = 'This line could not be drawn.'; return; }
+    if (GD === GH) mdc = stackedForms(mdc);
+    /* hieratic: signs sit close as in the papyri, words a little apart, known words closer still; low signs drop below the line */
+    const lopts = GD === GH ? { direction: rtl ? 'rtl' : 'ltr', skip: 0.4, wordGap: 3, tightSkip: -0.6, lowForms: true } : { direction: rtl ? 'rtl' : 'ltr' };
+    try { L = LW.layoutLine(mdc, GD, lopts); } catch (e) { $('lwMsg').textContent = 'This line could not be drawn.'; return; }
     LAST = L;
     $('lwStage').innerHTML = mdc.trim() ? LW.toSVG(L, GD, { unit, ids: true }) : '<div class="lw-loading">Type some signs above.</div>';
     $('lwStage').querySelectorAll('path[data-code]').forEach(p => {
       const t = document.createElementNS('http://www.w3.org/2000/svg', 'title'); t.textContent = p.getAttribute('data-code'); p.appendChild(t); });
     if (rtl) $('lwStage').scrollLeft = $('lwStage').scrollWidth;
+  }
+  /* hieratic: a sign standing in a stack uses its stacked form when there is one (n over f takes the short n) */
+  function stackedForms(mdc) {
+    return mdc.split('-').map(b => /:/.test(b) ? b.replace(/[A-Z][a-z]?\d+[A-Z]?/g, c => GH.sign[c + '_s'] ? c + '_s' : c) : b).join('-');
+  }
+  /* Hr typed as face + stroke is written face over two strokes + stroke, or face over mouth + stroke
+     before the suffixes f, i, k and in Hry-ib; the text box is corrected as you type */
+  const HR = /\u{13077}(?:\u{133ED}|\u{1308B})?\u{133E4}/gu;
+  function fixHr(ta) {
+    const v = ta.value, cur = ta.selectionStart; let delta = 0;
+    const out = v.replace(HR, (m, at) => {
+      const after = Array.from(v.slice(at + m.length, at + m.length + 8));
+      const special = ['\u{13191}', '\u{13000}', '\u{13050}', '\u{133A1}'].includes(after[0]) || after.slice(0, 3).includes('\u{13123}') || m.includes('\u{1308B}') && !after.length;
+      const r = special ? '\u{13077}\u{1308B}\u{133E4}' : '\u{13077}\u{133ED}\u{133E4}';
+      if (r !== m && at < cur) delta += r.length - m.length;
+      return r;
+    });
+    if (out !== v) { ta.value = out; ta.setSelectionRange(cur + delta, cur + delta); }
+  }
+  /* Shift+Space after a transliteration (Dd, pA, n ...) puts in its hieroglyphs; pressing it again goes to the next
+     spelling with the same transliteration (words from the dictionary and the reviewed words, then single signs) */
+  let SPELL = null, CYC = null;
+  const spellLoad = () => SPELL ? Promise.resolve(SPELL) : fetch('lw-spell.json').then(r => r.json()).then(j => (SPELL = j)).catch(() => (SPELL = {}));
+  function candidates(t) {
+    const out = [], seen = new Set(), add = (eg, en) => { if (eg && !seen.has(eg)) { seen.add(eg); out.push([eg, en || '']); } };
+    (SPELL[t] || []).forEach(([eg, n, en]) => add(eg, en));
+    const c = G.sign[t] ? t : G.phon[t]; if (c && U2C[c]) add(U2C[c], 'sign ' + c);
+    INDEX.forEach(x => { if (x.phon.includes(t)) add(x.ch, 'sign ' + x.code); });
+    return out;
+  }
+  function showCyc() { const [, en] = CYC.list[CYC.i];
+    $('lwMsg').textContent = CYC.list.length > 1 ? `${CYC.word}: ${CYC.i + 1} of ${CYC.list.length}${en ? ' (' + en + ')' : ''}. Shift+Space for the next one.` : `${CYC.word}${en ? ' (' + en + ')' : ''}`; }
+  function putCyc(ta) {                                  // write the current choice in place of the word
+    const eg = CYC.list[CYC.i][0], v = ta.value, keep = ta.selectionStart - CYC.end;
+    ta.value = v.slice(0, CYC.start) + eg + v.slice(CYC.end); CYC.end = CYC.start + eg.length;
+    const p = CYC.end + Math.max(0, keep); ta.setSelectionRange(p, p); fixHr(ta);
+    clearTimeout(timer); fromText(); showCyc();
+  }
+  /* a transliteration turns into hieroglyphs by itself when the word is ended with a space */
+  function autoSpell(e) {
+    if (!SPELL || e.inputType !== 'insertText' || e.data !== ' ') return false;
+    const ta = $('lwText'), pos = ta.selectionStart, v = ta.value;
+    const m = /(^|[\s\u{13000}-\u{1345F}$_:*()\-])([A-Za-z][A-Za-z0-9.=]*) $/u.exec(v.slice(0, pos)); if (!m) return false;
+    const list = candidates(m[2]); if (!list.length) return false;
+    CYC = { start: pos - 1 - m[2].length, end: pos - 1, list, i: 0, word: m[2] }; putCyc(ta); return true;
+  }
+  /* Shift+Space: the next spelling of the word just written (or of the transliteration before the cursor) */
+  function cycle(e) {
+    if (!(e.key === ' ' && e.shiftKey)) { if (e.key === 'Backspace' || (e.key.length === 1 && e.key !== ' ')) { if (CYC && $('lwText').selectionStart <= CYC.end) CYC = null; } return; }
+    e.preventDefault();
+    const ta = $('lwText'), pos = ta.selectionStart, v = ta.value;
+    spellLoad().then(() => {
+      const atWord = CYC && v.slice(CYC.start, CYC.end) === CYC.list[CYC.i][0] && (pos === CYC.end || (pos === CYC.end + 1 && v[CYC.end] === ' '));
+      if (atWord) { CYC.i = (CYC.i + 1) % CYC.list.length; putCyc(ta); return; }
+      const m = /([A-Za-z][A-Za-z0-9.=]*)$/.exec(v.slice(0, pos)); if (!m) return;
+      const list = candidates(m[1]); if (!list.length) { $('lwMsg').textContent = 'No spelling found for ' + m[1] + '.'; return; }
+      CYC = { start: pos - m[1].length, end: pos, list, i: 0, word: m[1] }; putCyc(ta);
+    });
   }
   // from the typed signs: guess the stacking, show the code, draw
   function fromText() {
@@ -983,9 +1094,19 @@ if ('serviceWorker' in navigator) {
     const mdc = per.map(bl => ST.blocksToMdC(bl)).filter(Boolean).join(' !\n');
     $('lwIn').value = mdc;
     $('lwMsg').textContent = unknown.length ? 'Left out, not a sign the writer knows: ' + [...new Set(unknown)].join(' ') : '';
-    fromTyped = true; draw(mdc.replace(/ !\n/g, '-..-'));
+    fromTyped = true;
+    if (hier && GH) {                                    // the drawing in hieratic knows the words
+      KNOWN = KNOWN || new Set(GH.words || []);
+      DRAWN = []; let bi = 0;                            // which typed blocks each drawn block stands for (a word form is one)
+      per.forEach(bl => { const byWord = []; bl.forEach(b => { (byWord[b.word] = byWord[b.word] || []).push(bi++); });
+        byWord.filter(Boolean).forEach(ix => {
+          for (let a = 0; a < ix.length; ) { let hit = 0;
+            for (let b = ix.length; b > a; b--) if (GH.wordGlyph && GH.wordGlyph[ST.codesOf(ix.slice(a, b).map(i => BLOCKS[i]))]) { hit = b; break; }
+            if (hit) { DRAWN.push(ix.slice(a, hit)); a = hit; } else { DRAWN.push([ix[a]]); a++; } } }); });
+      draw(per.map(bl => ST.blocksToMdC(bl, { words: true, known: KNOWN, wordGlyph: GH.wordGlyph })).filter(Boolean).join('-..-'));
+    } else { DRAWN = null; draw(mdc.replace(/ !\n/g, '-..-')); }
   }
-  let BLOCKS = [], fromTyped = true, LAST = null;
+  let BLOCKS = [], fromTyped = true, LAST = null, KNOWN = null, DRAWN = null;
   /* red ink: $r switches red on, $b back to black (the JSesh keys) */
   function tidyRed(v) {
     let prev; do { prev = v; v = v.replace(/\$r(\s*)\$b/g, '$1').replace(/\$b(\s*)\$r/g, '$1'); } while (v !== prev);
@@ -1013,8 +1134,9 @@ if ('serviceWorker' in navigator) {
     const p = pt.matrixTransform(svg.getScreenCTM().inverse());
     const qs = LAST.quads.filter(q => q.tok);
     const k = qs.findIndex(q => p.x >= q.x - 1 && p.x <= q.x + q.w + 1);
-    if (k < 0 || !BLOCKS[k]) return;
-    const b = BLOCKS[k]; setRed(b.at[0], b.at[1], !b.red);
+    const grp = DRAWN ? DRAWN[k] : (BLOCKS[k] ? [k] : null);
+    if (k < 0 || !grp) return;
+    const bs = grp.map(i => BLOCKS[i]); setRed(Math.min(...bs.map(b => b.at[0])), Math.max(...bs.map(b => b.at[1])), !bs[0].red);
   }
   // from the code box: draw exactly as written
   function fromCode() { if (!G) return; $('lwMsg').textContent = ''; fromTyped = false; draw($('lwIn').value.replace(/ !\n|\n/g, '-..-')); }
@@ -1075,7 +1197,8 @@ if ('serviceWorker' in navigator) {
   }
 
   function init() {
-    $('lwText').addEventListener('input', soon(fromText));
+    $('lwText').addEventListener('keydown', cycle);
+    $('lwText').addEventListener('input', e => { if (e.isComposing) return; if (autoSpell(e)) return; fixHr($('lwText')); soon(fromText)(); });
     $('lwIn').addEventListener('input', soon(fromCode));
     $('lwSize').addEventListener('input', () => { pref.set('size', $('lwSize').value); redraw(); });
     $('lwHg').addEventListener('click', () => setScript(false));
@@ -1107,7 +1230,7 @@ if ('serviceWorker' in navigator) {
     $('lwSize').value = pref.get('size', '4');
     if (pref.get('dir', 'rtl') === 'ltr') { rtl = false; $('lwRtl').classList.remove('on'); $('lwLtr').classList.add('on'); $('lwRtl').setAttribute('aria-pressed', 'false'); $('lwLtr').setAttribute('aria-pressed', 'true'); }
     Promise.all([fetch('lw-glyphs.json').then(r => r.json()), fetch('lw-stack.json').then(r => r.json())]).then(([g, m]) => {
-      G = g; M = m; ST = AS.makeStacker(M, G); U2C = AS.unicodeIndex(M); buildIndex(); fromText();
+      G = g; M = m; ST = AS.makeStacker(M, G); U2C = AS.unicodeIndex(M); buildIndex(); fromText(); spellLoad();
       if (!$('lwScript').hidden && pref.get('script', 'hiero') === 'hieratic') setScript(true);
     }).catch(() => { $('lwStage').innerHTML = '<div class="lw-loading">The sign shapes could not be loaded. Check the connection and reload the page.</div>'; });
   }
