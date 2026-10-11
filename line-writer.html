@@ -1155,14 +1155,14 @@ if ('serviceWorker' in navigator) {
   let SPELLN = {};
   /* stackings of a spelling as found in the papyri (H&S, checked against the transcriptions, and Two Brothers), most common first */
   let STV = {};
-  const stvLoad = fetch('lw-stackvar.json').then(r => r.json()).then(j => { STV = j; }).catch(() => {});
+  const stvLoad = fetch('lw-stackvar.json', { cache: 'no-cache' }).then(r => r.json()).then(j => { STV = j; }).catch(() => {});
   const UOP = { ':': '\u{13430}', '*': '\u{13431}', '&': '\u{13431}', '(': '\u{13437}', ')': '\u{13438}', '-': '-' };
   function toUni(enc) {                                  // a stacking written with the Unicode joiners, blocks split by -
     let out = '', ok = true;
     enc.replace(/[A-Za-z]+\d+[A-Za-z]?|[:*&()\-]/g, t => { if (UOP[t]) out += UOP[t]; else if (U2C[t]) out += U2C[t]; else ok = false; return ''; });
     return ok ? out : null;
   }
-  const spellLoad = () => SPELL ? Promise.resolve(SPELL) : Promise.all([fetch('lw-spell.json').then(r => r.json()), stvLoad]).then(([j]) => {
+  const spellLoad = () => SPELL ? Promise.resolve(SPELL) : Promise.all([fetch('lw-spell.json', { cache: 'no-cache' }).then(r => r.json()), stvLoad]).then(([j]) => {
     SPELL = j; SPELLN = {};
     Object.entries(j).forEach(([k, list]) => { const n = norm(k); (SPELLN[n] = SPELLN[n] || []).push(...list.map(x => [x[0], x[1], x[2], k])); });
     Object.values(SPELLN).forEach(l => l.sort((a, b) => b[1] - a[1]));
@@ -1180,13 +1180,21 @@ if ('serviceWorker' in navigator) {
     const ex = (SPELL[t] || []).map(x => [x[0], x[1], x[2], t]), lo = SPELLN[norm(t)] || [];
     return ex.length || lo.length ? ex.concat(lo) : near(t);
   }
+  /* second forms of a sign (from the sign list) offered as one more choice: the code is written in the text, e.g. Y1c */
+  const FORMS = { Y1: ['Y1c', 'Y1 form C'] };
   function candidates(t) {
     const out = [], seen = new Set(), add = (eg, en) => { if (eg && !seen.has(eg)) { seen.add(eg); out.push([eg, en || '']); } };
+    const addForms = (u, l) => Object.entries(FORMS).forEach(([c, [alt, name]]) => {
+      const ch = U2C[c]; if (ch && u.includes(ch)) add(u.split(ch).join(alt), (l ? l + ', ' : '') + name);
+    });
     wordSpellings(t).forEach(([eg, n, en, k]) => {
       const lab = (k !== t ? k + ': ' : '') + (en || ''), vars = STV[Array.from(eg).map(c => M.uni[c] || '?').join(' ')];
       const us = (vars || []).map(([enc]) => toUni(enc)).filter(Boolean);
-      if (!us.length) { add(eg, lab); return; }
-      us.forEach((u, i) => add(u, lab + (us.length > 1 ? (lab ? ', ' : '') + 'stacking ' + (i + 1) + ' of ' + us.length : '')));
+      if (!us.length) { add(eg, lab); addForms(eg, lab); return; }
+      us.forEach((u, i) => {
+        const l = lab + (us.length > 1 ? (lab ? ', ' : '') + 'stacking ' + (i + 1) + ' of ' + us.length : '');
+        add(u, l); addForms(u, l);
+      });
     });
     const c = G.sign[t] ? t : G.phon[t]; if (c && U2C[c]) add(U2C[c], 'sign ' + c);
     INDEX.forEach(x => { if (x.phon.includes(t)) add(x.ch, 'sign ' + x.code); });
@@ -1285,7 +1293,7 @@ if ('serviceWorker' in navigator) {
     hier = h; pref.set('script', h ? 'hieratic' : 'hiero');
     $('lwHt').classList.toggle('on', h); $('lwHg').classList.toggle('on', !h);
     $('lwHt').setAttribute('aria-pressed', h); $('lwHg').setAttribute('aria-pressed', !h);
-    if (h && !GH) { fetch('lw-hieratic.json').then(r => r.json()).then(g => { GH = g; redraw(); }).catch(() => { $('lwMsg').textContent = 'The hieratic signs could not be loaded.'; }); }
+    if (h && !GH) { fetch('lw-hieratic.json', { cache: 'no-cache' }).then(r => r.json()).then(g => { GH = g; redraw(); }).catch(() => { $('lwMsg').textContent = 'The hieratic signs could not be loaded.'; }); }
     redraw();
   }
   const redraw = () => { if (fromTyped) fromText(); else fromCode(); };
@@ -1369,7 +1377,7 @@ if ('serviceWorker' in navigator) {
     $('lwGrid').addEventListener('click', e => { const b = e.target.closest('button[data-ch]'); if (b) insertChar(b.dataset.ch); });
     $('lwSize').value = pref.get('size', '4');
     if (pref.get('dir', 'rtl') === 'ltr') { rtl = false; $('lwRtl').classList.remove('on'); $('lwLtr').classList.add('on'); $('lwRtl').setAttribute('aria-pressed', 'false'); $('lwLtr').setAttribute('aria-pressed', 'true'); }
-    Promise.all([fetch('lw-glyphs.json').then(r => r.json()), fetch('lw-stack.json').then(r => r.json())]).then(([g, m]) => {
+    Promise.all([fetch('lw-glyphs.json', { cache: 'no-cache' }).then(r => r.json()), fetch('lw-stack.json', { cache: 'no-cache' }).then(r => r.json())]).then(([g, m]) => {
       G = g; M = m; ST = AS.makeStacker(M, G); U2C = AS.unicodeIndex(M); buildIndex(); fromText(); spellLoad().then(fromText);
       if (!$('lwScript').hidden && pref.get('script', 'hiero') === 'hieratic') setScript(true);
     }).catch(() => { $('lwStage').innerHTML = '<div class="lw-loading">The sign shapes could not be loaded. Check the connection and reload the page.</div>'; });

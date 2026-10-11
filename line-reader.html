@@ -1265,7 +1265,7 @@ if ('serviceWorker' in navigator) {
   /* ---------- loading data ---------- */
   function loadAll() {
     if (ready) return ready;
-    ready = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lr-model.json'].map(u => fetch(u).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
+    ready = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lr-model.json'].map(u => fetch(u, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
       .then(([g, sm, m]) => { G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0]); MODEL = R.loadModel(m); });
     return ready;
   }
