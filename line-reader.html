@@ -376,6 +376,21 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lw-stage svg{ cursor:pointer; }
 .lw-seg[hidden]{ display:none; }
 
+/* rules beside the typing line and the result */
+.lw-main{ display:flex; flex-direction:column; gap:12px; min-width:0; }
+.lw-rules{ display:flex; flex-direction:column; gap:10px; padding:14px 16px; background:var(--panel-bg); border:1px solid var(--panel-line); border-radius:3px; align-self:start; }
+.lw-rules h3{ margin:0; }
+.lw-rule{ margin:0; font-family:'Inter',sans-serif; font-size:12.5px; line-height:1.5; color:var(--ink-soft-on-dark); }
+.lw-rule code{ font-size:12px; }
+@media (min-width:980px){
+  .lw-tool{ display:grid; grid-template-columns:minmax(0,1fr) 236px; gap:12px 22px; align-items:start; }
+  .lw-rules{ position:sticky; top:16px; }
+}
+@media (min-width:1400px){              /* room to the right of the page column: the rules move out there */
+  .lw-tool{ width:calc(100% + 300px); grid-template-columns:minmax(0,1fr) 276px; gap:12px 24px; }
+}
+.lw-rule .pb-code{ color:var(--ink); }
+
 /* ---------- line reader ---------- */
 .lr-tool{ display:flex; flex-direction:column; gap:18px; margin:0 0 40px; }
 .lr-drop{ border:2px dashed var(--panel-line); border-radius:4px; padding:22px; text-align:center; background:var(--panel-bg); }
@@ -636,6 +651,10 @@ if ('serviceWorker' in navigator) {
 
   /* ---------------- layout ---------------- */
   // a laid-out box: { w, h, glyphs:[{code,x,y,w,h,mirror,rot}] } with coordinates relative to its own top-left
+  let HOPT = null;                                               // hieratic layout options of the line being drawn (set by layoutLine)
+  function scaleBox2(b, kx, ky) {
+    return { w: b.w * kx, h: b.h * ky, glyphs: b.glyphs.map(g => ({ ...g, x: g.x * kx, y: g.y * ky, w: g.w * kx, h: g.h * ky })) };
+  }
   function scaleBox(b, k) {
     return { w: b.w * k, h: b.h * k, glyphs: b.glyphs.map(g => ({ ...g, x: g.x * k, y: g.y * k, w: g.w * k, h: g.h * k })) };
   }
@@ -683,9 +702,10 @@ if ('serviceWorker' in navigator) {
     let rows = cad.rows.filter(r => r.length).map(r => rowBox(r, G));
     if (!rows.length) return { w: 0, h: inner ? 0 : SPEC.quadH, glyphs: [] };
     // with more than one row, every row wider than the quadrat is narrowed to fit (one row alone may stay wider)
+    const QW = HOPT && HOPT.quadW ? HOPT.quadW : SPEC.quadW;     // hieratic: a stack may be wider (the scribe keeps a long sign long)
     if (rows.length > 1) rows = rows.map(r => {
-      if (r.w <= SPEC.quadW) return r;
-      const k = SPEC.quadW / r.w; return { els: r.els.map(b => scaleBox(b, k)), w: SPEC.quadW, h: r.h * k, lone: r.lone, k };
+      if (r.w <= QW) return r;
+      const k = QW / r.w; return { els: r.els.map(b => scaleBox(b, k)), w: QW, h: r.h * k, lone: r.lone, k };
     });
     // a lone flat sign (wide at least 0.8 x and low at most 0.4 x the height of A1) is stretched to the widest row.
     // JSesh measures the sign at its unscaled width here, so a sign that was already narrowed is narrowed once more.
@@ -698,8 +718,11 @@ if ('serviceWorker' in navigator) {
     // a lone sign taller than the quadrat is brought down to its height
     let total = rows.reduce((a, r) => a + r.h, 0) + SPEC.skip * (rows.length - 1);
     let k = 1;
-    if (total > SPEC.quadH) k = SPEC.quadH / total;
-    if (k !== 1) rows = rows.map(r => ({ els: r.els.map(b => scaleBox(b, k)), w: r.w * k, h: r.h * k }));
+    const lone1 = rows.length === 1 && rows[0].els.length === 1 && rows[0].els[0].glyphs.length === 1 ? rows[0].els[0].glyphs[0].code : null;
+    if (total > SPEC.quadH && !(lone1 && G.tall && G.tall[lone1])) k = SPEC.quadH / total;   // a tall form keeps its height
+    // hieratic: a stack that is too high is pressed down more than it is narrowed, as the scribe does
+    const kx = k !== 1 && HOPT && HOPT.squash && rows.length > 1 ? Math.min(1, Math.pow(k, HOPT.squash)) : k;
+    if (k !== 1) rows = rows.map(r => ({ els: r.els.map(b => scaleBox2(b, kx, k)), w: r.w * kx, h: r.h * k }));
     total *= k;
     const W = Math.max(...rows.map(r => r.w));
     const H = inner ? Math.max(total, 0) : Math.max(SPEC.quadH, total);
@@ -723,6 +746,7 @@ if ('serviceWorker' in navigator) {
 
   function layoutLine(mdc, G, opts) {
     opts = opts || {};
+    HOPT = opts.hieratic || null;
     const rtl = opts.direction === 'rtl';
     const items = topItems(mdc.replace(/\|[^-\s]*/g, ''));     // line labels like |9,3 are dropped
     let x = SPEC.margin, red = false, shading = false;
@@ -731,8 +755,8 @@ if ('serviceWorker' in navigator) {
     /* spacing: opts.skip between blocks (default the JSesh skip), opts.wordGap before a word marked "_",
        opts.tightSkip inside a word marked "_t" (a word the writer knows, written closer as the scribes did) */
     const SKIP = opts.skip != null ? opts.skip : SPEC.skip, WGAP = opts.wordGap != null ? opts.wordGap : SKIP, TIGHT = opts.tightSkip != null ? opts.tightSkip : SKIP;
-    let curSkip = SKIP, nextGap = null;
-    const gap = () => { if (first) return 0; const g = nextGap != null ? nextGap : curSkip; nextGap = null; return g; };
+    let curSkip = SKIP, nextGap = null, prevTok = null;
+    const gap = () => { if (first) { nextGap = null; return 0; } const g = nextGap != null ? nextGap : curSkip; nextGap = null; return g; };   // the line's first block uses up a word mark too
     for (const it of items) {
       if (typeof it !== 'string') continue;                    // text runs are skipped
       if (it === '!') continue;
@@ -753,7 +777,8 @@ if ('serviceWorker' in navigator) {
       let tok = it;
       const cad = parseCadrat(tok, G);
       const b = cadratBox(cad, G, false);
-      x += gap();
+      const kern = G.kern && prevTok && nextGap == null && !first ? (G.kern[prevTok + ' ' + tok] || 0) : 0;   // pairs the scribe writes closer
+      x += gap() + kern; prevTok = tok;
       out.push(...shift(b, x, 0).map(g => ({ ...g, red })));
       quads.push({ x, y: 0, w: b.w, h: SPEC.quadH, shade: shading ? '1234' : cad.shade, tok, n: b.glyphs.length });
       x += b.w; first = false;
@@ -761,10 +786,30 @@ if ('serviceWorker' in navigator) {
     let height = SPEC.quadH;
     if (opts.lowForms) out.forEach(g => {
       if (!g.drop) return;
-      g.y += g.h * 0.5;                                          // below the line
-      if (g.code === 'I9' || /^I9_/.test(g.code)) g.tail = SPEC.quadH * 1.4;   // the long stroke of f, running on under the next signs
+      const lowCode = g.code.replace(/_s$/, '') + '_low', lo = G.sign[lowCode];
+      if (lo && !lo[3]) {                                        // the scribe's own low form (f, k): its stroke runs on under the next signs
+        const k = G.scale, pl = (G.lowPlace && G.lowPlace[lowCode]) || {}, w0 = g.w;
+        g.code = lowCode; g.w = lo[0] * k; g.h = lo[1] * k;
+        g.y = pl.top !== undefined ? SPEC.quadH * pl.top : SPEC.quadH - g.h * 0.45;
+        if (pl.back) {                                           // the stroke runs back under the word before; only the rest sticks out
+          const x0 = g.x, keep = (1 - pl.back) * g.w;
+          g.x = Math.max(0, x0 - pl.back * g.w);
+          const q = quads.find(q => Math.abs(q.x - x0) < 0.01 && q.n === 1), shrink = w0 - keep;
+          if (q && shrink > 0) {                                 // a lone low sign takes only the room of the part that sticks out
+            const after = v => v.x >= x0 + w0 - 0.01;
+            out.forEach(o => { if (o !== g && after(o)) o.x -= shrink; });
+            quads.forEach(o => { if (o !== q && after(o)) o.x -= shrink; }); marks.forEach(o => { if (after(o)) o.x -= shrink; });
+            q.w = keep; x -= shrink;
+          }
+        }
+      } else {
+        g.y += g.h * 0.5;                                        // below the line
+        if (g.code === 'I9' || /^I9_/.test(g.code)) g.tail = SPEC.quadH * 1.4;
+      }
       height = Math.max(height, g.y + g.h + (g.tail ? 2 : 0));
     });
+    out.forEach(g => { height = Math.max(height, g.y + g.h); });    // tall forms reach below the line
+    HOPT = null;
     const width = x + SPEC.margin;
     if (rtl) {                                                   // right to left: mirror positions and turn the signs to face right
       out.forEach(g => { g.x = width - g.x - g.w; g.mirror = !g.mirror; });
@@ -928,6 +973,23 @@ if ('serviceWorker' in navigator) {
      JSesh keys typed between signs fix the stacking of that block:  :  one above the other,
      *  side by side,  ( )  a group,  -  start a new block.  Everything else is stacked automatically.
      The Unicode joiners U+13430 (above) and U+13431 (beside) work like  :  and  * . */
+  /* hieratic: the scribe's own forms. A stack written as one ligature; n over f takes the short n (the long n
+     elsewhere); k in a stack is the upright k; a lone n or r in a row is shorter; a word of one sign uses that sign's standalone form (k, plural strokes) */
+  function hieraticForms(mdc, H) {
+    const LIG = H.stackLig || {};
+    const toks = mdc.split('-').map(b => { for (const k in LIG) if (H.sign[LIG[k]]) b = b.split(k).join(LIG[k]); return b; });
+    for (let i = 0; i + 1 < toks.length; i++) if (toks[i] === 'O1' && toks[i + 1] === 'D21') toks.splice(i, 2, 'O1:D21');   // pr: the house stands on r
+    const out = toks.map(b => /:/.test(b) ? b.replace(/\bN35:I9\b/g, H.sign.N35_s ? 'N35_s:I9' : 'N35:I9').replace(/\bV31\b/g, H.sign.V31_s ? 'V31_s' : 'V31') : (b === 'N35' && H.sign.N35_r ? 'N35_r' : b === 'D21' && H.sign.D21_r ? 'D21_r' : b));
+    // one-sign words: the block between two word marks (or the line ends)
+    for (let i = 0; i < out.length; i++) {
+      if (out[i] === '_' || out[i] === '_t' || /^[!.]/.test(out[i])) continue;
+      const prevMark = i === 0 || out[i - 1] === '_' || out[i - 1] === '_t', nextMark = i === out.length - 1 || out[i + 1] === '_' || out[i + 1] === '_t' || /^\.\./.test(out[i + 1]);
+      const base = /_r$/.test(out[i]) ? null : out[i];
+      if (prevMark && nextMark && base && H.sign[base + '_w']) out[i] = base + '_w';
+    }
+    return out.join('-');
+  }
+
   function parseInput(text, M, G) {
     const isHiero = ch => { const c = ch.codePointAt(0); return c >= 0x13000 && c <= 0x1342F; };
     const lookup = t => G.sign[t] ? t : (G.phon[t] || (G.sign[t.charAt(0).toUpperCase() + t.slice(1)] ? t.charAt(0).toUpperCase() + t.slice(1) : null));
@@ -954,7 +1016,15 @@ if ('serviceWorker' in navigator) {
         if (j === i) { i++; continue; }
         const t = chars.slice(i, j).join('');
         if (hiero && !/[A-Za-z0-9]/.test(t)) { i = j; continue; }
-        const cd = lookup(t); if (cd) toks.push({ s: cd, ch: cd + ' ', at: [offs[i], offs[j]] }); else unknown.push(t);
+        const cd = lookup(t);
+        if (cd) toks.push({ s: cd, ch: cd + ' ', at: [offs[i], offs[j]] });
+        else {
+          // sign codes typed without spaces (G17G1): a code is letters, a number, and at most a or b after it
+          const parts = /^(?:[A-Z][a-z]?\d+[ab]?)+$/.test(t) ? t.match(/[A-Z][a-z]?\d+[ab]?/g) : null;
+          if (parts && parts.every(x => lookup(x))) {
+            let o = offs[i]; for (const x of parts) { const c2 = lookup(x); toks.push({ s: c2, ch: c2 + ' ', at: [o, o + x.length] }); o += x.length; }
+          } else unknown.push(t);
+        }
         i = j;
       }
       // 2. blocks: signs tied together by keys become one fixed block; lone signs are left to the stacker
@@ -1023,7 +1093,7 @@ if ('serviceWorker' in navigator) {
   /* the opposite direction: a code back to its Unicode character, for the sign finder */
   function unicodeIndex(M) { const r = {}; Object.entries(M.uni).forEach(([ch, c]) => { if (!r[c]) r[c] = ch; }); return r; }
 
-  const API = { makeStacker, parseInput, unicodeIndex };
+  const API = { makeStacker, parseInput, unicodeIndex, hieraticForms };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.AutoStack = API;
 })(typeof window !== 'undefined' ? window : this);
 
