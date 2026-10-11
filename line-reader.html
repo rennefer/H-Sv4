@@ -979,6 +979,7 @@ if ('serviceWorker' in navigator) {
     const LIG = H.stackLig || {};
     const toks = mdc.split('-').map(b => { for (const k in LIG) if (H.sign[LIG[k]]) b = b.split(k).join(LIG[k]); return b; });
     for (let i = 0; i + 1 < toks.length; i++) if (toks[i] === 'O1' && toks[i + 1] === 'D21') toks.splice(i, 2, 'O1:D21');   // pr: the house stands on r
+    for (let i = 0; i < toks.length; i++) if (/&/.test(toks[i]) && !(H.lig && Object.keys(H.lig).length)) toks[i] = toks[i].replace(/&/g, '*');   // no ligature placements in hieratic: signs joined with & stand side by side
     const out = toks.map(b => /:/.test(b) ? b.replace(/\bN35:I9\b/g, H.sign.N35_s ? 'N35_s:I9' : 'N35:I9').replace(/\bV31\b/g, H.sign.V31_s ? 'V31_s' : 'V31') : (b === 'N35' && H.sign.N35_r ? 'N35_r' : b === 'D21' && H.sign.D21_r ? 'D21_r' : b));
     // one-sign words: the block between two word marks (or the line ends)
     for (let i = 0; i < out.length; i++) {
@@ -990,7 +991,9 @@ if ('serviceWorker' in navigator) {
     return out.join('-');
   }
 
-  function parseInput(text, M, G) {
+  /* opts.word(t): the hieroglyphs of a typed transliteration (its usual spelling), or nothing; a word found
+     this way is drawn as that spelling, while the text keeps the transliteration */
+  function parseInput(text, M, G, opts) {
     const isHiero = ch => { const c = ch.codePointAt(0); return c >= 0x13000 && c <= 0x1342F; };
     const lookup = t => G.sign[t] ? t : (G.phon[t] || (G.sign[t.charAt(0).toUpperCase() + t.slice(1)] ? t.charAt(0).toUpperCase() + t.slice(1) : null));
     return text.split(/\r?\n/).map(line => {
@@ -1016,6 +1019,12 @@ if ('serviceWorker' in navigator) {
         if (j === i) { i++; continue; }
         const t = chars.slice(i, j).join('');
         if (hiero && !/[A-Za-z0-9]/.test(t)) { i = j; continue; }
+        const eg = opts && opts.word && !/\d/.test(t) ? opts.word(t) : null;
+        if (eg && Array.from(eg).length > 1) {                            // a word of several signs (one sign: its sound value, as before)
+          if (toks.length) toks.push({ brk: 'word' });
+          for (const c of Array.from(eg)) { const c2 = M.uni[c]; if (c2) toks.push({ s: c2, ch: c, at: [offs[i], offs[j]] }); }
+          toks.push({ brk: 'word' }); i = j; continue;
+        }
         const cd = lookup(t);
         if (cd) toks.push({ s: cd, ch: cd + ' ', at: [offs[i], offs[j]] });
         else {

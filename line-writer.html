@@ -436,7 +436,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
       <section class="lw-tool" aria-label="Line writer">
         <div class="lw-main">
         <label class="lw-label" for="lwText">Your signs</label>
-        <textarea id="lwText" class="lw-hiero" spellcheck="false" autocomplete="off" rows="2" placeholder="𓆓𓂧𓈖𓆑">𓆓𓂧𓈖𓆑 𓅯𓄿 𓇋𓏏𓆑</textarea>
+        <textarea id="lwText" class="lw-hiero" spellcheck="false" autocomplete="off" rows="2" placeholder="𓆓𓂧𓈖𓆑"></textarea>
         <div class="lw-keys" role="group" aria-label="Stacking keys">
           <span class="lw-label">Fix a block</span>
           <button type="button" data-key=":" title="Put the next sign under the one before">: <span>above</span></button>
@@ -482,16 +482,20 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
         </div>
         <aside class="lw-rules" aria-label="How to type">
           <h3 class="lw-label">How to type</h3>
-        <p class="lw-rule">A space ends a word. The writer guesses the stacking by itself; where it guesses wrong, type the JSesh keys between the signs of that block: <code class="pb-code">𓈖:𓆑</code> puts 𓆑 under 𓈖, <code class="pb-code">𓏏*𓏤</code> sets them side by side, <code class="pb-code">(𓏏*𓏤):𓆑</code> groups, and <code class="pb-code">-</code> starts a new block. Blocks you key yourself are drawn exactly as typed. Sign codes and sound values work too: <code class="pb-code">D:d n f</code>.</p>
-        <p class="lw-rule">You can also type the transliteration: <code class="pb-code">Dd</code> and a space becomes 𓆓𓂧 by itself. If the word has more than one spelling, press <kbd>Shift</kbd>+<kbd>Space</kbd> to go through them (from the dictionary and our reviewed words, then the single signs).</p>
-        <p class="lw-rule">Low signs: type <code class="pb-code">_</code> right after a sign to write it below the line, as the scribes often did with k and f; in hieratic, f and k are then written in the scribe's low form, their long stroke running on under the next signs (<code class="pb-code">𓎡_</code>, <code class="pb-code">𓆑_</code>).</p>
-        <p class="lw-rule">Red ink: <code class="pb-code">$r</code> starts red and <code class="pb-code">$b</code> goes back to black, as in JSesh. Press <em>red ink</em> before typing to write in red, select signs and press it to colour them afterwards, or click a block in the drawing to switch it between red and black.</p>
+        <p class="lw-rule">A space starts a new word. The signs are stacked for you.</p>
+        <p class="lw-rule">To fix a block, use JSesh keys: <code class="pb-code">𓈖:𓆑</code> above, <code class="pb-code">𓏏*𓏤</code> beside, <code class="pb-code">( )</code> group, <code class="pb-code">-</code> new block.</p>
+        <p class="lw-rule">Codes and sound values work too: <code class="pb-code">G17G1</code>, <code class="pb-code">D:d n f</code>.</p>
+        <p class="lw-rule">Type a transliteration like <code class="pb-code">Dd</code>. <kbd>Shift</kbd>+<kbd>Space</kbd> puts in the hieroglyphs; press again for other spellings.</p>
+        <p class="lw-rule"><code class="pb-code">_</code> after a sign writes it low (f, k).</p>
+        <p class="lw-rule"><code class="pb-code">$r</code> red, <code class="pb-code">$b</code> black, or use <em>red ink</em> and click blocks in the drawing.</p>
+        <p class="lw-rule">Hr is corrected as you type.</p>
         </aside>
       </section>
 
       <h2>How the stacking is guessed</h2>
       <p>The writer has learnt from about 26,000 blocks in the Two Brothers, Horus and Seth and Wenamun, encoded sign by sign after Gardiner's <em>Late Egyptian Stories</em>. For every run of signs it knows how often those signs were written together as one block, and in what arrangement, and it chooses the grouping of your line that the texts make most likely. Signs it has never seen together are grouped by their shape: low broad signs take a row of their own, small signs share a row. Tested on lines it had not learnt from, it put the same signs together and stacked them the same way in 93&nbsp;% of the blocks.</p>
       <p>The hieratic signs are traced from the Tale of Two Brothers, one photo per sign chosen by hand. Their sizes are learnt from the reviewed words of Two Brothers: every word box tells how high its signs stand together, and from about 2,300 words each sign gets its own height. Signs that do not have a hieratic form yet are drawn as the printed sign in grey. The preposition Hr is always written with the face over the two strokes and the single stroke beside them; in Hry-ib and before the suffixes f, i and k the mouth takes the place of the two strokes.</p>
+      <p>The hieratic was checked against the photos of Horus and Seth, and some words are traced from them.</p>
       <p class="lw-credits">Sign shapes and the drawing rules come from JSesh by Serge Rosmorduc, with signs drawn by Serge J. P. Thomas (LGPL). The stacking was learnt from the encodings of the Two Brothers by Serge Rosmorduc (CC-BY), of Horus and Seth by Laurent Cimasoni and of Wenamun by Patricia Cassonnet, distributed with JSesh.</p>
 
     </main>
@@ -958,6 +962,7 @@ if ('serviceWorker' in navigator) {
     const LIG = H.stackLig || {};
     const toks = mdc.split('-').map(b => { for (const k in LIG) if (H.sign[LIG[k]]) b = b.split(k).join(LIG[k]); return b; });
     for (let i = 0; i + 1 < toks.length; i++) if (toks[i] === 'O1' && toks[i + 1] === 'D21') toks.splice(i, 2, 'O1:D21');   // pr: the house stands on r
+    for (let i = 0; i < toks.length; i++) if (/&/.test(toks[i]) && !(H.lig && Object.keys(H.lig).length)) toks[i] = toks[i].replace(/&/g, '*');   // no ligature placements in hieratic: signs joined with & stand side by side
     const out = toks.map(b => /:/.test(b) ? b.replace(/\bN35:I9\b/g, H.sign.N35_s ? 'N35_s:I9' : 'N35:I9').replace(/\bV31\b/g, H.sign.V31_s ? 'V31_s' : 'V31') : (b === 'N35' && H.sign.N35_r ? 'N35_r' : b === 'D21' && H.sign.D21_r ? 'D21_r' : b));
     // one-sign words: the block between two word marks (or the line ends)
     for (let i = 0; i < out.length; i++) {
@@ -969,7 +974,9 @@ if ('serviceWorker' in navigator) {
     return out.join('-');
   }
 
-  function parseInput(text, M, G) {
+  /* opts.word(t): the hieroglyphs of a typed transliteration (its usual spelling), or nothing; a word found
+     this way is drawn as that spelling, while the text keeps the transliteration */
+  function parseInput(text, M, G, opts) {
     const isHiero = ch => { const c = ch.codePointAt(0); return c >= 0x13000 && c <= 0x1342F; };
     const lookup = t => G.sign[t] ? t : (G.phon[t] || (G.sign[t.charAt(0).toUpperCase() + t.slice(1)] ? t.charAt(0).toUpperCase() + t.slice(1) : null));
     return text.split(/\r?\n/).map(line => {
@@ -995,6 +1002,12 @@ if ('serviceWorker' in navigator) {
         if (j === i) { i++; continue; }
         const t = chars.slice(i, j).join('');
         if (hiero && !/[A-Za-z0-9]/.test(t)) { i = j; continue; }
+        const eg = opts && opts.word && !/\d/.test(t) ? opts.word(t) : null;
+        if (eg && Array.from(eg).length > 1) {                            // a word of several signs (one sign: its sound value, as before)
+          if (toks.length) toks.push({ brk: 'word' });
+          for (const c of Array.from(eg)) { const c2 = M.uni[c]; if (c2) toks.push({ s: c2, ch: c, at: [offs[i], offs[j]] }); }
+          toks.push({ brk: 'word' }); i = j; continue;
+        }
         const cd = lookup(t);
         if (cd) toks.push({ s: cd, ch: cd + ' ', at: [offs[i], offs[j]] });
         else {
@@ -1117,10 +1130,31 @@ if ('serviceWorker' in navigator) {
   /* Shift+Space after a transliteration (Dd, pA, n ...) puts in its hieroglyphs; pressing it again goes to the next
      spelling with the same transliteration (words from the dictionary and the reviewed words, then single signs) */
   let SPELL = null, CYC = null;
-  const spellLoad = () => SPELL ? Promise.resolve(SPELL) : fetch('lw-spell.json').then(r => r.json()).then(j => (SPELL = j)).catch(() => (SPELL = {}));
+  /* typed words are matched to the dictionary loosely: dots, = and - left out, j and y read as i, ii as i;
+     failing that, the nearest entry one letter away is guessed */
+  const norm = t => t.replace(/[.=\-\s+]/g, '').replace(/[jy]/g, 'i').replace(/i+/g, 'i');
+  let SPELLN = {};
+  const spellLoad = () => SPELL ? Promise.resolve(SPELL) : fetch('lw-spell.json').then(r => r.json()).then(j => {
+    SPELL = j; SPELLN = {};
+    Object.entries(j).forEach(([k, list]) => { const n = norm(k); (SPELLN[n] = SPELLN[n] || []).push(...list.map(x => [x[0], x[1], x[2], k])); });
+    Object.values(SPELLN).forEach(l => l.sort((a, b) => b[1] - a[1]));
+    return SPELL; }).catch(() => (SPELL = {}));
+  function near(t) {                                    // dictionary words one letter away (changed, added or left out)
+    const n = norm(t); if (n.length < 3) return [];
+    const one = (a, b) => { if (Math.abs(a.length - b.length) > 1) return false; let i = 0, j = 0, d = 0;
+      while (i < a.length && j < b.length) { if (a[i] === b[j]) { i++; j++; continue; } if (++d > 1) return false;
+        if (a.length > b.length) i++; else if (a.length < b.length) j++; else { i++; j++; } }
+      return d + (a.length - i) + (b.length - j) <= 1; };
+    return [].concat(...Object.keys(SPELLN).filter(k => k !== n && one(n, k)).map(k => SPELLN[k])).sort((a, b) => b[1] - a[1]);
+  }
+  function wordSpellings(t) {                            // exact entry, then the loose match, then a guess
+    if (!SPELL) return [];
+    const ex = (SPELL[t] || []).map(x => [x[0], x[1], x[2], t]), lo = SPELLN[norm(t)] || [];
+    return ex.length || lo.length ? ex.concat(lo) : near(t);
+  }
   function candidates(t) {
     const out = [], seen = new Set(), add = (eg, en) => { if (eg && !seen.has(eg)) { seen.add(eg); out.push([eg, en || '']); } };
-    (SPELL[t] || []).forEach(([eg, n, en]) => add(eg, en));
+    wordSpellings(t).forEach(([eg, n, en, k]) => add(eg, (k !== t ? k + ': ' : '') + (en || '')));
     const c = G.sign[t] ? t : G.phon[t]; if (c && U2C[c]) add(U2C[c], 'sign ' + c);
     INDEX.forEach(x => { if (x.phon.includes(t)) add(x.ch, 'sign ' + x.code); });
     return out;
@@ -1132,14 +1166,6 @@ if ('serviceWorker' in navigator) {
     ta.value = v.slice(0, CYC.start) + eg + v.slice(CYC.end); CYC.end = CYC.start + eg.length;
     const p = CYC.end + Math.max(0, keep); ta.setSelectionRange(p, p); fixHr(ta);
     clearTimeout(timer); fromText(); showCyc();
-  }
-  /* a transliteration turns into hieroglyphs by itself when the word is ended with a space */
-  function autoSpell(e) {
-    if (!SPELL || e.inputType !== 'insertText' || e.data !== ' ') return false;
-    const ta = $('lwText'), pos = ta.selectionStart, v = ta.value;
-    const m = /(^|[\s\u{13000}-\u{1345F}$_:*()\-])([A-Za-z][A-Za-z0-9.=]*) $/u.exec(v.slice(0, pos)); if (!m) return false;
-    const list = candidates(m[2]); if (!list.length) return false;
-    CYC = { start: pos - 1 - m[2].length, end: pos - 1, list, i: 0, word: m[2] }; putCyc(ta); return true;
   }
   /* Shift+Space: the next spelling of the word just written (or of the transliteration before the cursor) */
   function cycle(e) {
@@ -1158,7 +1184,7 @@ if ('serviceWorker' in navigator) {
   function fromText() {
     if (!G) return;
     const text = $('lwText').value, lines = text.split('\n');
-    const parsed = AS.parseInput(text, M, G);
+    const parsed = AS.parseInput(text, M, G, { word: t => { const w = wordSpellings(t); return w.length ? w[0][0] : null; } });
     const unknown = [].concat(...parsed.map(p => p.unknown));
     BLOCKS = []; let off = 0;
     const per = parsed.map((p, li) => { const bl = ST.toBlocks(p.units); bl.forEach(b => BLOCKS.push({ ...b, at: [b.src[0] + off, b.src[1] + off] })); off += lines[li].length + 1; return bl; });
@@ -1269,7 +1295,7 @@ if ('serviceWorker' in navigator) {
 
   function init() {
     $('lwText').addEventListener('keydown', cycle);
-    $('lwText').addEventListener('input', e => { if (e.isComposing) return; if (autoSpell(e)) return; fixHr($('lwText')); soon(fromText)(); });
+    $('lwText').addEventListener('input', e => { if (e.isComposing) return; fixHr($('lwText')); soon(fromText)(); });   // a space is only a space; Shift+Space puts in the hieroglyphs
     $('lwIn').addEventListener('input', soon(fromCode));
     $('lwSize').addEventListener('input', () => { pref.set('size', $('lwSize').value); redraw(); });
     $('lwHg').addEventListener('click', () => setScript(false));
@@ -1301,7 +1327,7 @@ if ('serviceWorker' in navigator) {
     $('lwSize').value = pref.get('size', '4');
     if (pref.get('dir', 'rtl') === 'ltr') { rtl = false; $('lwRtl').classList.remove('on'); $('lwLtr').classList.add('on'); $('lwRtl').setAttribute('aria-pressed', 'false'); $('lwLtr').setAttribute('aria-pressed', 'true'); }
     Promise.all([fetch('lw-glyphs.json').then(r => r.json()), fetch('lw-stack.json').then(r => r.json())]).then(([g, m]) => {
-      G = g; M = m; ST = AS.makeStacker(M, G); U2C = AS.unicodeIndex(M); buildIndex(); fromText(); spellLoad();
+      G = g; M = m; ST = AS.makeStacker(M, G); U2C = AS.unicodeIndex(M); buildIndex(); fromText(); spellLoad().then(fromText);
       if (!$('lwScript').hidden && pref.get('script', 'hiero') === 'hieratic') setScript(true);
     }).catch(() => { $('lwStage').innerHTML = '<div class="lw-loading">The sign shapes could not be loaded. Check the connection and reload the page.</div>'; });
   }
