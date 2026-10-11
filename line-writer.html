@@ -365,6 +365,16 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lw-more summary:focus-visible{ outline:2px solid var(--rubric); outline-offset:2px; }
 .lw-more[open] summary{ margin-bottom:10px; }
 .lw-more textarea{ margin:8px 0; }
+
+.lw-keys{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.lw-keys .lw-label{ margin-right:4px; }
+.lw-keys button{ font-family:'Inter',sans-serif; font-size:14px; font-weight:600; cursor:pointer; border-radius:3px; background:var(--panel-bg); color:var(--ink-on-dark); border:1px solid var(--panel-line); padding:5px 10px; }
+.lw-keys button span{ font-weight:400; font-size:12px; opacity:.8; margin-left:3px; }
+.lw-keys button:hover{ border-color:var(--rubric); }
+.lw-keys button:focus-visible{ outline:2px solid var(--rubric); outline-offset:1px; }
+.lw-keys .lw-red{ color:#c0281e; border-color:#c0281e; }
+.lw-stage svg{ cursor:pointer; }
+.lw-seg[hidden]{ display:none; }
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -411,13 +421,26 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
       <section class="lw-tool" aria-label="Line writer">
         <label class="lw-label" for="lwText">Your signs</label>
         <textarea id="lwText" class="lw-hiero" spellcheck="false" autocomplete="off" rows="2" placeholder="𓆓𓂧𓈖𓆑">𓆓𓂧𓈖𓆑 𓅯𓄿 𓇋𓏏𓆑</textarea>
-        <p class="lw-hint">A space marks the end of a word. Signs joined with the Unicode joiners (𓐰 above, 𓐱 beside) keep the stacking you chose. Sign codes work too: <code class="pb-code">D d n f</code>.</p>
+        <div class="lw-keys" role="group" aria-label="Stacking keys">
+          <span class="lw-label">Fix a block</span>
+          <button type="button" data-key=":" title="Put the next sign under the one before">: <span>above</span></button>
+          <button type="button" data-key="*" title="Put the next sign beside the one before">* <span>beside</span></button>
+          <button type="button" data-key="()" title="Group signs, e.g. (𓏏*𓏤):𓆑">( ) <span>group</span></button>
+          <button type="button" data-key="-" title="Start a new block here">- <span>new block</span></button>
+          <button type="button" id="lwRed" class="lw-red" title="Red ink: select signs and press to make them red (or black again); with nothing selected, red starts or stops where the cursor is">$r <span>red ink</span></button>
+        </div>
+        <p class="lw-hint">A space ends a word. The writer guesses the stacking by itself; where it guesses wrong, type the JSesh keys between the signs of that block: <code class="pb-code">𓈖:𓆑</code> puts 𓆑 under 𓈖, <code class="pb-code">𓏏*𓏤</code> sets them side by side, <code class="pb-code">(𓏏*𓏤):𓆑</code> groups, and <code class="pb-code">-</code> starts a new block. Blocks you key yourself are drawn exactly as typed. Sign codes and sound values work too: <code class="pb-code">D:d n f</code>.</p>
+        <p class="lw-hint">Red ink: <code class="pb-code">$r</code> starts red and <code class="pb-code">$b</code> goes back to black, as in JSesh. Press <em>red ink</em> before typing to write in red, select signs and press it to colour them afterwards, or click a block in the drawing to switch it between red and black.</p>
         <p class="lw-note" id="lwMsg" aria-live="polite"></p>
 
         <div class="lw-bar">
           <div class="lw-seg" role="group" aria-label="Writing direction">
             <button type="button" id="lwRtl" class="on" aria-pressed="true">Right to left</button>
             <button type="button" id="lwLtr" aria-pressed="false">Left to right</button>
+          </div>
+          <div class="lw-seg" role="group" aria-label="Script" id="lwScript">
+            <button type="button" id="lwHg" class="on" aria-pressed="true">Hieroglyphs</button>
+            <button type="button" id="lwHt" aria-pressed="false">Hieratic</button>
           </div>
           <label class="lw-field lw-size">Size <input type="range" id="lwSize" min="2" max="8" step="0.5" value="4"></label>
         </div>
@@ -445,6 +468,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 
       <h2>How the stacking is guessed</h2>
       <p>The writer has learnt from about 26,000 blocks in the Two Brothers, Horus and Seth and Wenamun, encoded sign by sign after Gardiner's <em>Late Egyptian Stories</em>. For every run of signs it knows how often those signs were written together as one block, and in what arrangement, and it chooses the grouping of your line that the texts make most likely. Signs it has never seen together are grouped by their shape: low broad signs take a row of their own, small signs share a row. Tested on lines it had not learnt from, it put the same signs together and stacked them the same way in 93&nbsp;% of the blocks.</p>
+      <p>The hieratic signs are traced from the Tale of Two Brothers, one photo per sign chosen by hand. Their sizes are learnt from the reviewed words of Two Brothers: every word box tells how high its signs stand together, and from about 2,300 words each sign gets its own height. Signs that do not have a hieratic form yet are drawn as the printed sign in grey. The preposition Hr is always written with the face over the two strokes and the single stroke beside them; in Hry-ib and before the suffixes f, i and k the mouth takes the place of the two strokes.</p>
       <p class="lw-credits">Sign shapes and the drawing rules come from JSesh by Serge Rosmorduc, with signs drawn by Serge J. P. Thomas (LGPL). The stacking was learnt from the encodings of the Two Brothers by Serge Rosmorduc (CC-BY), of Horus and Seth by Laurent Cimasoni and of Wenamun by Patricia Cassonnet, distributed with JSesh.</p>
 
     </main>
@@ -742,7 +766,8 @@ if ('serviceWorker' in navigator) {
         const kx = g.w / sw, ky = g.h / sh;
         t += g.mirror ? ` translate(${g.w.toFixed(3)} 0) scale(${(-kx).toFixed(5)} ${ky.toFixed(5)})` : ` scale(${kx.toFixed(5)} ${ky.toFixed(5)})`;
       }
-      p.push(`<path transform="${t}" d="${s[2]}" fill="${g.red ? redInk : ink}"${opts.ids ? ` data-code="${g.code}"` : ''}/>`);
+      const fill = s[3] ? (opts.grey || '#a39a8c') : (g.red ? redInk : ink);   // s[3]: a stand-in sign (no hieratic form yet)
+      p.push(`<path transform="${t}" d="${s[2]}" fill="${fill}"${opts.ids ? ` data-code="${g.code}"` : ''}/>`);
     }
     for (const q of L.quads) for (const r of shadeRects(q)) p.push(`<rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="url(#lwHatch)"/>`);
     for (const m of L.marks) p.push(`<text x="${m.x + m.w / 2}" y="${L.height - 3}" font-size="9" text-anchor="middle" fill="${ink}" font-family="serif">${m.text.replace(/[\[\]]/g, c => c === '[' ? '[' : ']').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</text>`);
@@ -812,51 +837,111 @@ if ('serviceWorker' in navigator) {
       while (j > 0) { const i = best[j].from; out.push(units.slice(i, j)); j = i; }
       return out.reverse();
     }
-    function toMdC(units) {
-      return segmentUnits(units).filter(b => !b[0].brk).map(b => b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code))).join('-');
+    /* the blocks of a line: { m: block code, red, src: [from, to] position in the typed line } */
+    function toBlocks(units) {
+      return segmentUnits(units).filter(b => !b[0].brk).map(b => ({
+        m: b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code)),
+        red: !!b[0].red, src: [Math.min(...b.map(u => u.src ? u.src[0] : 1e9)), Math.max(...b.map(u => u.src ? u.src[1] : -1))] }));
     }
-    return { cls, p, arrange, segmentUnits, toMdC };
+    function blocksToMdC(blocks) {
+      const out = []; let red = false;
+      blocks.forEach(b => { if (b.red !== red) { out.push(b.red ? '$r' : '$b'); red = b.red; } out.push(b.m); });
+      if (red) out.push('$b');
+      return out.join('-');
+    }
+    function toMdC(units) { return blocksToMdC(toBlocks(units)); }
+    return { cls, p, arrange, segmentUnits, toBlocks, blocksToMdC, toMdC };
   }
 
-  /* reading the input: Unicode hieroglyphs (with optional joiners), or sign codes separated by spaces / hyphens */
+  /* reading the input. Signs are typed as Unicode hieroglyphs or as sign codes / sound values.
+     JSesh keys typed between signs fix the stacking of that block:  :  one above the other,
+     *  side by side,  ( )  a group,  -  start a new block.  Everything else is stacked automatically.
+     The Unicode joiners U+13430 (above) and U+13431 (beside) work like  :  and  * . */
   function parseInput(text, M, G) {
-    const lines = text.split(/\r?\n/);
-    return lines.map(line => {
+    const isHiero = ch => { const c = ch.codePointAt(0); return c >= 0x13000 && c <= 0x1342F; };
+    const lookup = t => G.sign[t] ? t : (G.phon[t] || (G.sign[t.charAt(0).toUpperCase() + t.slice(1)] ? t.charAt(0).toUpperCase() + t.slice(1) : null));
+    return text.split(/\r?\n/).map(line => {
       const units = [], unknown = [];
-      const chars = Array.from(line);
-      const isHiero = ch => ch.codePointAt(0) >= 0x13000 && ch.codePointAt(0) <= 0x1345F;
-      if (chars.some(isHiero)) {
-        // Unicode: spaces are word breaks; signs joined with a Unicode joiner form a block the writer fixed
-        let i = 0;
-        const code = ch => M.uni[ch];
-        while (i < chars.length) {
-          const ch = chars[i];
-          if (/\s/.test(ch)) { if (units.length && !units[units.length - 1].brk) units.push({ brk: true }); i++; continue; }
-          if (!isHiero(ch)) { i++; continue; }
-          // collect an explicit group: sign (joiner sign)* or a bracketed segment
-          let j = i + 1; while (j < chars.length && (chars[j] === VJ || chars[j] === HJ) && j + 1 < chars.length) j += 2;
-          if (j > i + 1) {
-            let m = '', ok = true;
-            for (let k = i; k < j; k++) { const c = chars[k];
-              if (c === VJ) m += ':'; else if (c === HJ) m += '*'; else { const cd = code(c); if (!cd) { ok = false; unknown.push(c); } m += cd ? (/[-:*]/.test(cd) ? '(' + cd + ')' : cd) : ''; } }
-            if (ok) units.push({ fixed: m }); i = j; continue;
-          }
-          if (ch === SB || ch === SE || ch === VJ || ch === HJ) { i++; continue; }
-          const cd = code(ch);
-          if (!cd) unknown.push(ch);
-          else if (/[-:*\\]/.test(cd)) units.push({ fixed: cd });     // Unicode signs that stand for a whole group
-          else units.push({ code: cd });
-          i++;
+      // 1. tokens: {s:code} sign, {op:':'|'*'|'('|')'}, {brk:'word'|'block'}
+      const toks = [];
+      const chars = Array.from(line), hiero = chars.some(isHiero);
+      const offs = []; { let o = 0; chars.forEach(c => { offs.push(o); o += c.length; }); offs.push(o); }
+      let i = 0;
+      while (i < chars.length) {
+        const ch = chars[i];
+        if (ch === '$' && (chars[i + 1] === 'r' || chars[i + 1] === 'b')) { toks.push({ red: chars[i + 1] === 'r', at: [offs[i], offs[i + 2]] }); i += 2; continue; }
+        if (/\s/.test(ch)) { if (hiero) toks.push({ brk: 'word' }); i++; continue; }   // typed codes: a space only separates
+        if (ch === VJ || ch === ':') { toks.push({ op: ':' }); i++; continue; }
+        if (ch === HJ || ch === '*') { toks.push({ op: '*' }); i++; continue; }
+        if (ch === '(' || ch === ')') { toks.push({ op: ch }); i++; continue; }
+        if (ch === '-') { toks.push({ brk: 'block' }); i++; continue; }
+        if (ch === SB || ch === SE) { i++; continue; }
+        if (isHiero(ch)) { const cd = M.uni[ch]; if (cd) toks.push({ s: cd, at: [offs[i], offs[i + 1]] }); else unknown.push(ch); i++; continue; }
+        // a typed code or sound value: letters, digits, dots, but not the keys above
+        let j = i; while (j < chars.length && !/[\s:*()\-$]/.test(chars[j]) && !isHiero(chars[j]) && chars[j] !== VJ && chars[j] !== HJ) j++;
+        if (j === i) { i++; continue; }
+        const t = chars.slice(i, j).join('');
+        if (hiero && !/[A-Za-z0-9]/.test(t)) { i = j; continue; }
+        const cd = lookup(t); if (cd) toks.push({ s: cd, at: [offs[i], offs[j]] }); else unknown.push(t);
+        i = j;
+      }
+      // 2. blocks: signs tied together by keys become one fixed block; lone signs are left to the stacker
+      const pushBrk = () => { if (units.length && !units[units.length - 1].brk) units.push({ brk: true }); };
+      const signM = cd => (/[-:*\\]/.test(cd) ? '(' + cd + ')' : cd);
+      i = 0; let red = false;
+      while (i < toks.length) {
+        const t = toks[i];
+        if (t.red !== undefined) { if (t.red !== red) { red = t.red; pushBrk(); } i++; continue; }   // colour changes end a block
+        if (t.brk) { pushBrk(); i++; continue; }
+        if (t.op === ')' || t.op === ':' || t.op === '*') { i++; continue; }      // stray key
+        // gather a group: sign or '(' ... continuing while signs are joined by a key
+        let j = i, depth = 0, m = '', signs = 0, wantSign = true, a = 1e9, z = -1;
+        while (j < toks.length) {
+          const u = toks[j];
+          if (u.brk || u.red !== undefined) { if (depth > 0) { j++; continue; } break; }
+          if (u.op === '(') { if (!wantSign) break; depth++; m += '('; j++; continue; }
+          if (u.op === ')') { if (depth === 0) break; depth--; m += ')'; j++; wantSign = false; continue; }
+          if (u.op === ':' || u.op === '*') { if (wantSign) { j++; continue; } m += u.op; wantSign = true; j++; continue; }
+          if (u.s !== undefined) { if (!wantSign) break; m += signM(u.s); signs++; wantSign = false; a = Math.min(a, u.at[0]); z = Math.max(z, u.at[1]); j++; continue; }
+          j++;
         }
-      } else {
-        line.split(/[\s\-]+/).filter(Boolean).forEach(t => {
-          const c = G.sign[t] ? t : G.phon[t];
-          if (c) units.push({ code: c }); else unknown.push(t);
-        });
+        while (depth-- > 0) m += ')';
+        m = m.replace(/[:*]+$/, '');
+        if (signs === 0) { i = j; continue; }
+        const src = [a, z];
+        if (signs === 1 && !/[:*]/.test(m)) {                                   // a lone sign: auto stacking
+          const cd = m.replace(/[()]/g, '');
+          if (/[-:*\\]/.test(cd)) units.push({ fixed: cd, red, src }); else units.push({ code: cd, red, src });
+        } else units.push({ fixed: m, typed: true, red, src });
+        i = j;
+        if (toks[i] && toks[i].brk === 'block') { units.push({ brk: true, soft: true }); i++; }
       }
       while (units.length && units[units.length - 1].brk) units.pop();
-      return { units, unknown };
+      return { units: hardRules(units), unknown };
     });
+  }
+
+  /* fixed spellings agreed for our texts (applied to auto-stacked signs only; a block keyed by hand is left as typed):
+     the preposition Hr  D2 Z1  or  D2 Z4 Z1  is written  (D2:Z4)*Z1 ;
+     in Hry-ib and before the suffixes f (I9), i (A1, B1) and k (V31) it is  D2 D21 Z1  written  (D2:D21)*Z1 */
+  const HR_SUFFIX = { I9: 1, A1: 1, B1: 1, V31: 1 };
+  function hardRules(units) {
+    const out = [], c = i => units[i] && units[i].code;
+    for (let i = 0; i < units.length; i++) {
+      if (c(i) === 'D2') {
+        let j = i + 1, mid = null;
+        if (c(j) === 'Z4' || c(j) === 'D21') { mid = c(j); j++; }
+        if (c(j) === 'Z1' && units.slice(i, j + 1).every(u => u.red === units[i].red)) {
+          const after = [c(j + 1), c(j + 2), c(j + 3)];
+          const special = mid === 'D21' || HR_SUFFIX[after[0]] || after.includes('F34');
+          const src = [units[i].src ? units[i].src[0] : 0, units[j].src ? units[j].src[1] : 0];
+          out.push({ fixed: special ? '(D2:D21)*Z1' : '(D2:Z4)*Z1', red: units[i].red, src, rule: 'Hr' });
+          i = j; continue;
+        }
+      }
+      out.push(units[i]);
+    }
+    return out;
   }
 
   /* the opposite direction: a code back to its Unicode character, for the sign finder */
@@ -872,15 +957,17 @@ if ('serviceWorker' in navigator) {
 (function () {
   'use strict';
   const LW = window.LineWriter, AS = window.AutoStack, $ = id => document.getElementById(id);
-  let G = null, M = null, ST = null, U2C = null, rtl = true, timer = 0;
+  let G = null, M = null, ST = null, U2C = null, rtl = true, timer = 0, GH = null, hier = false;
   const pref = { get(k, d) { try { const v = localStorage.getItem('lw.' + k); return v === null ? d : v; } catch (e) { return d; } },
                  set(k, v) { try { localStorage.setItem('lw.' + k, v); } catch (e) {} } };
 
   function draw(mdc) {
     const unit = +$('lwSize').value;
     let L;
-    try { L = LW.layoutLine(mdc, G, { direction: rtl ? 'rtl' : 'ltr' }); } catch (e) { $('lwMsg').textContent = 'This line could not be drawn.'; return; }
-    $('lwStage').innerHTML = mdc.trim() ? LW.toSVG(L, G, { unit, ids: true }) : '<div class="lw-loading">Type some signs above.</div>';
+    const GD = hier && GH ? GH : G;
+    try { L = LW.layoutLine(mdc, GD, { direction: rtl ? 'rtl' : 'ltr' }); } catch (e) { $('lwMsg').textContent = 'This line could not be drawn.'; return; }
+    LAST = L;
+    $('lwStage').innerHTML = mdc.trim() ? LW.toSVG(L, GD, { unit, ids: true }) : '<div class="lw-loading">Type some signs above.</div>';
     $('lwStage').querySelectorAll('path[data-code]').forEach(p => {
       const t = document.createElementNS('http://www.w3.org/2000/svg', 'title'); t.textContent = p.getAttribute('data-code'); p.appendChild(t); });
     if (rtl) $('lwStage').scrollLeft = $('lwStage').scrollWidth;
@@ -888,22 +975,65 @@ if ('serviceWorker' in navigator) {
   // from the typed signs: guess the stacking, show the code, draw
   function fromText() {
     if (!G) return;
-    const parsed = AS.parseInput($('lwText').value, M, G);
+    const text = $('lwText').value, lines = text.split('\n');
+    const parsed = AS.parseInput(text, M, G);
     const unknown = [].concat(...parsed.map(p => p.unknown));
-    const mdc = parsed.map(p => ST.toMdC(p.units)).filter(Boolean).join(' !\n');
+    BLOCKS = []; let off = 0;
+    const per = parsed.map((p, li) => { const bl = ST.toBlocks(p.units); bl.forEach(b => BLOCKS.push({ ...b, at: [b.src[0] + off, b.src[1] + off] })); off += lines[li].length + 1; return bl; });
+    const mdc = per.map(bl => ST.blocksToMdC(bl)).filter(Boolean).join(' !\n');
     $('lwIn').value = mdc;
     $('lwMsg').textContent = unknown.length ? 'Left out, not a sign the writer knows: ' + [...new Set(unknown)].join(' ') : '';
-    draw(mdc.replace(/ !\n/g, '-..-'));
+    fromTyped = true; draw(mdc.replace(/ !\n/g, '-..-'));
+  }
+  let BLOCKS = [], fromTyped = true, LAST = null;
+  /* red ink: $r switches red on, $b back to black (the JSesh keys) */
+  function tidyRed(v) {
+    let prev; do { prev = v; v = v.replace(/\$r(\s*)\$b/g, '$1').replace(/\$b(\s*)\$r/g, '$1'); } while (v !== prev);
+    return v;
+  }
+  function redAt(v, pos) { const a = v.lastIndexOf('$r', pos - 1), b = v.lastIndexOf('$b', pos - 1), nl = v.lastIndexOf('\n', pos - 1); return a > b && a > nl; }
+  function setRed(from, to, red) {                    // make the text from..to red (or black), keep what follows as it was
+    const ta = $('lwText'), v = ta.value, after = redAt(v, to);
+    const v2 = v.slice(0, from) + (red ? '$r' : '$b') + v.slice(from, to) + (after ? '$r' : '$b') + v.slice(to);
+    ta.value = tidyRed(v2);
+    fromText();
+  }
+  function redButton() {
+    const ta = $('lwText'), a = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+    if (e > a) { const allRed = BLOCKS.filter(b => b.at[0] >= a && b.at[1] <= e).every(b => b.red) && BLOCKS.some(b => b.at[0] >= a && b.at[1] <= e);
+      setRed(a, e, !allRed); ta.focus(); return; }
+    const on = !redAt(v, a), key = on ? '$r' : '$b';
+    ta.value = v.slice(0, a) + key + v.slice(a); ta.focus(); ta.setSelectionRange(a + 2, a + 2);
+    ta.value = tidyRed(ta.value); fromText();
+  }
+  function stageClick(e) {
+    if (!fromTyped || !LAST) return;
+    const svg = $('lwStage').querySelector('svg'); if (!svg) return;
+    const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const qs = LAST.quads.filter(q => q.tok);
+    const k = qs.findIndex(q => p.x >= q.x - 1 && p.x <= q.x + q.w + 1);
+    if (k < 0 || !BLOCKS[k]) return;
+    const b = BLOCKS[k]; setRed(b.at[0], b.at[1], !b.red);
   }
   // from the code box: draw exactly as written
-  function fromCode() { if (!G) return; $('lwMsg').textContent = ''; draw($('lwIn').value.replace(/ !\n|\n/g, '-..-')); }
+  function fromCode() { if (!G) return; $('lwMsg').textContent = ''; fromTyped = false; draw($('lwIn').value.replace(/ !\n|\n/g, '-..-')); }
   const soon = f => () => { clearTimeout(timer); timer = setTimeout(f, 120); };
 
+  /* script: printed hieroglyphs or the hieratic signs traced from our papyri (signs without a hieratic form yet are grey) */
+  function setScript(h) {
+    hier = h; pref.set('script', h ? 'hieratic' : 'hiero');
+    $('lwHt').classList.toggle('on', h); $('lwHg').classList.toggle('on', !h);
+    $('lwHt').setAttribute('aria-pressed', h); $('lwHg').setAttribute('aria-pressed', !h);
+    if (h && !GH) { fetch('lw-hieratic.json').then(r => r.json()).then(g => { GH = g; redraw(); }).catch(() => { $('lwMsg').textContent = 'The hieratic signs could not be loaded.'; }); }
+    redraw();
+  }
+  const redraw = () => { if (fromTyped) fromText(); else fromCode(); };
   function setDir(r) {
     rtl = r; pref.set('dir', r ? 'rtl' : 'ltr');
     $('lwRtl').classList.toggle('on', r); $('lwLtr').classList.toggle('on', !r);
     $('lwRtl').setAttribute('aria-pressed', r); $('lwLtr').setAttribute('aria-pressed', !r);
-    fromCode();
+    redraw();
   }
   function download(name, blob) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
@@ -947,7 +1077,9 @@ if ('serviceWorker' in navigator) {
   function init() {
     $('lwText').addEventListener('input', soon(fromText));
     $('lwIn').addEventListener('input', soon(fromCode));
-    $('lwSize').addEventListener('input', () => { pref.set('size', $('lwSize').value); fromCode(); });
+    $('lwSize').addEventListener('input', () => { pref.set('size', $('lwSize').value); redraw(); });
+    $('lwHg').addEventListener('click', () => setScript(false));
+    $('lwHt').addEventListener('click', () => setScript(true));
     $('lwRtl').addEventListener('click', () => setDir(true));
     $('lwLtr').addEventListener('click', () => setDir(false));
     $('lwSvg').addEventListener('click', () => { const s = currentSVG(); if (s) download('line.svg', new Blob([s], { type: 'image/svg+xml' })); });
@@ -962,12 +1094,21 @@ if ('serviceWorker' in navigator) {
       const done = () => { $('lwCopy').textContent = 'Copied'; setTimeout(() => { $('lwCopy').textContent = 'Copy the code'; }, 1600); };
       if (navigator.clipboard) navigator.clipboard.writeText($('lwIn').value).then(done, () => $('lwIn').select()); else $('lwIn').select();
     });
+    $('lwRed').addEventListener('mousedown', e => e.preventDefault());   // keep the selection in the text box
+    $('lwRed').addEventListener('click', redButton);
+    $('lwStage').addEventListener('click', stageClick);
+    document.querySelectorAll('.lw-keys button[data-key]').forEach(b => b.addEventListener('click', () => {
+      const k = b.dataset.key, ta = $('lwText'), a = ta.selectionStart, e = ta.selectionEnd, v = ta.value;
+      if (k === '()') { ta.value = v.slice(0, a) + '(' + v.slice(a, e) + ')' + v.slice(e); ta.focus(); ta.setSelectionRange(e + 1, e + 1); fromText(); }
+      else insertChar(k);
+    }));
     $('lwSearch').addEventListener('input', find);
     $('lwGrid').addEventListener('click', e => { const b = e.target.closest('button[data-ch]'); if (b) insertChar(b.dataset.ch); });
     $('lwSize').value = pref.get('size', '4');
     if (pref.get('dir', 'rtl') === 'ltr') { rtl = false; $('lwRtl').classList.remove('on'); $('lwLtr').classList.add('on'); $('lwRtl').setAttribute('aria-pressed', 'false'); $('lwLtr').setAttribute('aria-pressed', 'true'); }
     Promise.all([fetch('lw-glyphs.json').then(r => r.json()), fetch('lw-stack.json').then(r => r.json())]).then(([g, m]) => {
       G = g; M = m; ST = AS.makeStacker(M, G); U2C = AS.unicodeIndex(M); buildIndex(); fromText();
+      if (!$('lwScript').hidden && pref.get('script', 'hiero') === 'hieratic') setScript(true);
     }).catch(() => { $('lwStage').innerHTML = '<div class="lw-loading">The sign shapes could not be loaded. Check the connection and reload the page.</div>'; });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

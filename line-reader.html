@@ -366,6 +366,16 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lw-more[open] summary{ margin-bottom:10px; }
 .lw-more textarea{ margin:8px 0; }
 
+.lw-keys{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.lw-keys .lw-label{ margin-right:4px; }
+.lw-keys button{ font-family:'Inter',sans-serif; font-size:14px; font-weight:600; cursor:pointer; border-radius:3px; background:var(--panel-bg); color:var(--ink-on-dark); border:1px solid var(--panel-line); padding:5px 10px; }
+.lw-keys button span{ font-weight:400; font-size:12px; opacity:.8; margin-left:3px; }
+.lw-keys button:hover{ border-color:var(--rubric); }
+.lw-keys button:focus-visible{ outline:2px solid var(--rubric); outline-offset:1px; }
+.lw-keys .lw-red{ color:#c0281e; border-color:#c0281e; }
+.lw-stage svg{ cursor:pointer; }
+.lw-seg[hidden]{ display:none; }
+
 /* ---------- line reader ---------- */
 .lr-tool{ display:flex; flex-direction:column; gap:18px; margin:0 0 40px; }
 .lr-drop{ border:2px dashed var(--panel-line); border-radius:4px; padding:22px; text-align:center; background:var(--panel-bg); }
@@ -785,7 +795,8 @@ if ('serviceWorker' in navigator) {
         const kx = g.w / sw, ky = g.h / sh;
         t += g.mirror ? ` translate(${g.w.toFixed(3)} 0) scale(${(-kx).toFixed(5)} ${ky.toFixed(5)})` : ` scale(${kx.toFixed(5)} ${ky.toFixed(5)})`;
       }
-      p.push(`<path transform="${t}" d="${s[2]}" fill="${g.red ? redInk : ink}"${opts.ids ? ` data-code="${g.code}"` : ''}/>`);
+      const fill = s[3] ? (opts.grey || '#a39a8c') : (g.red ? redInk : ink);   // s[3]: a stand-in sign (no hieratic form yet)
+      p.push(`<path transform="${t}" d="${s[2]}" fill="${fill}"${opts.ids ? ` data-code="${g.code}"` : ''}/>`);
     }
     for (const q of L.quads) for (const r of shadeRects(q)) p.push(`<rect x="${r[0]}" y="${r[1]}" width="${r[2]}" height="${r[3]}" fill="url(#lwHatch)"/>`);
     for (const m of L.marks) p.push(`<text x="${m.x + m.w / 2}" y="${L.height - 3}" font-size="9" text-anchor="middle" fill="${ink}" font-family="serif">${m.text.replace(/[\[\]]/g, c => c === '[' ? '[' : ']').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</text>`);
@@ -855,51 +866,111 @@ if ('serviceWorker' in navigator) {
       while (j > 0) { const i = best[j].from; out.push(units.slice(i, j)); j = i; }
       return out.reverse();
     }
-    function toMdC(units) {
-      return segmentUnits(units).filter(b => !b[0].brk).map(b => b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code))).join('-');
+    /* the blocks of a line: { m: block code, red, src: [from, to] position in the typed line } */
+    function toBlocks(units) {
+      return segmentUnits(units).filter(b => !b[0].brk).map(b => ({
+        m: b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code)),
+        red: !!b[0].red, src: [Math.min(...b.map(u => u.src ? u.src[0] : 1e9)), Math.max(...b.map(u => u.src ? u.src[1] : -1))] }));
     }
-    return { cls, p, arrange, segmentUnits, toMdC };
+    function blocksToMdC(blocks) {
+      const out = []; let red = false;
+      blocks.forEach(b => { if (b.red !== red) { out.push(b.red ? '$r' : '$b'); red = b.red; } out.push(b.m); });
+      if (red) out.push('$b');
+      return out.join('-');
+    }
+    function toMdC(units) { return blocksToMdC(toBlocks(units)); }
+    return { cls, p, arrange, segmentUnits, toBlocks, blocksToMdC, toMdC };
   }
 
-  /* reading the input: Unicode hieroglyphs (with optional joiners), or sign codes separated by spaces / hyphens */
+  /* reading the input. Signs are typed as Unicode hieroglyphs or as sign codes / sound values.
+     JSesh keys typed between signs fix the stacking of that block:  :  one above the other,
+     *  side by side,  ( )  a group,  -  start a new block.  Everything else is stacked automatically.
+     The Unicode joiners U+13430 (above) and U+13431 (beside) work like  :  and  * . */
   function parseInput(text, M, G) {
-    const lines = text.split(/\r?\n/);
-    return lines.map(line => {
+    const isHiero = ch => { const c = ch.codePointAt(0); return c >= 0x13000 && c <= 0x1342F; };
+    const lookup = t => G.sign[t] ? t : (G.phon[t] || (G.sign[t.charAt(0).toUpperCase() + t.slice(1)] ? t.charAt(0).toUpperCase() + t.slice(1) : null));
+    return text.split(/\r?\n/).map(line => {
       const units = [], unknown = [];
-      const chars = Array.from(line);
-      const isHiero = ch => ch.codePointAt(0) >= 0x13000 && ch.codePointAt(0) <= 0x1345F;
-      if (chars.some(isHiero)) {
-        // Unicode: spaces are word breaks; signs joined with a Unicode joiner form a block the writer fixed
-        let i = 0;
-        const code = ch => M.uni[ch];
-        while (i < chars.length) {
-          const ch = chars[i];
-          if (/\s/.test(ch)) { if (units.length && !units[units.length - 1].brk) units.push({ brk: true }); i++; continue; }
-          if (!isHiero(ch)) { i++; continue; }
-          // collect an explicit group: sign (joiner sign)* or a bracketed segment
-          let j = i + 1; while (j < chars.length && (chars[j] === VJ || chars[j] === HJ) && j + 1 < chars.length) j += 2;
-          if (j > i + 1) {
-            let m = '', ok = true;
-            for (let k = i; k < j; k++) { const c = chars[k];
-              if (c === VJ) m += ':'; else if (c === HJ) m += '*'; else { const cd = code(c); if (!cd) { ok = false; unknown.push(c); } m += cd ? (/[-:*]/.test(cd) ? '(' + cd + ')' : cd) : ''; } }
-            if (ok) units.push({ fixed: m }); i = j; continue;
-          }
-          if (ch === SB || ch === SE || ch === VJ || ch === HJ) { i++; continue; }
-          const cd = code(ch);
-          if (!cd) unknown.push(ch);
-          else if (/[-:*\\]/.test(cd)) units.push({ fixed: cd });     // Unicode signs that stand for a whole group
-          else units.push({ code: cd });
-          i++;
+      // 1. tokens: {s:code} sign, {op:':'|'*'|'('|')'}, {brk:'word'|'block'}
+      const toks = [];
+      const chars = Array.from(line), hiero = chars.some(isHiero);
+      const offs = []; { let o = 0; chars.forEach(c => { offs.push(o); o += c.length; }); offs.push(o); }
+      let i = 0;
+      while (i < chars.length) {
+        const ch = chars[i];
+        if (ch === '$' && (chars[i + 1] === 'r' || chars[i + 1] === 'b')) { toks.push({ red: chars[i + 1] === 'r', at: [offs[i], offs[i + 2]] }); i += 2; continue; }
+        if (/\s/.test(ch)) { if (hiero) toks.push({ brk: 'word' }); i++; continue; }   // typed codes: a space only separates
+        if (ch === VJ || ch === ':') { toks.push({ op: ':' }); i++; continue; }
+        if (ch === HJ || ch === '*') { toks.push({ op: '*' }); i++; continue; }
+        if (ch === '(' || ch === ')') { toks.push({ op: ch }); i++; continue; }
+        if (ch === '-') { toks.push({ brk: 'block' }); i++; continue; }
+        if (ch === SB || ch === SE) { i++; continue; }
+        if (isHiero(ch)) { const cd = M.uni[ch]; if (cd) toks.push({ s: cd, at: [offs[i], offs[i + 1]] }); else unknown.push(ch); i++; continue; }
+        // a typed code or sound value: letters, digits, dots, but not the keys above
+        let j = i; while (j < chars.length && !/[\s:*()\-$]/.test(chars[j]) && !isHiero(chars[j]) && chars[j] !== VJ && chars[j] !== HJ) j++;
+        if (j === i) { i++; continue; }
+        const t = chars.slice(i, j).join('');
+        if (hiero && !/[A-Za-z0-9]/.test(t)) { i = j; continue; }
+        const cd = lookup(t); if (cd) toks.push({ s: cd, at: [offs[i], offs[j]] }); else unknown.push(t);
+        i = j;
+      }
+      // 2. blocks: signs tied together by keys become one fixed block; lone signs are left to the stacker
+      const pushBrk = () => { if (units.length && !units[units.length - 1].brk) units.push({ brk: true }); };
+      const signM = cd => (/[-:*\\]/.test(cd) ? '(' + cd + ')' : cd);
+      i = 0; let red = false;
+      while (i < toks.length) {
+        const t = toks[i];
+        if (t.red !== undefined) { if (t.red !== red) { red = t.red; pushBrk(); } i++; continue; }   // colour changes end a block
+        if (t.brk) { pushBrk(); i++; continue; }
+        if (t.op === ')' || t.op === ':' || t.op === '*') { i++; continue; }      // stray key
+        // gather a group: sign or '(' ... continuing while signs are joined by a key
+        let j = i, depth = 0, m = '', signs = 0, wantSign = true, a = 1e9, z = -1;
+        while (j < toks.length) {
+          const u = toks[j];
+          if (u.brk || u.red !== undefined) { if (depth > 0) { j++; continue; } break; }
+          if (u.op === '(') { if (!wantSign) break; depth++; m += '('; j++; continue; }
+          if (u.op === ')') { if (depth === 0) break; depth--; m += ')'; j++; wantSign = false; continue; }
+          if (u.op === ':' || u.op === '*') { if (wantSign) { j++; continue; } m += u.op; wantSign = true; j++; continue; }
+          if (u.s !== undefined) { if (!wantSign) break; m += signM(u.s); signs++; wantSign = false; a = Math.min(a, u.at[0]); z = Math.max(z, u.at[1]); j++; continue; }
+          j++;
         }
-      } else {
-        line.split(/[\s\-]+/).filter(Boolean).forEach(t => {
-          const c = G.sign[t] ? t : G.phon[t];
-          if (c) units.push({ code: c }); else unknown.push(t);
-        });
+        while (depth-- > 0) m += ')';
+        m = m.replace(/[:*]+$/, '');
+        if (signs === 0) { i = j; continue; }
+        const src = [a, z];
+        if (signs === 1 && !/[:*]/.test(m)) {                                   // a lone sign: auto stacking
+          const cd = m.replace(/[()]/g, '');
+          if (/[-:*\\]/.test(cd)) units.push({ fixed: cd, red, src }); else units.push({ code: cd, red, src });
+        } else units.push({ fixed: m, typed: true, red, src });
+        i = j;
+        if (toks[i] && toks[i].brk === 'block') { units.push({ brk: true, soft: true }); i++; }
       }
       while (units.length && units[units.length - 1].brk) units.pop();
-      return { units, unknown };
+      return { units: hardRules(units), unknown };
     });
+  }
+
+  /* fixed spellings agreed for our texts (applied to auto-stacked signs only; a block keyed by hand is left as typed):
+     the preposition Hr  D2 Z1  or  D2 Z4 Z1  is written  (D2:Z4)*Z1 ;
+     in Hry-ib and before the suffixes f (I9), i (A1, B1) and k (V31) it is  D2 D21 Z1  written  (D2:D21)*Z1 */
+  const HR_SUFFIX = { I9: 1, A1: 1, B1: 1, V31: 1 };
+  function hardRules(units) {
+    const out = [], c = i => units[i] && units[i].code;
+    for (let i = 0; i < units.length; i++) {
+      if (c(i) === 'D2') {
+        let j = i + 1, mid = null;
+        if (c(j) === 'Z4' || c(j) === 'D21') { mid = c(j); j++; }
+        if (c(j) === 'Z1' && units.slice(i, j + 1).every(u => u.red === units[i].red)) {
+          const after = [c(j + 1), c(j + 2), c(j + 3)];
+          const special = mid === 'D21' || HR_SUFFIX[after[0]] || after.includes('F34');
+          const src = [units[i].src ? units[i].src[0] : 0, units[j].src ? units[j].src[1] : 0];
+          out.push({ fixed: special ? '(D2:D21)*Z1' : '(D2:Z4)*Z1', red: units[i].red, src, rule: 'Hr' });
+          i = j; continue;
+        }
+      }
+      out.push(units[i]);
+    }
+    return out;
   }
 
   /* the opposite direction: a code back to its Unicode character, for the sign finder */
