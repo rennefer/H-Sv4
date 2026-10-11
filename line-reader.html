@@ -456,8 +456,6 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
     <a class="sb-link" href="playbook.html" style="margin-top:14px;"><span class="g">𓏛</span>Playbook</a>
     <a class="sb-link" href="line-writer.html"><span class="g">𓏞</span>Line Writer</a>
     <a class="sb-link active" href="line-reader.html"><span class="g">𓁹</span>Line Reader</a>
-    <a class="sb-link" href="training-data.html"><span class="g">𓅝</span>Project Thoth</a>
-    <a class="sb-link" href="amun.html"><span class="g">𓁩</span>Project Amun</a>
     <a class="sb-link" href="ateniit.html"><span class="g">𓈖</span>Ateniit – the game</a>
   </nav>
 </aside>
@@ -766,7 +764,7 @@ if ('serviceWorker' in navigator) {
       if (it === '#b') { shading = true; continue; }
       if (it === '#e') { shading = false; continue; }
       if (/^\?\d+$/.test(it) || it === '^^^') continue;
-      if (it === '..' || it === '.') { const w = it === '..' ? SPEC.quadH : SPEC.quadH / 2; x += gap(); quads.push({ x, y: 0, w, h: SPEC.quadH, shade: shading ? '1234' : '' }); x += w; first = false; continue; }
+      if (it === '..' || it === '.') { const w = it === '..' ? SPEC.quadH : (opts.spaceW != null ? opts.spaceW : SPEC.quadH / 2); x += gap(); quads.push({ x, y: 0, w, h: SPEC.quadH, shade: shading ? '1234' : '' }); x += w; first = false; continue; }
       if (it === '//' || it === 'v/' || it === 'h/') {
         const w = it === 'v/' ? SPEC.quadH / 2 : SPEC.quadH, h = it === 'h/' ? SPEC.quadH / 2 : SPEC.quadH;
         x += gap(); quads.push({ x, y: SPEC.quadH - h, w, h, shade: '1234', lacuna: true }); x += w; first = false; continue;
@@ -791,9 +789,9 @@ if ('serviceWorker' in navigator) {
         const k = G.scale, pl = (G.lowPlace && G.lowPlace[lowCode]) || {}, w0 = g.w;
         g.code = lowCode; g.w = lo[0] * k; g.h = lo[1] * k;
         g.y = pl.top !== undefined ? SPEC.quadH * pl.top : SPEC.quadH - g.h * 0.45;
-        if (pl.back) {                                           // the stroke runs back under the word before; only the rest sticks out
-          const x0 = g.x, keep = (1 - pl.back) * g.w;
-          g.x = Math.max(0, x0 - pl.back * g.w);
+        if (pl.back || pl.keep) {                                // back: the stroke runs back under the word before; keep: the head keeps
+          const x0 = g.x, keep = pl.back ? (1 - pl.back) * g.w : pl.keep * g.w;   // its place and the stroke runs on under the next signs
+          if (pl.back) g.x = Math.max(0, x0 - pl.back * g.w);
           const q = quads.find(q => Math.abs(q.x - x0) < 0.01 && q.n === 1), shrink = w0 - keep;
           if (q && shrink > 0) {                                 // a lone low sign takes only the room of the part that sticks out
             const after = v => v.x >= x0 + w0 - 0.01;
@@ -933,13 +931,14 @@ if ('serviceWorker' in navigator) {
     /* the blocks of a line: { m: block code, red, src: [from, to] position in the typed line } */
     /* the blocks of a line: { m: block code, red, src: [from, to] position in the typed line, word: index of the word, ch: its signs } */
     function toBlocks(units) {
-      const out = []; let word = 0, started = false;
+      const out = []; let word = 0, started = false, pre = 0;
       segmentUnits(units).forEach(b => {
-        if (b[0].brk) { if (b[0].word && started) word++; return; }
+        if (b[0].brk) { if (b[0].word && started) word++; pre += b[0].extra || 0; return; }
         started = true;
-        out.push({ m: b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code)), red: !!b[0].red, word,
+        out.push({ m: b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code)), red: !!b[0].red, word, pre,
           ch: b.map(u => u.ch || '').join(''),
           src: [Math.min(...b.map(u => u.src ? u.src[0] : 1e9)), Math.max(...b.map(u => u.src ? u.src[1] : -1))] });
+        pre = 0;
       });
       return out;
     }
@@ -952,6 +951,7 @@ if ('serviceWorker' in navigator) {
       const words = []; blocks.forEach(b => { (words[b.word] = words[b.word] || []).push(b); });
       words.filter(Boolean).forEach(ws => {
         const sp = ws.map(b => b.ch).join('');
+        for (let k = 0; k < (ws[0].pre || 0); k++) out.push('.');      // the extra spaces typed before the word
         if (opt.words) out.push(opt.known && opt.known.has(sp) ? '_t' : '_');
         // a word form replaces its blocks wherever they make up the spelling, also at the start or inside a longer word
         const list = [];
@@ -984,7 +984,7 @@ if ('serviceWorker' in navigator) {
     // one-sign words: the block between two word marks (or the line ends)
     for (let i = 0; i < out.length; i++) {
       if (out[i] === '_' || out[i] === '_t' || /^[!.]/.test(out[i])) continue;
-      const prevMark = i === 0 || out[i - 1] === '_' || out[i - 1] === '_t', nextMark = i === out.length - 1 || out[i + 1] === '_' || out[i + 1] === '_t' || /^\.\./.test(out[i + 1]);
+      const prevMark = i === 0 || out[i - 1] === '_' || out[i - 1] === '_t', nextMark = i === out.length - 1 || out[i + 1] === '_' || out[i + 1] === '_t' || /^\./.test(out[i + 1]);
       const base = /_r$/.test(out[i]) ? null : out[i];
       if (prevMark && nextMark && base && H.sign[base + '_w']) out[i] = base + '_w';
     }
@@ -1006,7 +1006,11 @@ if ('serviceWorker' in navigator) {
       while (i < chars.length) {
         const ch = chars[i];
         if (ch === '$' && (chars[i + 1] === 'r' || chars[i + 1] === 'b')) { toks.push({ red: chars[i + 1] === 'r', at: [offs[i], offs[i + 2]] }); i += 2; continue; }
-        if (/\s/.test(ch)) { if (hiero) toks.push({ brk: 'word' }); i++; continue; }   // typed codes: a space only separates
+        if (/\s/.test(ch)) {                              // one space ends a word; every further space leaves room in the drawing
+          let j = i; while (j < chars.length && /\s/.test(chars[j])) j++;
+          if (hiero || j - i > 1) toks.push({ brk: 'word', extra: j - i - 1 });   // typed codes: a single space only separates
+          i = j; continue;
+        }
         if (ch === VJ || ch === ':') { toks.push({ op: ':' }); i++; continue; }
         if (ch === HJ || ch === '*') { toks.push({ op: '*' }); i++; continue; }
         if (ch === '(' || ch === ')') { toks.push({ op: ch }); i++; continue; }
@@ -1037,14 +1041,15 @@ if ('serviceWorker' in navigator) {
         i = j;
       }
       // 2. blocks: signs tied together by keys become one fixed block; lone signs are left to the stacker
-      const pushBrk = word => { const l = units[units.length - 1];
-        if (units.length && !l.brk) units.push({ brk: true, word: !!word }); else if (l && l.brk && word) l.word = true; };
+      const pushBrk = (word, extra) => { const l = units[units.length - 1];
+        if (!units.length || !l.brk) units.push({ brk: true, word: !!word, extra: extra || 0 });
+        else { if (word) l.word = true; l.extra = Math.max(l.extra || 0, extra || 0); } };
       const signM = cd => (/[-:*\\]/.test(cd) ? '(' + cd + ')' : cd);
       i = 0; let red = false;
       while (i < toks.length) {
         const t = toks[i];
         if (t.red !== undefined) { if (t.red !== red) { red = t.red; pushBrk(false); } i++; continue; }   // colour changes end a block
-        if (t.brk) { pushBrk(t.brk === 'word'); i++; continue; }
+        if (t.brk) { pushBrk(t.brk === 'word', t.extra); i++; continue; }
         if (t.op === ')' || t.op === ':' || t.op === '*' || t.low) { i++; continue; }      // stray key
         // gather a group: sign or '(' ... continuing while signs are joined by a key
         let j = i, depth = 0, m = '', signs = 0, wantSign = true, a = 1e9, z = -1, chs = '';
