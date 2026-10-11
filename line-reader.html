@@ -723,12 +723,14 @@ if ('serviceWorker' in navigator) {
     if (k !== 1) rows = rows.map(r => ({ els: r.els.map(b => scaleBox2(b, kx, k)), w: r.w * kx, h: r.h * k }));
     total *= k;
     const W = Math.max(...rows.map(r => r.w));
-    const H = inner ? Math.max(total, 0) : Math.max(SPEC.quadH, total);
+    const rise = !inner && lone1 && G.rise && G.rise[lone1] && total > SPEC.quadH;   // a tall sign that stands on the line and rises above it (I12)
+    const H = rise ? SPEC.quadH : inner ? Math.max(total, 0) : Math.max(SPEC.quadH, total);
     const glyphs = [];
     // rows: one row sits on the bottom line, several rows are spread from top to bottom
     const sumH = rows.reduce((a, r) => a + r.h, 0);
     const gapY = rows.length > 1 ? (H - sumH) / (rows.length - 1) : 0;
-    let y = rows.length > 1 ? 0 : H - rows[0].h;
+    let y = rows.length > 1 ? 0 : H - rows[0].h;                  // with rise, y is above the top of the line
+    if (rise && typeof G.rise[lone1] === 'number') y += G.rise[lone1];   // and the body sits on the line: the tail reaches a little below
     rows.forEach(r => {
       // elements: a single one is centred, several are spread from left to right; all sit on the row's bottom line
       const sumW = r.els.reduce((a, b) => a + b.w, 0);
@@ -807,6 +809,8 @@ if ('serviceWorker' in navigator) {
       height = Math.max(height, g.y + g.h + (g.tail ? 2 : 0));
     });
     out.forEach(g => { height = Math.max(height, g.y + g.h); });    // tall forms reach below the line
+    const top = Math.min(0, ...out.map(g => g.y));                  // signs that rise above the line: move the line down
+    if (top < 0) { out.forEach(g => { g.y -= top; }); quads.forEach(q => { q.y -= top; }); marks.forEach(m => { if (m.y != null) m.y -= top; }); height -= top; }
     HOPT = null;
     const width = x + SPEC.margin;
     if (rtl) {                                                   // right to left: mirror positions and turn the signs to face right
@@ -987,7 +991,7 @@ if ('serviceWorker' in navigator) {
     let j2 = joined; for (const k in ST_RULES) j2 = j2.split(k).join(ST_RULES[k]);
     if (j2 !== joined) { toks.length = 0; toks.push(...topLevel(j2)); }
     for (let i = 0; i < toks.length; i++) if (/&/.test(toks[i]) && !(H.lig && Object.keys(H.lig).length)) toks[i] = toks[i].replace(/&/g, '*');   // no ligature placements in hieratic: signs joined with & stand side by side
-    const out = toks.map(b => /:/.test(b) ? b.replace(/\bN35:I9\b/g, H.sign.N35_s ? 'N35_s:I9' : 'N35:I9').replace(/\bV31\b/g, H.sign.V31_s ? 'V31_s' : 'V31') : (b === 'N35' && H.sign.N35_r ? 'N35_r' : b === 'D21' && H.sign.D21_r ? 'D21_r' : b));
+    const out = toks.map(b => /:/.test(b) ? b.replace(/\bN35:I9\b/g, H.sign.N35_s ? 'N35_s:I9' : 'N35:I9').replace(/\bV31\b/g, H.sign.V31_s ? 'V31_s' : 'V31').replace(/\bX1\*Z1\b/g, H.sign.Z1_s ? 'X1*Z1_s' : 'X1*Z1').replace(/\bD46:O34\b/g, H.sign.D46_A ? 'D46_A:O34' : 'D46:O34') : (b === 'N35' && H.sign.N35_r ? 'N35_r' : b === 'D21' && H.sign.D21_r ? 'D21_r' : b));
     // one-sign words: the block between two word marks (or the line ends)
     for (let i = 0; i < out.length; i++) {
       if (out[i] === '_' || out[i] === '_t' || /^[!.]/.test(out[i])) continue;
@@ -1025,7 +1029,7 @@ if ('serviceWorker' in navigator) {
         if (ch === '(' || ch === ')') { toks.push({ op: ch }); i++; continue; }
         if (ch === '-') { toks.push({ brk: 'block' }); i++; continue; }
         if (ch === '_') { toks.push({ low: true }); i++; continue; }
-        if (ch === SB || ch === SE) { i++; continue; }
+        if (ch === SB || ch === SE) { toks.push({ op: ch === SB ? '(' : ')' }); i++; continue; }   // Unicode segment brackets group like ( )
         if (isHiero(ch)) { const cd = M.uni[ch]; if (cd) toks.push({ s: cd, ch, at: [offs[i], offs[i + 1]] }); else unknown.push(ch); i++; continue; }
         // a typed code or sound value: letters, digits, dots, but not the keys above
         let j = i; while (j < chars.length && !/[\s:*()\-$_]/.test(chars[j]) && !isHiero(chars[j]) && chars[j] !== VJ && chars[j] !== HJ) j++;
