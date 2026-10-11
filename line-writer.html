@@ -959,10 +959,17 @@ if ('serviceWorker' in navigator) {
      The Unicode joiners U+13430 (above) and U+13431 (beside) work like  :  and  * . */
   /* hieratic: the scribe's own forms. A stack written as one ligature; n over f takes the short n (the long n
      elsewhere); k in a stack is the upright k; a lone n or r in a row is shorter; a word of one sign uses that sign's standalone form (k, plural strokes) */
+  function topLevel(m) { const o = []; let d = 0, c = ''; for (const ch of m) { if (ch === '(') d++; if (ch === ')') d--; if (ch === '-' && d === 0) { o.push(c); c = ''; } else c += ch; } o.push(c); return o; }
   function hieraticForms(mdc, H) {
     const LIG = H.stackLig || {};
     const toks = mdc.split('-').map(b => { for (const k in LIG) if (H.sign[LIG[k]]) b = b.split(k).join(LIG[k]); return b; });
     for (let i = 0; i + 1 < toks.length; i++) if (toks[i] === 'O1' && toks[i + 1] === 'D21') toks.splice(i, 2, 'O1:D21');   // pr: the house stands on r
+    // a word form written as a JSesh ligature inside a stack (D21:I10&D46, r over Dd) keeps the scribe's form
+    for (let i = 0; i < toks.length; i++) if (/&/.test(toks[i])) for (const k in (H.wordGlyph || {})) { const p = k.split(' '); if (p.length === 2) toks[i] = toks[i].split(p[0] + '&' + p[1]).join(H.wordGlyph[k]); }
+    // hieratic stacks the scribes use that the transcription writes in a row (rows of small signs over a long one)
+    const ST_RULES = H.stackRules || {}, joined = toks.join('-');
+    let j2 = joined; for (const k in ST_RULES) j2 = j2.split(k).join(ST_RULES[k]);
+    if (j2 !== joined) { toks.length = 0; toks.push(...topLevel(j2)); }
     for (let i = 0; i < toks.length; i++) if (/&/.test(toks[i]) && !(H.lig && Object.keys(H.lig).length)) toks[i] = toks[i].replace(/&/g, '*');   // no ligature placements in hieratic: signs joined with & stand side by side
     const out = toks.map(b => /:/.test(b) ? b.replace(/\bN35:I9\b/g, H.sign.N35_s ? 'N35_s:I9' : 'N35:I9').replace(/\bV31\b/g, H.sign.V31_s ? 'V31_s' : 'V31') : (b === 'N35' && H.sign.N35_r ? 'N35_r' : b === 'D21' && H.sign.D21_r ? 'D21_r' : b));
     // one-sign words: the block between two word marks (or the line ends)
@@ -979,7 +986,9 @@ if ('serviceWorker' in navigator) {
      this way is drawn as that spelling, while the text keeps the transliteration */
   function parseInput(text, M, G, opts) {
     const isHiero = ch => { const c = ch.codePointAt(0); return c >= 0x13000 && c <= 0x1342F; };
-    const lookup = t => G.sign[t] ? t : (G.phon[t] || (G.sign[t.charAt(0).toUpperCase() + t.slice(1)] ? t.charAt(0).toUpperCase() + t.slice(1) : null));
+    // sign codes are read without regard to capitals (g17, aa1, n35a); sound values keep theirs (n, Dd, pA)
+    if (!G.__lc) { G.__lc = {}; Object.keys(G.sign).forEach(k => { G.__lc[k.toLowerCase()] = k; }); }
+    const lookup = t => G.sign[t] ? t : (G.phon[t] || (/\d/.test(t) ? G.__lc[t.toLowerCase()] : null) || (G.sign[t.charAt(0).toUpperCase() + t.slice(1)] ? t.charAt(0).toUpperCase() + t.slice(1) : null));
     return text.split(/\r?\n/).map(line => {
       const units = [], unknown = [];
       // 1. tokens: {s:code} sign, {op:':'|'*'|'('|')'}, {brk:'word'|'block'}
@@ -1017,7 +1026,7 @@ if ('serviceWorker' in navigator) {
         if (cd) toks.push({ s: cd, ch: cd + ' ', at: [offs[i], offs[j]] });
         else {
           // sign codes typed without spaces (G17G1): a code is letters, a number, and at most a or b after it
-          const parts = /^(?:[A-Z][a-z]?\d+[ab]?)+$/.test(t) ? t.match(/[A-Z][a-z]?\d+[ab]?/g) : null;
+          const parts = /^(?:[A-Za-z][A-Za-z]?\d+[ab]?)+$/.test(t) ? t.match(/[A-Za-z][A-Za-z]?\d+[ab]?/g) : null;
           if (parts && parts.every(x => lookup(x))) {
             let o = offs[i]; for (const x of parts) { const c2 = lookup(x); toks.push({ s: c2, ch: c2 + ' ', at: [o, o + x.length] }); o += x.length; }
           } else unknown.push(t);
@@ -1169,8 +1178,11 @@ if ('serviceWorker' in navigator) {
     $('lwMsg').textContent = CYC.list.length > 1 ? `${CYC.word}: ${CYC.i + 1} of ${CYC.list.length}${en ? ' (' + en + ')' : ''}. ⇄ or Shift+Space for the next one.` : `${CYC.word}${en ? ' (' + en + ')' : ''}`; }
   function putCyc(ta) {                                  // write the current choice in place of the word
     const eg = CYC.list[CYC.i][0], v = ta.value, keep = ta.selectionStart - CYC.end;
+    // phone keyboards keep their own copy of the word being typed: leave the box for a moment so they let go of it,
+    // or the next key (often the space) is swallowed
+    const had = document.activeElement === ta; if (had) ta.blur();
     ta.value = v.slice(0, CYC.start) + eg + v.slice(CYC.end); CYC.end = CYC.start + eg.length;
-    const p = CYC.end + Math.max(0, keep); ta.setSelectionRange(p, p); fixHr(ta);
+    const p = CYC.end + Math.max(0, keep); if (had) ta.focus(); ta.setSelectionRange(p, p); fixHr(ta);
     clearTimeout(timer); fromText(); showCyc();
   }
   /* Shift+Space: the next spelling of the word just written (or of the transliteration before the cursor) */
