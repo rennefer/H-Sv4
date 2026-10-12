@@ -406,6 +406,9 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lw-head .lw-imp{ font-size:13px; padding:5px 12px; }
 .lw-tool textarea.lw-hiero.lw-drop{ outline:2px dashed var(--accent, #e8d9b0); outline-offset:2px; }
 
+.lw-font a{ color:var(--rubric); }
+.lw-font a:hover{ color:var(--ink-on-dark); }
+
 /* ---------- line reader ---------- */
 .lr-tool{ display:flex; flex-direction:column; gap:18px; margin:0 0 40px; }
 .lr-drop{ border:2px dashed var(--panel-line); border-radius:4px; padding:22px; text-align:center; background:var(--panel-bg); }
@@ -538,7 +541,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 
       <h2>What the reader can and cannot do yet</h2>
       <p>Printed hieroglyphs: the reader finds the signs and how they are stacked, and compares them with the JSesh sign shapes and with signs learnt from the Horus and Seth transcriptions; how often signs follow each other in our texts helps it choose. A clean line from JSesh comes out almost entirely right; in the Horus and Seth transcriptions it reads about five signs in six correctly. Check the box before you use the line, and correct what it got wrong.</p>
-      <p>The reader compares each piece of your line with about 10,500 word pictures from the Two Brothers, Horus and Seth and Wenamun, and lets the words that most often follow each other in these texts move up the list. Tested on pages it had not seen, it had the right word as its first guess for about a quarter of the words in Two Brothers and nearly a third in Horus and Seth, and among its first five guesses for 37&nbsp;% and 47&nbsp;%. Wenamun is much harder: its photos are dark and broken. The cuts it suggests fall where the ink thins out, which often but not always is where a word ends.</p>
+      <p>For every piece of your line the reader keeps only the ink of that piece, then two small neural networks guess the word. They learnt from about 11,500 word pictures that were checked by hand: the words of the Two Brothers, Horus and Seth and Wenamun, and the cleaned word pictures of the dictionary. The second network also finds which signs are in the piece and where, and the guesses are checked against the spellings of the words. Tested on pages it had not learnt from, with the words cut as they were checked, the first guess was right for 77&nbsp;% of the words in Two Brothers, 70&nbsp;% in Wenamun and 64&nbsp;% in Horus and Seth, and the right word was among the first five for 92&nbsp;%, 88&nbsp;% and 76&nbsp;%. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. The cuts it suggests fall where the ink thins out, which often but not always is where a word ends: move them where they belong for the best guesses.</p>
       <p>So for now it is an assistant: you make the choices, it does the looking up and the writing. It gets better as the cleaned words from our review are added, and better still once it reads sign by sign.</p>
       <p class="lw-credits">The transcription is written with the Line Writer: sign shapes from JSesh by Serge Rosmorduc and Serge J. P. Thomas (LGPL), stacking learnt from the JSesh encodings of the three stories.</p>
 
@@ -1291,6 +1294,144 @@ if ('serviceWorker' in navigator) {
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.LineReader = API;
 })(typeof window !== 'undefined' ? window : this);
 
+/* Word reader (website side), twin of rd/cnn.py: a word is the stretch of the line's ink (ink64) between two cuts,
+   trimmed to its ink, scaled to 40 rows and put in the middle of a 40 x 96 picture. Two small convolutional networks
+   guess the word; the second also finds which signs are in it, and the guess is checked against the spellings. */
+(function (root) {
+  'use strict';
+  const HH = 40, WW = 96;
+  function areaW(nIn, nOut) {
+    const s = nIn / nOut, W = [];
+    for (let o = 0; o < nOut; o++) { const lo = o * s, hi = (o + 1) * s, row = [];
+      for (let i = Math.floor(lo); i < Math.min(Math.ceil(hi), nIn); i++) row.push([i, (Math.min(hi, i + 1) - Math.max(lo, i)) / s]);
+      W.push(row); }
+    return W;
+  }
+  function resample(a, h, w, oh, ow) {          // exact area resampling, as core.area_resample
+    const wy = areaW(h, oh), wx = areaW(w, ow), tmp = new Float32Array(oh * w), out = new Float32Array(oh * ow);
+    for (let o = 0; o < oh; o++) for (const [i, k] of wy[o]) for (let x = 0; x < w; x++) tmp[o * w + x] += k * a[i * w + x];
+    for (let y = 0; y < oh; y++) for (let o = 0; o < ow; o++) { let s = 0; for (const [i, k] of wx[o]) s += k * tmp[y * w + i]; out[y * ow + o] = s; }
+    return out;
+  }
+  /* ink against the local papyrus colour: the line (64 rows, rgba) in blocks of 4 x 4, the median of the blocks
+     round each block (9 x 17) is the papyrus there; darker than 0.72 of it, or clearly red, is ink. Twin: rd/ink2.py */
+  function median(arr) { const a = Float64Array.from(arr).sort(); const n = a.length; return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2; }
+  function inkMed(rgba, W, H) {
+    const N = W * H, g = new Float64Array(N), rg = new Float64Array(N);
+    for (let i = 0; i < N; i++) { g[i] = (rgba[i * 4] + rgba[i * 4 + 1] + rgba[i * 4 + 2]) / 3; rg[i] = rgba[i * 4] - rgba[i * 4 + 1]; }
+    const h4 = (H + 3) >> 2, w4 = (W + 3) >> 2, sm = new Float64Array(h4 * w4);
+    for (let y = 0; y < h4; y++) for (let x = 0; x < w4; x++) { let s = 0;
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) s += g[Math.min(H - 1, 4 * y + i) * W + Math.min(W - 1, 4 * x + j)];
+      sm[y * w4 + x] = s / 16; }
+    const bg = new Float64Array(h4 * w4), win = [];
+    for (let y = 0; y < h4; y++) for (let x = 0; x < w4; x++) { win.length = 0;
+      for (let yy = Math.max(0, y - 4); yy < Math.min(h4, y + 5); yy++) for (let xx = Math.max(0, x - 8); xx < Math.min(w4, x + 9); xx++) win.push(sm[yy * w4 + xx]);
+      bg[y * w4 + x] = median(win); }
+    const base = median(rg), ink = new Float32Array(N);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x, b = bg[(y >> 2) * w4 + (x >> 2)];
+      const dark = g[i] < b * 0.72, red = rg[i] > base + 38 && g[i] < b * 0.95;
+      ink[i] = ((dark || red) && !(g[i] > 235)) ? 1 : 0; }
+    return ink;
+  }
+  /* 8-connected ink parts: labels 1..n */
+  function components(ink, W, H) {
+    const lab = new Int32Array(W * H), par = [0];
+    const find = a => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (!ink[i]) continue;
+      const ns = []; if (x > 0 && lab[i - 1]) ns.push(lab[i - 1]);
+      if (y > 0) for (let d = -1; d <= 1; d++) { const xx = x + d; if (xx >= 0 && xx < W && lab[i - W + d]) ns.push(lab[i - W + d]); }
+      if (!ns.length) { par.push(par.length); lab[i] = par.length - 1; }
+      else { let m = Infinity; for (const a of ns) m = Math.min(m, find(a)); lab[i] = m; for (const a of ns) { const r = find(a); if (r !== m) par[r] = m; } } }
+    for (let i = 0; i < W * H; i++) if (lab[i]) lab[i] = find(lab[i]);
+    return { lab, n: par.length - 1 };
+  }
+  /* the line: rgba of the framed line scaled to 64 rows -> its ink and ink parts (once per line) */
+  function prepareLine(rgba, W) { const ink = inkMed(rgba, W, 64); return { ink, W, comp: components(ink, W, 64) }; }
+  /* a piece (columns x0..x1 of the 64-row line): the ink parts at least half inside it, trimmed, scaled to 40 rows,
+     in the middle of a 40 x 96 picture. Twin: piece() in rd/prep3.py and canvas() in rd/cnn.py */
+  function piecePicture(L, x0, x1) {
+    const W = L.W, H = 64, lab = L.comp.lab, n = L.comp.n; x0 = Math.max(0, Math.round(x0)); x1 = Math.min(W, Math.round(x1));
+    if (x1 - x0 < 2) return null;
+    const tot = new Float64Array(n + 1), ins = new Float64Array(n + 1);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const l = lab[y * W + x]; if (!l) continue; tot[l]++; if (x >= x0 && x < x1) ins[l]++; }
+    let r0 = H, r1 = -1, c0 = W, c1 = -1, cnt = 0;
+    const keep = l => l && ins[l] >= 0.5 * tot[l];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (keep(lab[y * W + x])) { cnt++; if (y < r0) r0 = y; if (y > r1) r1 = y; if (x < c0) c0 = x; if (x > c1) c1 = x; }
+    if (cnt < 6) return null;
+    const h2 = r1 - r0 + 1, w2 = c1 - c0 + 1, sub = new Float32Array(h2 * w2);
+    for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) sub[y * w2 + x] = keep(lab[(r0 + y) * W + c0 + x]) ? 1 : 0;
+    const k = HH / h2, nw = Math.min(WW, Math.max(2, Math.round(w2 * k))), nh = Math.min(HH, Math.round(h2 * k));
+    const small = resample(sub, h2, w2, nh, nw), out = new Float32Array(HH * WW), ox = (WW - nw) >> 1, oy = (HH - nh) >> 1;
+    for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) out[(oy + y) * WW + ox + x] = small[y * nw + x];
+    return out;
+  }
+  function deq(t) { const raw = atob(t.q), n = raw.length, v = new Float32Array(n), sc = t.s, cols = t.shape[1];
+    for (let i = 0; i < n; i++) v[i] = ((raw.charCodeAt(i) << 24) >> 24) * sc[i % cols]; return v; }
+  function conv(x, H, W, C, Wt, b, F) {        // 3x3, same padding, then ReLU
+    const out = new Float32Array(H * W * F);
+    for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) {
+      const o = (y * W + xx) * F; for (let f = 0; f < F; f++) out[o + f] = b[f];
+      for (let c = 0; c < C; c++) for (let i = 0; i < 3; i++) { const yy = y + i - 1; if (yy < 0 || yy >= H) continue;
+        for (let j = 0; j < 3; j++) { const x2 = xx + j - 1; if (x2 < 0 || x2 >= W) continue;
+          const v = x[(yy * W + x2) * C + c]; if (!v) continue; const r = (c * 9 + i * 3 + j) * F;
+          for (let f = 0; f < F; f++) out[o + f] += v * Wt[r + f]; } }
+      for (let f = 0; f < F; f++) if (out[o + f] < 0) out[o + f] = 0;
+    }
+    return out;
+  }
+  function pool(x, H, W, C) { const h = H >> 1, w = W >> 1, out = new Float32Array(h * w * C);
+    for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) for (let c = 0; c < C; c++) {
+      let m = -Infinity; for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) { const v = x[((2 * y + i) * W + 2 * xx + j) * C + c]; if (v > m) m = v; }
+      out[(y * w + xx) * C + c] = m; }
+    return out; }
+  function dense(x, Wt, b, n, relu) { const out = Float32Array.from(b);
+    for (let i = 0; i < x.length; i++) { const v = x[i]; if (!v) continue; const r = i * n; for (let j = 0; j < n; j++) out[j] += v * Wt[r + j]; }
+    if (relu) for (let j = 0; j < n; j++) if (out[j] < 0) out[j] = 0; return out; }
+  function makeNet(N) {
+    const P = N.params.map(deq), ch = [1, 16, 32, 48, 64];
+    return function (pic) {
+      let x = pic, H = HH, W = WW;
+      for (let l = 0; l < 4; l++) { x = conv(x, H, W, ch[l], P[2 * l], P[2 * l + 1], ch[l + 1]); x = pool(x, H, W, ch[l + 1]); H >>= 1; W >>= 1; }
+      const e = dense(x, P[8], P[9], 256, true);
+      const z = dense(e, P[10], P[11], N.params[10].shape[1], false);
+      const a = dense(e, P[12], P[13], N.params[12].shape[1], false);
+      return { z, a };
+    };
+  }
+  function logsoft(z) { let m = -Infinity; for (const v of z) if (v > m) m = v; let s = 0; for (const v of z) s += Math.exp(v - m); const l = Math.log(s) + m; return z.map(v => v - l); }
+  function loadModel(M) {
+    const nets = M.nets.map(makeNet), nS = M.signs.length, LEV = [1, 2, 3];
+    const big = new Map(); M.bigram.forEach(([a, c, n]) => big.set(a * 100000 + c, n));
+    function phoc(sg) {          // sg: indices into M.signs, in reading order
+      const v = new Float32Array(nS * 6), n = sg.length; let off = 0;
+      for (const L of LEV) { sg.forEach((s, k) => { if (s < 0) return; const a = k / n, b = (k + 1) / n;
+        for (let r = 0; r < L; r++) { const lo = r / L, hi = (r + 1) / L; if (Math.min(b, hi) - Math.max(a, lo) >= 0.5 * (b - a)) v[(off + r) * nS + s] = 1; } }); off += L; }
+      let q = 0; for (const x of v) q += x * x; q = Math.sqrt(q) + 1e-9; return v.map(x => x / q);
+    }
+    const SP = M.spell.map(list => list.map(phoc));       // the spellings of every word
+    /* scores of every word for one piece: both nets' word guesses plus the sign check */
+    function score(pic) {
+      const r = nets.map(f => f(pic)), lp = r.map(o => logsoft(o.z));
+      const q = r[1].a.map(v => 1 / (1 + Math.exp(-v))); let qn = 0; for (const v of q) qn += v * v; qn = Math.sqrt(qn) + 1e-9;
+      return M.words.map((w, i) => { let s = lp[0][i] + lp[1][i], best = 0;
+        for (const v of SP[i]) { let d = 0; for (let k = 0; k < v.length; k++) if (v[k]) d += v[k] * q[k]; d /= qn; if (d > best) best = d; }
+        return s + M.signW * best; });
+    }
+    function nearest(pic, k) {
+      if (!pic) return [];
+      const s = score(pic), idx = s.map((v, i) => i).sort((a, b) => s[b] - s[a]).slice(0, k || 12);
+      return idx.map(i => [i, s[i]]);
+    }
+    function rank(votes, prev, limit) {
+      return votes.map(([w, v]) => { let s = v; if (prev != null) s += M.ctxW * Math.log(1 + (big.get(prev * 100000 + w) || 0)); return { w, score: s, word: M.words[w] }; })
+        .sort((a, c) => c.score - a.score).slice(0, limit || 8);
+    }
+    return { nearest, rank, words: M.words };
+  }
+  const API = { loadModel, piecePicture, prepareLine, inkMed, components };
+  if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WordNet = API;
+})(typeof window !== 'undefined' ? window : this);
+
 /* Printed hieroglyphs -> sign codes. Twin of ocr/ocr.py: the ink is cut into its pieces, the pieces into blocks
    (one above the other) and rows (side by side), every group of one to three neighbouring pieces is compared with
    the JSesh sign shapes and with signs learnt from the Horus and Seth transcriptions, and the most likely reading
@@ -1677,8 +1818,8 @@ if ('serviceWorker' in navigator) {
   /* ---------- loading data ---------- */
   function loadAll() {
     if (ready) return ready;
-    ready = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lr-model.json'].map(u => fetch(u, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
-      .then(([g, sm, m]) => { G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0]); MODEL = R.loadModel(m); });
+    ready = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lr-wordnet.json'].map(u => fetch(u, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
+      .then(([g, sm, m]) => { G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0]); MODEL = window.WordNet.loadModel(m); });
     return ready;
   }
 
@@ -1766,8 +1907,8 @@ if ('serviceWorker' in navigator) {
     const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high';
     x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, W, H);
     const px = x.getImageData(0, 0, W, H).data;
-    const map = R.soft32(R.ink64(px, W, H), W, H);
-    line = { src: c, map, W: map.W, cuts: R.suggestCuts(map, density()) }; voteCache.clear();
+    const ink = R.ink64(px, W, H), map = R.soft32(ink, W, H);
+    line = { src: c, map, W: map.W, px, W64: W, cuts: R.suggestCuts(map, density()) }; voteCache.clear();
     choice.clear();
     $('lrCut').hidden = false; $('lrPieces').hidden = false; $('lrOut').hidden = false;
     $('lrList').innerHTML = '<li class="lw-hint">Loading the word pictures&hellip;</li>';
@@ -1833,7 +1974,8 @@ if ('serviceWorker' in navigator) {
     const pcs = pieces(); let prev = null;
     pcs.forEach((p, i) => {
       const key = p[0] + ':' + p[1];
-      if (!voteCache.has(key)) voteCache.set(key, MODEL.nearest(MODEL.embed(R.features(line.map, p[0], p[1])), 9));
+      if (!line.L2) line.L2 = window.WordNet.prepareLine(line.px, line.W64);
+      if (!voteCache.has(key)) voteCache.set(key, MODEL.nearest(window.WordNet.piecePicture(line.L2, p[0] * 2, p[1] * 2), 12));
       const ch = choice.get(i);
       const cands = MODEL.rank(voteCache.get(key), prev, 6);
       if (ch != null && ch >= 0 && !cands.some(c => c.w === ch)) cands.unshift({ w: ch, word: MODEL.words[ch] });
