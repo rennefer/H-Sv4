@@ -344,11 +344,11 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lw-stage path:hover{ fill:var(--rubric-deep); }
 .lw-loading{ font-family:'EB Garamond',serif; font-style:italic; color:#6b5c44; }
 .lw-actions{ display:flex; flex-wrap:wrap; gap:8px; }
-.lw-actions button, .lw-grid button{
+.lw-actions button, .lw-grid button, .lw-head .lw-imp{
   font-family:'Inter',sans-serif; font-size:13px; cursor:pointer; border-radius:3px;
   background:var(--panel-bg); color:var(--ink-on-dark); border:1px solid var(--panel-line); padding:7px 12px; }
-.lw-actions button:hover, .lw-grid button:hover{ border-color:var(--rubric); }
-.lw-actions button:focus-visible, .lw-grid button:focus-visible, .lw-seg button:focus-visible{ outline:2px solid var(--rubric); outline-offset:1px; }
+.lw-actions button:hover, .lw-grid button:hover, .lw-head .lw-imp:hover{ border-color:var(--rubric); }
+.lw-actions button:focus-visible, .lw-grid button:focus-visible, .lw-head .lw-imp:focus-visible, .lw-seg button:focus-visible{ outline:2px solid var(--rubric); outline-offset:1px; }
 .lw-find{ display:flex; flex-direction:column; gap:6px; margin-top:8px; }
 .lw-find input{ max-width:420px; }
 .lw-grid{ display:flex; flex-wrap:wrap; gap:6px; }
@@ -401,6 +401,10 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lw-tog{ font:inherit; font-size:13px; padding:6px 12px; border:1px solid var(--line); border-radius:3px; background:transparent; color:inherit; cursor:pointer; }
 .lw-tog.on{ background:var(--accent, #e8d9b0); color:#2a241c; border-color:transparent; font-weight:600; }
 .lw-stage.papyrus{ background:#e9dcb8 url(__PAPYRUS__) repeat; background-size:380px auto; }
+
+.lw-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.lw-head .lw-imp{ font-size:13px; padding:5px 12px; }
+.lw-tool textarea.lw-hiero.lw-drop{ outline:2px dashed var(--accent, #e8d9b0); outline-offset:2px; }
 
 /* ---------- line reader ---------- */
 .lr-tool{ display:flex; flex-direction:column; gap:18px; margin:0 0 40px; }
@@ -1293,7 +1297,7 @@ if ('serviceWorker' in navigator) {
    of the whole line is chosen with how often signs follow each other in our three texts. */
 (function (root) {
   'use strict';
-  const W_ = typeof window !== 'undefined' ? window : {}, AREA = W_.__lrArea != null ? W_.__lrArea : 80, WSIGN = W_.__lrWs != null ? W_.__lrWs : 0.5;
+  const W_ = typeof window !== 'undefined' ? window : {}, NGPEN = W_.__lrNg != null ? W_.__lrNg : 0.05, AREA = W_.__lrArea != null ? W_.__lrArea : 80, WSIGN = W_.__lrWs != null ? W_.__lrWs : 0.5;
   let N = 24, LIB = null, LM = null, BETA = (typeof window !== 'undefined' && window.__lrBeta != null) ? window.__lrBeta : 0;   // each sign read costs a little: two pieces that make one sign (Z4) are read as one
 
   function dec(b64, m) {
@@ -1309,6 +1313,7 @@ if ('serviceWorker' in navigator) {
     const ent = [];
     j.templates.forEach(([c, b, m, a, h]) => ent.push({ c, f: dec(b, m), a, h, src: 0 }));
     j.protos.forEach(([c, b, m, a, h]) => ent.push({ c, f: dec(b, m), a, h, src: 1 }));
+    (j.gardiner || []).forEach(([c, b, m, a, h]) => ent.push({ c, f: dec(b, m), a, h, src: 2 }));   // Gardiner's type (NewGardiner)
     LIB = { ltr: ent, rtl: ent.map(e => ({ ...e, f: flip(e.f) })) };
     const uni = j.uni, bi = j.bi; let tot = 0, V = 1; for (const k in uni) { tot += uni[k]; V++; }
     const K = 0.2;
@@ -1366,8 +1371,8 @@ if ('serviceWorker' in navigator) {
     for (const e of lib) {
       let d = 0; const f = e.f; for (let i = 0; i < f.length; i++) d += f[i] * F.f[i];
       let sp = Math.abs(Math.log(Math.max(hu, 0.5) / Math.max(e.h, 0.5)));
-      if (!e.src && stacked) sp *= (e.h < hu ? 1 : 0) + 0.3;
-      let s = d - 0.35 * Math.abs(e.a - F.a) - sw * sp;
+      if (e.src !== 1 && stacked) sp *= (e.h < hu ? 1 : 0) + 0.3;
+      let s = d - 0.35 * Math.abs(e.a - F.a) - sw * sp; if (e.src === 2) s -= NGPEN;
       if (rg != null) { if (WATER.has(e.c) && rg < 0.13) s -= 0.5; if (STROKES.has(e.c) && rg > 0.17) s -= 0.3; }
       if (solid === 'flat' && HOLLOW.has(e.c)) s -= 0.6;   // a solid dash is a stroke, not a sign drawn in outline
       if (solid === 'bar' && e.c === 'Z1') s += 0.3;        // a plain solid upright bar is the stroke
@@ -1540,9 +1545,27 @@ if ('serviceWorker' in navigator) {
     return out.map(b => { const rs = Object.keys(b.rows).sort((x, y) => x - y).map(k => b.rows[k]);
       return { bi: b.bi, rows: rs, mdc: rs.map(r => r.length > 1 && rs.length > 1 ? '(' + r.join('*') + ')' : r.join('*')).join(':') }; });
   }
+  /* long thin lines under the signs (underlined rubrics): taken out of the ink so they do not tie the signs together; their extent kept */
+  function underlines(m, W, H) {
+    const runs = [], thick = Math.max(3, 0.1 * H);
+    for (let y = Math.floor(0.5 * H); y < H; y++) for (let x = 0; x < W;) {
+      if (!m[y * W + x]) { x++; continue; } const s0 = x; while (x < W && m[y * W + x]) x++;
+      if (x - s0 > 1.2 * H) runs.push([s0, x, y, y]);
+    }
+    runs.sort((p, q) => p[0] - q[0]); const out = [];
+    for (const r of runs) { const l = out[out.length - 1]; if (l && r[0] <= l[1]) { l[1] = Math.max(l[1], r[1]); l[2] = Math.min(l[2], r[2]); l[3] = Math.max(l[3], r[3]); } else out.push(r.slice()); }
+    const cut = [];
+    for (const [x0, x1, y0, y1] of out) for (let x = x0; x < x1; x++) {
+      // the column's ink around the line: only a thin piece (the line itself) is taken away, not a sign standing on it
+      let a = y0, b = y1; while (a > 0 && m[(a - 1) * W + x]) a--; while (b < H - 1 && m[(b + 1) * W + x]) b++;
+      if (b - a + 1 <= thick) for (let y = a; y <= b; y++) cut.push(y * W + x);
+    }
+    cut.forEach(i => { m[i] = 0; });
+    return out.map(r => [r[0], r[1]]);
+  }
   /* read a line image (RGBA pixels); direction 'auto', 'rtl' or 'ltr' */
   function read(px, W, H, direction) {
-    const m = inkOf(px, W, H), { lab, comps } = label(m, W, H);
+    const m = inkOf(px, W, H), spans = underlines(m, W, H), { lab, comps } = label(m, W, H);
     if (!comps.length) return null;
     const dirs = direction === 'rtl' || direction === 'ltr' ? [direction] : ['rtl', 'ltr'];
     let best = null;
@@ -1553,9 +1576,78 @@ if ('serviceWorker' in navigator) {
     const gaps = []; for (let i = 1; i < best.geo.length; i++) { const a = best.geo[i - 1], b = best.geo[i]; gaps.push(best.dir === 'rtl' ? a.x0 - b.x1 : b.x0 - a.x1); }
     const med = gaps.slice().sort((x, y) => x - y)[gaps.length >> 1] || 0;
     best.blocks.forEach(b => { const i = b.bi; b.space = i > 0 && gaps[i - 1] > Math.max(1.8 * med, 0.35 * best.LH); });
+    // signs over an underline (the rubrics of printed editions such as Gardiner's Late-Egyptian Stories) are red
+    best.blocks.forEach(b => { const g = best.geo[b.bi], cx = (g.x0 + g.x1) / 2; b.under = spans.some(([p, q]) => cx >= p && cx <= q); });
     return best;
   }
-  const API = { load, read };
+  /* Hr with a suffix pronoun (=i, =f, =k, =s, =sn, =Tn, =tn, =t) or in Hry-ib: the face stands over the mouth */
+  const HRSUF = after => ['\u{13191}', '\u{13000}', '\u{13050}', '\u{133A1}', '\u{132F4}', '\u{1337F}'].includes(after[0])
+    || (after[0] === '\u{133CF}' && after[1] === '\u{13216}') || after.slice(0, 3).includes('\u{13123}');
+  /* the signs read -> text for the writer: blocks apart, the read stacking kept with the Unicode joiners */
+  function toText(res, U2C) {
+    const one = c => U2C[c] || ('-' + c + '-'),
+      ch = c => c.indexOf(':') > 0 ? '\u{13437}' + c.split(':').map(one).join('\u{13430}') + '\u{13438}' : c.split('&').map(one).join('\u{13431}');   // a ligature: its signs side by side
+    // Hr inside a group (the face and the stroke beside another sign, over N35): the face takes its two strokes (or the mouth) there too
+    res.blocks.forEach((b, bi) => b.rows.forEach((r, ri) => { if (b.rows.length < 2 && r.length < 3) return;
+      for (let i = 0; i + 1 < r.length; i++) if (r[i] === 'D2' && r[i + 1] === 'Z1') {
+        const rest = r.slice(i + 2).concat(b.rows.slice(ri + 1).flat(), res.blocks.slice(bi + 1).flatMap(x => x.rows.flat()));
+        r[i] = HRSUF(rest.flatMap(c => c.split('&')).map(c => U2C[c] || '')) ? 'D2:D21' : 'D2:Z4'; } }));
+    let red = false;
+    return res.blocks.map(b => { const sw = b.red !== red ? (b.red ? '$r' : '$b') : ''; red = b.red; return (b.space ? ' ' : '-') + sw + b.rows.map(r => r.length > 1 && b.rows.length > 1 ? '\u{13437}' + r.map(ch).join('\u{13431}') + '\u{13438}' : r.map(ch).join('\u{13431}')).join('\u{13430}'); })
+      .join('').replace(/^[- ]/, '').replace(/--+/g, '-')
+      // Hr: the face with the two strokes (or the mouth) and the stroke, however they were read, is written as the writer writes it
+      .replace(/(\u{13437})?\u{13077}(?:[-\u{13430}]?(\u{133ED}|\u{1308B}))?(\u{13438})?[-\u{13431}]?\u{133E4}/gu, (m, a, mid, b, at, all) => {
+        if (!!a !== !!b) return m;                       // part of a bigger group: leave it
+        if (/[\u{13431}\u{13430}\u{13437}]/u.test(all[at - 1] || '') || /[\u{13431}\u{13430}\u{13438}]/u.test(all.slice(at + m.length, at + m.length + 2))) return m;
+        const after = Array.from(all.slice(at + m.length).replace(/^[-\s\u{13430}-\u{13438}]+/u, '').slice(0, 8));
+        const special = HRSUF(after.filter(c => !/[-\u{13430}-\u{13438}]/u.test(c))) || (mid === '\u{1308B}' && !after.length);
+        return special ? '\u{13077}\u{1308B}\u{133E4}' : '\u{13077}\u{133ED}\u{133E4}'; });
+  }
+
+  /* one line of a picture (img or canvas; frame [x, y, w, h]) read at about 90 pixels high; red ink (rubrics) marked per block */
+  function readLine(img, f, direction) {
+    const k = Math.max(0.25, Math.min(4, 90 / f[3])), W = Math.max(8, Math.round(f[2] * k)), H = Math.max(8, Math.round(f[3] * k));
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.imageSmoothingQuality = 'high';
+    x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, W, H);
+    const px = x.getImageData(0, 0, W, H).data, res = read(px, W, H, direction || 'auto');
+    if (res) res.blocks.forEach(b => {                 // red ink: most of the block's ink is red
+      const g = res.geo[b.bi]; let ink = 0, rd = 0;
+      for (let yy = 0; yy < H; yy++) for (let xx = g.x0; xx < g.x1; xx++) { const i = (yy * W + xx) * 4, r = px[i], gg = px[i + 1], bb = px[i + 2];
+        if (0.3 * r + 0.59 * gg + 0.11 * bb < 200) { ink++; if (r - gg > 60 && r > 120) rd++; } }
+      b.red = (ink > 0 && rd / ink > 0.4) || !!b.under; });
+    return res;
+  }
+  /* a whole picture: its lines found from the empty bands between them, each line read; text lines joined by line breaks */
+  function readImage(img, U2C) {
+    const W0 = img.naturalWidth || img.width, H0 = img.naturalHeight || img.height, s = Math.min(1, 1600 / Math.max(W0, H0));
+    const W = Math.max(8, Math.round(W0 * s)), H = Math.max(8, Math.round(H0 * s));
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.drawImage(img, 0, 0, W, H);
+    const m = inkOf(x.getImageData(0, 0, W, H).data, W, H), row = new Array(H).fill(0), col = new Array(W).fill(0);
+    for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) if (m[y * W + xx]) { row[y]++; col[xx]++; }
+    const noise = Math.max(1, 0.002 * W);
+    let runs = []; for (let y = 0; y < H; y++) if (row[y] > noise) { const r = runs[runs.length - 1]; if (r && r[1] === y) r[1] = y + 1; else runs.push([y, y + 1]); }
+    if (!runs.length) return null;
+    // bits of the lines above and below cut by the picture's edge: left out
+    { const big = Math.max(...runs.map(r => r[1] - r[0])); runs = runs.filter(r => !((r[0] === 0 || r[1] === H) && r[1] - r[0] < 0.25 * big)); }
+    // small bands (a sign standing over a gap, like N33 over strokes) join the band nearest to them
+    for (let changed = true; changed && runs.length > 1;) { changed = false;
+      const big = Math.max(...runs.map(r => r[1] - r[0]));
+      for (let i = 0; i < runs.length; i++) { const r = runs[i], ok = (r[1] - r[0]) >= 0.5 * big; if (ok) continue;
+        const gp = i > 0 ? r[0] - runs[i - 1][1] : 1e9, gn = i < runs.length - 1 ? runs[i + 1][0] - r[1] : 1e9, j = gp <= gn ? i - 1 : i + 1;
+        const a = Math.min(i, j), b = Math.max(i, j); runs.splice(a, 2, [runs[a][0], runs[b][1]]); changed = true; break; } }
+    const lines = [], dirs = [], mdcs = [];
+    for (const [y0, y1] of runs) {
+      let x0 = W, x1 = 0; for (let y = y0; y < y1; y++) for (let xx = 0; xx < W; xx++) if (m[y * W + xx]) { if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; }
+      const pad = Math.round(0.06 * (y1 - y0)) + 1, f = [Math.max(0, x0 - pad), Math.max(0, y0 - pad), 0, 0];
+      f[2] = Math.min(W, x1 + 1 + pad) - f[0]; f[3] = Math.min(H, y1 + pad) - f[1];
+      const res = readLine(c, f); if (!res) continue;
+      lines.push(toText(res, U2C)); dirs.push(res.dir); mdcs.push(res.blocks.map(b => b.mdc).join(' '));
+    }
+    return lines.length ? { text: lines.join('\n'), dir: dirs.filter(d => d === 'rtl').length * 2 >= dirs.length ? 'rtl' : 'ltr', lines: lines.length, mdc: mdcs } : null;
+  }
+  const API = { load, read, readLine, readImage, toText };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PrintReader = API;
 })(typeof window !== 'undefined' ? window : this);
 
@@ -1595,26 +1687,7 @@ if ('serviceWorker' in navigator) {
     ['lrCut', 'lrPieces', 'lrOut', 'lrPrint'].forEach(id => { $(id).hidden = true; });
     if (m === 'print') loadPrint().catch(() => {});
   }
-  /* the signs read -> text for the writer: blocks apart, the read stacking kept with the Unicode joiners */
-  function printText(res) {
-    const one = c => U2C[c] || ('-' + c + '-'),
-      ch = c => c.indexOf(':') > 0 ? '\u{13437}' + c.split(':').map(one).join('\u{13430}') + '\u{13438}' : c.split('&').map(one).join('\u{13431}');   // a ligature: its signs side by side
-    // Hr inside a group (the face and the stroke beside another sign, over N35): the face takes its two strokes (or the mouth) there too
-    res.blocks.forEach((b, bi) => b.rows.forEach((r, ri) => { if (b.rows.length < 2 && r.length < 3) return;
-      for (let i = 0; i + 1 < r.length; i++) if (r[i] === 'D2' && r[i + 1] === 'Z1') {
-        const rest = r.slice(i + 2).concat(b.rows.slice(ri + 1).flat(), res.blocks.slice(bi + 1).flatMap(x => x.rows.flat()));
-        r[i] = HRSUF(rest.flatMap(c => c.split('&')).map(c => U2C[c] || '')) ? 'D2:D21' : 'D2:Z4'; } }));
-    let red = false;
-    return res.blocks.map(b => { const sw = b.red !== red ? (b.red ? '$r' : '$b') : ''; red = b.red; return (b.space ? ' ' : '-') + sw + b.rows.map(r => r.length > 1 && b.rows.length > 1 ? '\u{13437}' + r.map(ch).join('\u{13431}') + '\u{13438}' : r.map(ch).join('\u{13431}')).join('\u{13430}'); })
-      .join('').replace(/^[- ]/, '').replace(/--+/g, '-')
-      // Hr: the face with the two strokes (or the mouth) and the stroke, however they were read, is written as the writer writes it
-      .replace(/(\u{13437})?\u{13077}(?:[-\u{13430}]?(\u{133ED}|\u{1308B}))?(\u{13438})?[-\u{13431}]?\u{133E4}/gu, (m, a, mid, b, at, all) => {
-        if (!!a !== !!b) return m;                       // part of a bigger group: leave it
-        if (/[\u{13431}\u{13430}\u{13437}]/u.test(all[at - 1] || '') || /[\u{13431}\u{13430}\u{13438}]/u.test(all.slice(at + m.length, at + m.length + 2))) return m;
-        const after = Array.from(all.slice(at + m.length).replace(/^[-\s\u{13430}-\u{13438}]+/u, '').slice(0, 8));
-        const special = HRSUF(after.filter(c => !/[-\u{13430}-\u{13438}]/u.test(c))) || (mid === '\u{1308B}' && !after.length);
-        return special ? '\u{13077}\u{1308B}\u{133E4}' : '\u{13077}\u{133ED}\u{133E4}'; });
-  }
+  const printText = res => window.PrintReader.toText(res, U2C);
   window.__lrP = { printText, drawPrint: () => drawPrint(), load: () => loadPrint() };
   function drawPrint() {
     const text = $('lrPText').value;
@@ -1630,17 +1703,7 @@ if ('serviceWorker' in navigator) {
   function readPrint(f) {
     $('lrPrint').hidden = false; $('lrPStage').innerHTML = '<div class="lw-loading">Reading the signs&hellip;</div>';
     loadPrint().then(() => {
-      // the line at about 90 pixels high (small pictures are enlarged, big ones reduced)
-      const k = Math.max(0.25, Math.min(4, 90 / f[3])), W = Math.max(8, Math.round(f[2] * k)), H = Math.max(8, Math.round(f[3] * k));
-      const c = document.createElement('canvas'); c.width = W; c.height = H;
-      const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.imageSmoothingQuality = 'high';
-      x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, W, H);
-      const px = x.getImageData(0, 0, W, H).data, res = window.PrintReader.read(px, W, H, 'auto');
-      if (res) res.blocks.forEach(b => {                 // red ink (rubrics): most of the block's ink is red
-        const g = res.geo[b.bi]; let ink = 0, rd = 0;
-        for (let yy = 0; yy < H; yy++) for (let xx = g.x0; xx < g.x1; xx++) { const i = (yy * W + xx) * 4, r = px[i], gg = px[i + 1], bb = px[i + 2];
-          if (0.3 * r + 0.59 * gg + 0.11 * bb < 200) { ink++; if (r - gg > 60 && r > 120) rd++; } }
-        b.red = ink > 0 && rd / ink > 0.4; });
+      const res = window.PrintReader.readLine(img, f);
       if (!res) { $('lrPStage').innerHTML = '<div class="lw-loading">No signs were found in this picture.</div>'; return; }
       $('lrPText').value = printText(res);
       $('lrPNote').textContent = (res.dir === 'rtl' ? 'Read right to left. ' : 'Read left to right. ') + 'Correct any sign in the box and the hieratic follows.';
