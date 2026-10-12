@@ -397,6 +397,11 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lw-tool .lw-bar{ margin:0; }
 .lw-stage{ min-height:90px; padding:10px 14px; }
 
+/* optional papyrus under the hieratic (the Ateniit game's papyrus) */
+.lw-tog{ font:inherit; font-size:13px; padding:6px 12px; border:1px solid var(--line); border-radius:3px; background:transparent; color:inherit; cursor:pointer; }
+.lw-tog.on{ background:var(--accent, #e8d9b0); color:#2a241c; border-color:transparent; font-weight:600; }
+.lw-stage.papyrus{ background:#e9dcb8 url(__PAPYRUS__) repeat; background-size:380px auto; }
+
 /* ---------- line reader ---------- */
 .lr-tool{ display:flex; flex-direction:column; gap:18px; margin:0 0 40px; }
 .lr-drop{ border:2px dashed var(--panel-line); border-radius:4px; padding:22px; text-align:center; background:var(--panel-bg); }
@@ -478,18 +483,31 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
   <section class="panel active" id="panel-playbook">
     <main class="pb-body">
 
-      <p class="pb-lede">Bring in a photo of one hieratic line. The reader cuts it into word-sized pieces, offers its best guesses for each piece from the word pictures of our three papyri, and writes the transcription as you choose.</p>
+      <p class="pb-lede">Bring in a photo of one hieratic line, and the reader offers its best guesses for each word from the word pictures of our three papyri. Or bring in a picture of a line of printed hieroglyphs, and the reader writes it in hieratic.</p>
+
+      <div class="lw-seg lr-mode" role="group" aria-label="What the picture shows">
+        <button type="button" id="lrModeH" class="on" aria-pressed="true">Hieratic photo</button>
+        <button type="button" id="lrModeP" aria-pressed="false">Printed hieroglyphs</button>
+      </div>
 
       <section class="lr-tool" aria-label="Line reader">
         <div class="lr-drop" id="lrDrop" tabindex="0">
           <p><strong>Drop a photo of a line here</strong>, paste one, or <label class="lr-file">choose a file<input type="file" id="lrFile" accept="image/*"></label></p>
-          <p class="lw-hint">One line of hieratic, cut fairly close above and below. Drag across the photo to frame the line if it shows more.</p>
+          <p class="lw-hint" id="lrDropHint">One line of hieratic, cut fairly close above and below. Drag across the photo to frame the line if it shows more.</p>
         </div>
 
         <div class="lr-step" id="lrFrame" hidden>
           <div class="lr-head"><span class="lw-label">1 · Frame the line</span>
             <span class="lr-btns"><button type="button" id="lrWhole">Use the whole photo</button><button type="button" id="lrRead" class="lr-main">Read the framed line</button></span></div>
           <div class="lr-canvas-wrap"><canvas id="lrSrc"></canvas></div>
+        </div>
+
+        <div class="lr-step" id="lrPrint" hidden>
+          <div class="lr-head"><span class="lw-label">2 · The signs read, in hieratic</span>
+            <span class="lr-btns"><button type="button" id="lrPCopy">Copy hieroglyphs</button><button type="button" id="lrPOpen" class="lr-main">Open in the Line Writer</button></span></div>
+          <p class="lw-hint" id="lrPNote">Correct any sign in the box and the hieratic follows.</p>
+          <textarea id="lrPText" class="lw-hiero" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" rows="2"></textarea>
+          <div class="lw-stage" id="lrPStage"></div>
         </div>
 
         <div class="lr-step" id="lrCut" hidden>
@@ -515,6 +533,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
       </section>
 
       <h2>What the reader can and cannot do yet</h2>
+      <p>Printed hieroglyphs: the reader finds the signs and how they are stacked, and compares them with the JSesh sign shapes and with signs learnt from the Horus and Seth transcriptions; how often signs follow each other in our texts helps it choose. A clean line from JSesh comes out almost entirely right; in the Horus and Seth transcriptions it reads about five signs in six correctly. Check the box before you use the line, and correct what it got wrong.</p>
       <p>The reader compares each piece of your line with about 10,500 word pictures from the Two Brothers, Horus and Seth and Wenamun, and lets the words that most often follow each other in these texts move up the list. Tested on pages it had not seen, it had the right word as its first guess for about a quarter of the words in Two Brothers and nearly a third in Horus and Seth, and among its first five guesses for 37&nbsp;% and 47&nbsp;%. Wenamun is much harder: its photos are dark and broken. The cuts it suggests fall where the ink thins out, which often but not always is where a word ends.</p>
       <p>So for now it is an assistant: you make the choices, it does the looking up and the writing. It gets better as the cleaned words from our review are added, and better still once it reads sign by sign.</p>
       <p class="lw-credits">The transcription is written with the Line Writer: sign shapes from JSesh by Serge Rosmorduc and Serge J. P. Thomas (LGPL), stacking learnt from the JSesh encodings of the three stories.</p>
@@ -1125,7 +1144,14 @@ if ('serviceWorker' in navigator) {
   }
 
   /* the opposite direction: a code back to its Unicode character, for the sign finder */
-  function unicodeIndex(M) { const r = {}; Object.entries(M.uni).forEach(([ch, c]) => { if (!r[c]) r[c] = ch; }); return r; }
+  // code -> character; when several characters stand for one code, the one in that code's own Unicode range (N33 is U+13212, not a look-alike elsewhere)
+  const URANGE = [['A', 0x13000], ['B', 0x13050], ['C', 0x13059], ['D', 0x13076], ['E', 0x130D2], ['F', 0x1310F], ['G', 0x1313F], ['H', 0x13183], ['I', 0x13188], ['K', 0x131A0], ['L', 0x131A6], ['M', 0x131AF],
+    ['N', 0x131EF], ['NL', 0x13220], ['NU', 0x13246], ['O', 0x13250], ['P', 0x132A4], ['Q', 0x132AD], ['R', 0x132B0], ['S', 0x132DD], ['T', 0x1331D], ['U', 0x1333C], ['V', 0x1336E], ['W', 0x133AF], ['X', 0x133CF], ['Y', 0x133D9], ['Z', 0x133E1], ['Aa', 0x1340D], ['', 0x13430]];
+  const catOf = cp => { let k = null; for (const [c, st] of URANGE) if (cp >= st) k = c; return k; };
+  function unicodeIndex(M) { const r = {};
+    Object.entries(M.uni).forEach(([ch, c]) => { const own = catOf(ch.codePointAt(0)) === (c.match(/^[A-Za-z]+/) || [''])[0];
+      if (!r[c] || (own && !r[c + '\u0000'])) { r[c] = ch; if (own) r[c + '\u0000'] = 1; } });
+    Object.keys(r).forEach(k => { if (k.endsWith('\u0000')) delete r[k]; }); return r; }
 
   const API = { makeStacker, parseInput, unicodeIndex, hieraticForms };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.AutoStack = API;
@@ -1261,9 +1287,284 @@ if ('serviceWorker' in navigator) {
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.LineReader = API;
 })(typeof window !== 'undefined' ? window : this);
 
+/* Printed hieroglyphs -> sign codes. Twin of ocr/ocr.py: the ink is cut into its pieces, the pieces into blocks
+   (one above the other) and rows (side by side), every group of one to three neighbouring pieces is compared with
+   the JSesh sign shapes and with signs learnt from the Horus and Seth transcriptions, and the most likely reading
+   of the whole line is chosen with how often signs follow each other in our three texts. */
+(function (root) {
+  'use strict';
+  const W_ = typeof window !== 'undefined' ? window : {}, AREA = W_.__lrArea != null ? W_.__lrArea : 80, WSIGN = W_.__lrWs != null ? W_.__lrWs : 0.5;
+  let N = 24, LIB = null, LM = null, BETA = (typeof window !== 'undefined' && window.__lrBeta != null) ? window.__lrBeta : 0;   // each sign read costs a little: two pieces that make one sign (Z4) are read as one
+
+  function dec(b64, m) {
+    const s = atob(b64), f = new Float32Array(s.length);
+    for (let i = 0; i < s.length; i++) { let v = s.charCodeAt(i); if (v > 127) v -= 256; f[i] = v / 127 * m; }
+    let n = 0; for (let i = 0; i < f.length; i++) n += f[i] * f[i]; n = Math.sqrt(n) || 1;
+    for (let i = 0; i < f.length; i++) f[i] /= n;
+    return f;
+  }
+  const flip = f => { const g = new Float32Array(f.length); for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) g[y * N + x] = f[y * N + (N - 1 - x)]; return g; };
+  function load(j) {
+    N = j.N;
+    const ent = [];
+    j.templates.forEach(([c, b, m, a, h]) => ent.push({ c, f: dec(b, m), a, h, src: 0 }));
+    j.protos.forEach(([c, b, m, a, h]) => ent.push({ c, f: dec(b, m), a, h, src: 1 }));
+    LIB = { ltr: ent, rtl: ent.map(e => ({ ...e, f: flip(e.f) })) };
+    const uni = j.uni, bi = j.bi; let tot = 0, V = 1; for (const k in uni) { tot += uni[k]; V++; }
+    const K = 0.2;
+    LM = (a, b) => Math.log(((bi[a + ' ' + b] || 0) + K * ((uni[b] || 0) + 1) / tot * V) / ((uni[a] || 0) + K * V));
+  }
+
+  /* ---- features (same arithmetic as feat() in ocr.py) ---- */
+  const GK = (() => { const k = [-2, -1, 0, 1, 2].map(d => Math.exp(-d * d / (2 * 0.64))); const s = k.reduce((a, b) => a + b, 0); return k.map(v => v / s); })();
+  function areaMat(s) {
+    const M = new Float32Array(N * s), step = s / N;
+    for (let i = 0; i < N; i++) { const a = i * step, b = (i + 1) * step;
+      for (let j = Math.floor(a); j < Math.min(s, Math.ceil(b)); j++) { const ov = Math.min(b, j + 1) - Math.max(a, j); if (ov > 0) M[i * s + j] = ov / step; } }
+    return M;
+  }
+  function feat(get, w, h) {          // get(x,y) -> 0/1 inside a w x h box
+    let x0 = w, x1 = -1, y0 = h, y1 = -1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (get(x, y)) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) return null;
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1, s = Math.max(bw, bh), ox = Math.floor((s - bw) / 2), oy = Math.floor((s - bh) / 2);
+    const A = areaMat(s), T = new Float32Array(N * s);       // T = pad @ A^T  (s x N), done row by row
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) if (get(x0 + x, y0 + y)) { const py = y + oy, px = x + ox;
+      for (let j = 0; j < N; j++) { const v = A[j * s + px]; if (v) T[py * N + j] += v; } }
+    let f = new Float32Array(N * N);
+    for (let i = 0; i < N; i++) for (let py = 0; py < s; py++) { const v = A[i * s + py]; if (!v) continue; for (let j = 0; j < N; j++) f[i * N + j] += v * T[py * N + j]; }
+    const g = new Float32Array(N * N), q = new Float32Array(N * N);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let t = 0; for (let d = -2; d <= 2; d++) { const xx = x - d; if (xx >= 0 && xx < N) t += GK[d + 2] * f[y * N + xx]; } g[y * N + x] = t; }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let t = 0; for (let d = -2; d <= 2; d++) { const yy = y - d; if (yy >= 0 && yy < N) t += GK[d + 2] * g[yy * N + x]; } q[y * N + x] = t; }
+    let mean = 0; for (let i = 0; i < q.length; i++) mean += q[i]; mean /= q.length;
+    let n = 0; for (let i = 0; i < q.length; i++) { q[i] -= mean; n += q[i] * q[i]; } n = Math.sqrt(n) || 1;
+    for (let i = 0; i < q.length; i++) q[i] /= n;
+    return { f: q, a: Math.log(bw / bh), h: bh };
+  }
+  /* how much the long pieces of a group go up and down along their edges: water (N35) is jagged, strokes (Z3) are straight */
+  function rough(get, w, h) {
+    const seen = new Uint8Array(w * h), vals = [];
+    for (let y0 = 0; y0 < h; y0++) for (let x0 = 0; x0 < w; x0++) { if (!get(x0, y0) || seen[y0 * w + x0]) continue;
+      const st = [[x0, y0]], pts = []; seen[y0 * w + x0] = 1;
+      while (st.length) { const [x, y] = st.pop(); pts.push([x, y]);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < w && yy < h && !seen[yy * w + xx] && get(xx, yy)) { seen[yy * w + xx] = 1; st.push([xx, yy]); } } }
+      if (pts.length < 4) continue;
+      let a0 = w, a1 = -1, b0 = h, b1 = -1; pts.forEach(([x, y]) => { if (x < a0) a0 = x; if (x > a1) a1 = x; if (y < b0) b0 = y; if (y > b1) b1 = y; });
+      const pw = a1 - a0 + 1, ph = b1 - b0 + 1; if (pw < 2.2 * ph || pw < 6) continue;
+      const top = new Array(pw).fill(1e9), bot = new Array(pw).fill(-1);
+      pts.forEach(([x, y]) => { const i = x - a0; if (y < top[i]) top[i] = y; if (y > bot[i]) bot[i] = y; });
+      let d = 0, n = 0; for (let i = 2; i < pw - 1; i++) { d += Math.abs(top[i] - top[i - 1]) + Math.abs(bot[i] - bot[i - 1]); n += 2; }
+      if (n) vals.push(d / n / Math.max(1, ph / 3));
+    }
+    return vals.length ? vals.reduce((p, q) => p + q, 0) / vals.length : null;
+  }
+  const WATER = new Set(['N35', 'N35A', 'N35B']), STROKES = new Set(['Z3', 'Z3A', 'Z3B', 'Z2', 'Z2A', 'Z2B', 'Z2C', 'Z2D', 'Z4', 'Z4A']),
+    HOLLOW = new Set(['N16', 'N17', 'N18', 'N37', 'O39', 'N20']), SAME = { Z3A: 'Z3' };   // flat signs drawn in outline; Z3A is written Z3 in these texts
+  function classify(F, lib, LH, k, stacked, rg, solid) {
+    const hu = F.h / LH * 18, sw = stacked ? 0.15 : 0.5, best = new Map();
+    for (const e of lib) {
+      let d = 0; const f = e.f; for (let i = 0; i < f.length; i++) d += f[i] * F.f[i];
+      let sp = Math.abs(Math.log(Math.max(hu, 0.5) / Math.max(e.h, 0.5)));
+      if (!e.src && stacked) sp *= (e.h < hu ? 1 : 0) + 0.3;
+      let s = d - 0.35 * Math.abs(e.a - F.a) - sw * sp;
+      if (rg != null) { if (WATER.has(e.c) && rg < 0.13) s -= 0.5; if (STROKES.has(e.c) && rg > 0.17) s -= 0.3; }
+      if (solid === 'flat' && HOLLOW.has(e.c)) s -= 0.6;   // a solid dash is a stroke, not a sign drawn in outline
+      if (solid === 'bar' && e.c === 'Z1') s += 0.3;        // a plain solid upright bar is the stroke
+      const c = SAME[e.c] || e.c; if (!best.has(c) || s > best.get(c)) best.set(c, s);
+    }
+    return [...best].sort((a, b) => b[1] - a[1]).slice(0, k);
+  }
+
+  /* ---- ink and its pieces ---- */
+  function inkOf(px, W, H) {
+    const lum = new Float32Array(W * H), hist = new Array(256).fill(0);
+    for (let i = 0; i < W * H; i++) { const v = 0.3 * px[i * 4] + 0.59 * px[i * 4 + 1] + 0.11 * px[i * 4 + 2]; lum[i] = v; hist[Math.min(255, v | 0)]++; }
+    let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+    let sB = 0, wB = 0, best = 0, th = 128;                    // Otsu
+    for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = W * H - wB; if (!wF) break; sB += t * hist[t];
+      const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) * (mB - mF); if (v > best) { best = v; th = t; } }
+    const m = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) { const r = px[i * 4], g = px[i * 4 + 1]; m[i] = (lum[i] <= Math.min(th, 200) || (r - g > 60 && r > 120)) ? 1 : 0; }
+    return m;
+  }
+  function label(m, W, H) {
+    const lab = new Int32Array(W * H), par = [0];
+    const find = a => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+    let n = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (!m[i]) continue;
+      const nb = [];
+      if (x > 0 && lab[i - 1]) nb.push(lab[i - 1]);
+      if (y > 0) { if (lab[i - W]) nb.push(lab[i - W]); if (x > 0 && lab[i - W - 1]) nb.push(lab[i - W - 1]); if (x < W - 1 && lab[i - W + 1]) nb.push(lab[i - W + 1]); }
+      if (!nb.length) { n++; par.push(n); lab[i] = n; continue; }
+      let r = Math.min(...nb.map(find)); lab[i] = r; nb.forEach(b => { const rb = find(b); if (rb !== r) par[Math.max(rb, r)] = Math.min(rb, r); });
+    }
+    const comps = new Map();
+    for (let i = 0; i < W * H; i++) if (lab[i]) { const r = find(lab[i]); lab[i] = r; const x = i % W, y = (i / W) | 0;
+      let c = comps.get(r); if (!c) { c = { x0: x, x1: x + 1, y0: y, y1: y + 1, n: 0, ids: [r] }; comps.set(r, c); }
+      if (x < c.x0) c.x0 = x; if (x + 1 > c.x1) c.x1 = x + 1; if (y < c.y0) c.y0 = y; if (y + 1 > c.y1) c.y1 = y + 1; c.n++; }
+    return { lab, comps: [...comps.values()] };
+  }
+
+  /* ---- one line ---- */
+  function lattice(lab, comps, W, H, dir, K) {
+    let r0 = H, r1 = -1; comps.forEach(c => { if (c.y0 < r0) r0 = c.y0; if (c.y1 - 1 > r1) r1 = c.y1 - 1; });
+    const LH = r1 - r0 + 1, lib = LIB[dir], rtl = dir === 'rtl';
+    let cs = comps.filter(c => c.n >= Math.max(3, 0.0004 * LH * LH)).map(c => ({ ...c, ids: c.ids.slice() }));
+    cs.sort((a, b) => (b.y1 - b.y0) * (b.x1 - b.x0) - (a.y1 - a.y0) * (a.x1 - a.x0));
+    const units = [];
+    for (const c of cs) { const host = units.find(u => c.x0 >= u.x0 - 1 && c.x1 <= u.x1 + 1 && c.y0 >= u.y0 - 1 && c.y1 <= u.y1 + 1);
+      if (host) host.ids.push(...c.ids); else units.push(c); }
+    // crumbs of a sign that broke apart at small size (the face of D2): joined to the sign they lie against
+    const tiny = u => Math.max(u.x1 - u.x0, u.y1 - u.y0) < 0.1 * LH, pad = 0.06 * LH;
+    for (let pass = 0; pass < 2; pass++) for (let i = units.length - 1; i >= 0; i--) { const c = units[i]; if (!tiny(c)) continue;
+      const cx = (c.x0 + c.x1) / 2, cy = (c.y0 + c.y1) / 2;
+      const host = units.find(u => u !== c && !tiny(u) && cx >= u.x0 - pad && cx <= u.x1 + pad && cy >= u.y0 - pad && cy <= u.y1 + pad);
+      if (host) { host.ids.push(...c.ids); host.n += c.n; host.x0 = Math.min(host.x0, c.x0); host.x1 = Math.max(host.x1, c.x1); host.y0 = Math.min(host.y0, c.y0); host.y1 = Math.max(host.y1, c.y1); units.splice(i, 1); } }
+    units.sort((a, b) => a.x0 - b.x0);
+    let blocks = [];
+    for (const u of units) { const b = blocks[blocks.length - 1];
+      if (b) { const ov = Math.min(b.x1, u.x1) - Math.max(b.x0, u.x0);
+        if (ov > 0.3 * Math.min(u.x1 - u.x0, b.x1 - b.x0)) { b.units.push(u); b.x0 = Math.min(b.x0, u.x0); b.x1 = Math.max(b.x1, u.x1); continue; } }
+      blocks.push({ x0: u.x0, x1: u.x1, units: [u] }); }
+    // a line number at either end (small figures high up, as in 12.4), with the bar that sets it off, is not part of the text
+    const fig = u => (u.y1 - u.y0) < 0.34 * LH && u.y1 <= r0 + 0.5 * LH;                       // a small figure high up
+    const barU = u => (u.x1 - u.x0) <= Math.max(3, 0.09 * LH) && (u.y1 - u.y0) >= 0.35 * LH;    // the thin bar under or beside it
+    for (const end of [1, 0]) {
+      // the run of blocks at this end made only of small high figures and thin bars: a line number if it has two figures, or one figure and one bar (N33 over strokes is text)
+      let k = 0, nf = 0, nb = 0;
+      while (k < blocks.length - 1) { const b = end ? blocks[blocks.length - 1 - k] : blocks[k];
+        if (!b.units.every(u => fig(u) || barU(u))) break; nf += b.units.filter(fig).length; nb += b.units.filter(u => !fig(u)).length; k++; }
+      if (k && (nf >= 2 || (nf >= 1 && nb === 1))) blocks = end ? blocks.slice(0, blocks.length - k) : blocks.slice(k);
+    }
+    // a small sign over a row of strokes (N33 over Z2): strokes beside the block that centre the row under the sign belong to it
+    const thin = u => (u.x1 - u.x0) <= 0.15 * LH && (u.y1 - u.y0) <= 0.6 * LH;
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i], tops = b.units.filter(u => b.units.some(v => v !== u && v.y0 >= u.y1 - 1));
+      if (tops.length !== 1 || b.units.length < 2) continue;
+      const t = tops[0], tc = (t.x0 + t.x1) / 2, lower = b.units.filter(u => u !== t);
+      if ((t.x1 - t.x0) > 0.5 * LH || !lower.every(thin)) continue;
+      const ok = nb => nb.units.every(u => thin(u) && u.y0 >= t.y1 - 1);
+      const span = us => { const x0 = Math.min(...us.map(u => u.x0)), x1 = Math.max(...us.map(u => u.x1)); return Math.abs((x0 + x1) / 2 - tc); };
+      const base = span(lower); let best = null;
+      for (let l = 0; l <= 2; l++) for (let r = 0; r <= 2; r++) {
+        if ((!l && !r) || i - l < 0 || i + r >= blocks.length) continue;
+        const seq = blocks.slice(i - l, i + r + 1), nbs = seq.filter(x => x !== b);
+        if (!nbs.every(ok)) continue;
+        let near = true; for (let k = 1; k < seq.length; k++) if (seq[k].x0 - seq[k - 1].x1 > 0.25 * LH) near = false;
+        if (!near) continue;
+        const off = span(lower.concat(nbs.flatMap(x => x.units)));
+        if (!best || off < best.off) best = { l, r, off, seq };
+      }
+      if (best && best.off <= Math.max(0.5 * base, 0.06 * LH)) {
+        const nb = { x0: Math.min(...best.seq.map(x => x.x0)), x1: Math.max(...best.seq.map(x => x.x1)), units: best.seq.flatMap(x => x.units) };
+        blocks.splice(i - best.l, best.seq.length, nb); i -= best.l;
+      }
+    }
+    if (rtl) blocks = blocks.reverse();
+    const rowsOf = [];
+    blocks.forEach((b, bi) => {
+      const us = b.units.slice().sort((p, q) => p.y0 - q.y0), rws = [];
+      for (const u of us) { const r = rws[rws.length - 1];
+        if (r && Math.min(r.y1, u.y1) - Math.max(r.y0, u.y0) > 0.3 * Math.min(u.y1 - u.y0, r.y1 - r.y0)) { r.us.push(u); r.y0 = Math.min(r.y0, u.y0); r.y1 = Math.max(r.y1, u.y1); }
+        else rws.push({ y0: u.y0, y1: u.y1, us: [u] }); }
+      rws.forEach((r, ri) => {
+        const ru = r.us.slice().sort((p, q) => rtl ? q.x0 - p.x0 : p.x0 - q.x0), G = {};
+        for (let i = 0; i < ru.length; i++) for (let j = i + 1; j <= Math.min(ru.length, i + 3); j++) {
+          const g = ru.slice(i, j), ids = new Set(); g.forEach(u => u.ids.forEach(d => ids.add(d)));
+          const x0 = Math.min(...g.map(u => u.x0)), x1 = Math.max(...g.map(u => u.x1)), y0 = Math.min(...g.map(u => u.y0)), y1 = Math.max(...g.map(u => u.y1));
+          const get = (x, y) => ids.has(lab[(y0 + y) * W + x0 + x]), F = feat(get, x1 - x0, y1 - y0);
+          const fill = j - i === 1 && g[0].n > 0.8 * (x1 - x0) * (y1 - y0), solid = fill && (y1 - y0) < 0.2 * LH ? 'flat' : fill && (x1 - x0) < 0.12 * LH && (y1 - y0) > 2.5 * (x1 - x0) && (y1 - y0) < 0.5 * LH ? 'bar' : '';
+          G[i + ':' + j] = F ? classify(F, lib, LH, K, rws.length > 1 || ru.length > 1, rough(get, x1 - x0, y1 - y0), solid) : [];
+          G[i + ':' + j].w = g.reduce((t, u) => t + u.n, 0) / (LH * LH);
+        }
+        rowsOf.push({ bi, ri, n: ru.length, G, V: {} });
+      });
+      const first = rowsOf.length - rws.length;
+      for (let i = 0; i < rws.length; i++) for (let j = i + 2; j <= Math.min(rws.length, i + 3); j++) {
+        const g = rws.slice(i, j).flatMap(r => r.us), ids = new Set(); g.forEach(u => u.ids.forEach(d => ids.add(d)));
+        const x0 = Math.min(...g.map(u => u.x0)), x1 = Math.max(...g.map(u => u.x1)), y0 = Math.min(...g.map(u => u.y0)), y1 = Math.max(...g.map(u => u.y1));
+        const get = (x, y) => ids.has(lab[(y0 + y) * W + x0 + x]), F = feat(get, x1 - x0, y1 - y0);
+        if (F) { rowsOf[first + i].V[j - i] = classify(F, lib, LH, K, j - i < rws.length, rough(get, x1 - x0, y1 - y0)); rowsOf[first + i].V[j - i].w = g.reduce((t, u) => t + u.n, 0) / (LH * LH); }
+      }
+    });
+    // neighbouring blocks of one row each, close together, read as one sign (Z4, the figure 2: strokes side by side that do not overlap)
+    const firstRow = []; rowsOf.forEach((r, i) => { if (r.ri === 0) firstRow[r.bi] = i; });
+    const one = bi => rowsOf.filter(r => r.bi === bi).length === 1;
+    for (let bi = 0; bi < blocks.length; bi++) {
+      if (!one(bi)) continue;
+      for (let span = 2; span <= 3 && bi + span - 1 < blocks.length; span++) {
+        const bs = blocks.slice(bi, bi + span); if (!bs.every((b, k) => one(bi + k) && b.x1 - b.x0 <= 0.4 * LH)) break;
+        let gapOk = true; for (let k = 1; k < span; k++) { const g = rtl ? bs[k - 1].x0 - bs[k].x1 : bs[k].x0 - bs[k - 1].x1; const tall = b => b.units.every(u => u.y1 - u.y0 >= 0.6 * LH); if (g > (tall(bs[k - 1]) && tall(bs[k]) ? 0.45 : 0.25) * LH) gapOk = false; }
+        if (!gapOk) break;
+        const g = bs.flatMap(b => b.units), ids = new Set(); g.forEach(u => u.ids.forEach(d => ids.add(d)));
+        const x0 = Math.min(...g.map(u => u.x0)), x1 = Math.max(...g.map(u => u.x1)), y0 = Math.min(...g.map(u => u.y0)), y1 = Math.max(...g.map(u => u.y1));
+        const get = (x, y) => ids.has(lab[(y0 + y) * W + x0 + x]), F = feat(get, x1 - x0, y1 - y0);
+        if (!F) continue;
+        const cl = classify(F, lib, LH, K, false, rough(get, x1 - x0, y1 - y0)); cl.w = g.reduce((t, u) => t + u.n, 0) / (LH * LH);
+        rowsOf[firstRow[bi]].V[span] = cl;
+      }
+    }
+    return { rows: rowsOf, blocks, LH };
+  }
+  function viterbi(rows, a, lam) {
+    let best = new Map([['<s>', [0, []]]]);
+    const ahead = [];                                    // states that skip rows (a sign made of several rows)
+    for (let ri_ = 0; ri_ < rows.length; ri_++) {
+      const r = rows[ri_];
+      if (ahead[ri_]) { for (const [k, v] of ahead[ri_]) if (!best.has(k) || v[0] > best.get(k)[0]) best.set(k, v); }
+      for (const span in r.V) { const tgt = ri_ + +span, cl = r.V[span];
+        const m = ahead[tgt] || (ahead[tgt] = new Map());
+        for (const [prev, [s, path]] of best) for (const [c, sc] of cl) {
+          const parts = c.split('&'); let t = s + AREA * cl.w * sc + a * sc * parts.length * WSIGN - BETA, p0 = prev; for (const q of parts) { t += lam * LM(p0, q); p0 = q; }
+          if (!m.has(p0) || t > m.get(p0)[0]) m.set(p0, [t, path.concat([[r.bi, r.ri, c]])]); } }
+      const pos = [best];
+      for (let i = 0; i < r.n; i++) { if (!pos[i]) continue;
+        for (let j = i + 1; j <= Math.min(r.n, i + 3); j++) { const cl = r.G[i + ':' + j]; if (!cl) continue;
+          for (const [prev, [s, path]] of pos[i]) for (const [c, sc] of cl) {
+            // a ligature (I10&D46) counts as its signs in turn
+            const parts = c.split('&'); let t = s + AREA * cl.w * sc + a * sc * parts.length * WSIGN - BETA, p0 = prev; for (const q of parts) { t += lam * LM(p0, q); p0 = q; }
+            const d = pos[j] || (pos[j] = new Map());
+            if (!d.has(p0) || t > d.get(p0)[0]) d.set(p0, [t, path.concat([[r.bi, r.ri, c]])]); } }
+        for (let p = 0; p < pos.length; p++) if (pos[p] && pos[p].size > 40) pos[p] = new Map([...pos[p]].sort((x, y) => y[1][0] - x[1][0]).slice(0, 40));
+      }
+      if (pos[r.n]) best = pos[r.n];
+    }
+    if (ahead[rows.length]) for (const [k, v] of ahead[rows.length]) if (!best.has(k) || v[0] > best.get(k)[0]) best.set(k, v);
+    let top = null; for (const v of best.values()) if (!top || v[0] > top[0]) top = v;
+    return top;
+  }
+  function toBlocks(path) {
+    const out = []; let cur = null;
+    for (const [bi, ri, c] of path) { if (!cur || cur.bi !== bi) { cur = { bi, rows: {} }; out.push(cur); } (cur.rows[ri] = cur.rows[ri] || []).push(c); }
+    return out.map(b => { const rs = Object.keys(b.rows).sort((x, y) => x - y).map(k => b.rows[k]);
+      return { bi: b.bi, rows: rs, mdc: rs.map(r => r.length > 1 && rs.length > 1 ? '(' + r.join('*') + ')' : r.join('*')).join(':') }; });
+  }
+  /* read a line image (RGBA pixels); direction 'auto', 'rtl' or 'ltr' */
+  function read(px, W, H, direction) {
+    const m = inkOf(px, W, H), { lab, comps } = label(m, W, H);
+    if (!comps.length) return null;
+    const dirs = direction === 'rtl' || direction === 'ltr' ? [direction] : ['rtl', 'ltr'];
+    let best = null;
+    for (const d of dirs) { const L = lattice(lab, comps, W, H, d, 6), v = viterbi(L.rows, 4, 1.0);
+      if (v && (!best || v[0] > best.score)) best = { score: v[0], dir: d, blocks: toBlocks(v[1]), geo: L.blocks, LH: L.LH }; }
+    if (!best) return null;
+    // word breaks: gaps clearly wider than the usual space between blocks
+    const gaps = []; for (let i = 1; i < best.geo.length; i++) { const a = best.geo[i - 1], b = best.geo[i]; gaps.push(best.dir === 'rtl' ? a.x0 - b.x1 : b.x0 - a.x1); }
+    const med = gaps.slice().sort((x, y) => x - y)[gaps.length >> 1] || 0;
+    best.blocks.forEach(b => { const i = b.bi; b.space = i > 0 && gaps[i - 1] > Math.max(1.8 * med, 0.35 * best.LH); });
+    return best;
+  }
+  const API = { load, read };
+  if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PrintReader = API;
+})(typeof window !== 'undefined' ? window : this);
+
 /* Line reader page: import a photo of a line, frame it, cut it into pieces, choose words, write the transcription. */
 (function () {
   'use strict';
+  /* Hr with a suffix pronoun (=i, =f, =k, =s, =sn, =Tn, =tn, =t) or in Hry-ib: the face stands over the mouth */
+  const HRSUF = after => ['\u{13191}', '\u{13000}', '\u{13050}', '\u{133A1}', '\u{132F4}', '\u{1337F}'].includes(after[0])
+    || (after[0] === '\u{133CF}' && after[1] === '\u{13216}') || after.slice(0, 3).includes('\u{13123}');
   const R = window.LineReader, LW = window.LineWriter, AS = window.AutoStack, $ = id => document.getElementById(id);
   let G = null, ST = null, SM = null, MODEL = null, ready = null;
   let img = null, frame = null, line = null;     // line: {canvas, map, W, cuts:[], pieces:[]}
@@ -1277,6 +1578,77 @@ if ('serviceWorker' in navigator) {
     return ready;
   }
 
+  /* printed hieroglyphs: the sign shapes, the hieratic set and the writer's rules */
+  let PREADY = null, GH = null, U2C = null, mode = 'hieratic';
+  function loadPrint() {
+    if (PREADY) return PREADY;
+    PREADY = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lw-hieratic.json', 'lr-print.json'].map(u => fetch(u, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
+      .then(([g, sm, h, pr]) => { G = G || g; SM = SM || sm; ST = ST || AS.makeStacker(SM, G); GH = h; U2C = AS.unicodeIndex(SM); window.PrintReader.load(pr); });
+    return PREADY;
+  }
+  function setMode(m) {
+    mode = m; try { localStorage.setItem('lr.mode', m); } catch (e) {}
+    $('lrModeH').classList.toggle('on', m === 'hieratic'); $('lrModeP').classList.toggle('on', m === 'print');
+    $('lrModeH').setAttribute('aria-pressed', m === 'hieratic'); $('lrModeP').setAttribute('aria-pressed', m === 'print');
+    $('lrDropHint').textContent = m === 'print' ? 'One line of printed hieroglyphs (from JSesh, a book or a transcription), dark signs on a light ground. Drag across the picture to frame the line if it shows more.'
+      : 'One line of hieratic, cut fairly close above and below. Drag across the photo to frame the line if it shows more.';
+    ['lrCut', 'lrPieces', 'lrOut', 'lrPrint'].forEach(id => { $(id).hidden = true; });
+    if (m === 'print') loadPrint().catch(() => {});
+  }
+  /* the signs read -> text for the writer: blocks apart, the read stacking kept with the Unicode joiners */
+  function printText(res) {
+    const one = c => U2C[c] || ('-' + c + '-'),
+      ch = c => c.indexOf(':') > 0 ? '\u{13437}' + c.split(':').map(one).join('\u{13430}') + '\u{13438}' : c.split('&').map(one).join('\u{13431}');   // a ligature: its signs side by side
+    // Hr inside a group (the face and the stroke beside another sign, over N35): the face takes its two strokes (or the mouth) there too
+    res.blocks.forEach((b, bi) => b.rows.forEach((r, ri) => { if (b.rows.length < 2 && r.length < 3) return;
+      for (let i = 0; i + 1 < r.length; i++) if (r[i] === 'D2' && r[i + 1] === 'Z1') {
+        const rest = r.slice(i + 2).concat(b.rows.slice(ri + 1).flat(), res.blocks.slice(bi + 1).flatMap(x => x.rows.flat()));
+        r[i] = HRSUF(rest.flatMap(c => c.split('&')).map(c => U2C[c] || '')) ? 'D2:D21' : 'D2:Z4'; } }));
+    let red = false;
+    return res.blocks.map(b => { const sw = b.red !== red ? (b.red ? '$r' : '$b') : ''; red = b.red; return (b.space ? ' ' : '-') + sw + b.rows.map(r => r.length > 1 && b.rows.length > 1 ? '\u{13437}' + r.map(ch).join('\u{13431}') + '\u{13438}' : r.map(ch).join('\u{13431}')).join('\u{13430}'); })
+      .join('').replace(/^[- ]/, '').replace(/--+/g, '-')
+      // Hr: the face with the two strokes (or the mouth) and the stroke, however they were read, is written as the writer writes it
+      .replace(/(\u{13437})?\u{13077}(?:[-\u{13430}]?(\u{133ED}|\u{1308B}))?(\u{13438})?[-\u{13431}]?\u{133E4}/gu, (m, a, mid, b, at, all) => {
+        if (!!a !== !!b) return m;                       // part of a bigger group: leave it
+        if (/[\u{13431}\u{13430}\u{13437}]/u.test(all[at - 1] || '') || /[\u{13431}\u{13430}\u{13438}]/u.test(all.slice(at + m.length, at + m.length + 2))) return m;
+        const after = Array.from(all.slice(at + m.length).replace(/^[-\s\u{13430}-\u{13438}]+/u, '').slice(0, 8));
+        const special = HRSUF(after.filter(c => !/[-\u{13430}-\u{13438}]/u.test(c))) || (mid === '\u{1308B}' && !after.length);
+        return special ? '\u{13077}\u{1308B}\u{133E4}' : '\u{13077}\u{133ED}\u{133E4}'; });
+  }
+  window.__lrP = { printText, drawPrint: () => drawPrint(), load: () => loadPrint() };
+  function drawPrint() {
+    const text = $('lrPText').value;
+    try {
+      const parsed = AS.parseInput(text, SM, G);
+      const known = new Set(GH.words || []);
+      const mdc = parsed.map(p => ST.blocksToMdC(ST.toBlocks(p.units), { words: true, known, wordGlyph: GH.wordGlyph })).filter(Boolean).join('-..-');
+      const L = LW.layoutLine(AS.hieraticForms(mdc, GH), GH, { direction: 'rtl', skip: 0.4, wordGap: 3, tightSkip: -0.6, lowForms: true, spaceW: 5, hieratic: { quadW: 30, squash: 0.3 } });
+      $('lrPStage').innerHTML = mdc.trim() ? LW.toSVG(L, GH, { unit: 4 }) : '<div class="lw-loading">No signs.</div>';
+      $('lrPStage').scrollLeft = $('lrPStage').scrollWidth;
+    } catch (e) { $('lrPStage').innerHTML = '<div class="lw-loading">This line could not be drawn.</div>'; }
+  }
+  function readPrint(f) {
+    $('lrPrint').hidden = false; $('lrPStage').innerHTML = '<div class="lw-loading">Reading the signs&hellip;</div>';
+    loadPrint().then(() => {
+      // the line at about 90 pixels high (small pictures are enlarged, big ones reduced)
+      const k = Math.max(0.25, Math.min(4, 90 / f[3])), W = Math.max(8, Math.round(f[2] * k)), H = Math.max(8, Math.round(f[3] * k));
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#fff'; x.fillRect(0, 0, W, H); x.imageSmoothingQuality = 'high';
+      x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, W, H);
+      const px = x.getImageData(0, 0, W, H).data, res = window.PrintReader.read(px, W, H, 'auto');
+      if (res) res.blocks.forEach(b => {                 // red ink (rubrics): most of the block's ink is red
+        const g = res.geo[b.bi]; let ink = 0, rd = 0;
+        for (let yy = 0; yy < H; yy++) for (let xx = g.x0; xx < g.x1; xx++) { const i = (yy * W + xx) * 4, r = px[i], gg = px[i + 1], bb = px[i + 2];
+          if (0.3 * r + 0.59 * gg + 0.11 * bb < 200) { ink++; if (r - gg > 60 && r > 120) rd++; } }
+        b.red = ink > 0 && rd / ink > 0.4; });
+      if (!res) { $('lrPStage').innerHTML = '<div class="lw-loading">No signs were found in this picture.</div>'; return; }
+      $('lrPText').value = printText(res);
+      $('lrPNote').textContent = (res.dir === 'rtl' ? 'Read right to left. ' : 'Read left to right. ') + 'Correct any sign in the box and the hieratic follows.';
+      drawPrint();
+      $('lrPrint').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    }).catch(() => { $('lrPStage').innerHTML = '<div class="lw-loading">The sign shapes could not be loaded. Check the connection and reload the page.</div>'; });
+  }
+
   /* ---------- 1: import and frame ---------- */
   function useFile(file) {
     if (!file || !/^image\//.test(file.type)) return;
@@ -1286,7 +1658,7 @@ if ('serviceWorker' in navigator) {
   }
   let fscale = 1;
   function showFrame() {
-    $('lrFrame').hidden = false; $('lrCut').hidden = true; $('lrPieces').hidden = true; $('lrOut').hidden = true;
+    $('lrFrame').hidden = false; $('lrCut').hidden = true; $('lrPieces').hidden = true; $('lrOut').hidden = true; $('lrPrint').hidden = true;
     const c = $('lrSrc'), maxW = c.parentElement.clientWidth || 760;
     fscale = Math.min(1, maxW / img.naturalWidth, 420 / img.naturalHeight);
     c.width = Math.round(img.naturalWidth * fscale); c.height = Math.round(img.naturalHeight * fscale);
@@ -1313,6 +1685,7 @@ if ('serviceWorker' in navigator) {
   /* ---------- 2: the line, its ink and the cuts ---------- */
   function readLine(whole) {
     const f = (!whole && frame) ? frame : [0, 0, img.naturalWidth, img.naturalHeight];
+    if (mode === 'print') { readPrint(f); return; }
     const H = R.H64, W = Math.max(8, Math.round(f[2] * H / f[3]));
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high';
@@ -1442,6 +1815,13 @@ if ('serviceWorker' in navigator) {
     ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
     drop.addEventListener('drop', e => useFile(e.dataTransfer.files[0]));
     document.addEventListener('paste', e => { const it = [...(e.clipboardData || {}).items || []].find(i => i.type.startsWith('image/')); if (it) useFile(it.getAsFile()); });
+    $('lrModeH').addEventListener('click', () => setMode('hieratic'));
+    $('lrModeP').addEventListener('click', () => setMode('print'));
+    let pm = 'hieratic'; try { pm = localStorage.getItem('lr.mode') || 'hieratic'; } catch (e) {}
+    setMode(pm === 'print' ? 'print' : 'hieratic');
+    $('lrPText').addEventListener('input', () => { clearTimeout(window.__lrpT); window.__lrpT = setTimeout(drawPrint, 150); });
+    $('lrPCopy').addEventListener('click', e => copy($('lrPText').value, e.target));
+    $('lrPOpen').addEventListener('click', () => { location.href = 'line-writer.html#t=' + encodeURIComponent($('lrPText').value); });
     $('lrWhole').addEventListener('click', () => readLine(true));
     $('lrRead').addEventListener('click', () => readLine(false));
     $('lrCopyU').addEventListener('click', e => copy($('lrStage').dataset.uni || '', e.target));

@@ -493,7 +493,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
         <p class="lw-rule">Type a transliteration like <code class="pb-code">Dd</code>. <kbd>Shift</kbd>+<kbd>Space</kbd> or <em>⇄ spellings</em> puts in the hieroglyphs; press again for other spellings and stackings, the most common first.</p>
         <p class="lw-rule"><code class="pb-code">_</code> after a sign writes it low (f, k).</p>
         <p class="lw-rule"><code class="pb-code">$r</code> red, <code class="pb-code">$b</code> black, or use <em>red ink</em> and click blocks in the drawing.</p>
-        <p class="lw-rule">Hr is corrected as you type.</p>
+        <p class="lw-rule">Hr is corrected as you type; <kbd>Shift</kbd>+<kbd>Space</kbd> right after it gives the plain D2-Z1.</p>
         </aside>
       </section>
 
@@ -1109,7 +1109,14 @@ if ('serviceWorker' in navigator) {
   }
 
   /* the opposite direction: a code back to its Unicode character, for the sign finder */
-  function unicodeIndex(M) { const r = {}; Object.entries(M.uni).forEach(([ch, c]) => { if (!r[c]) r[c] = ch; }); return r; }
+  // code -> character; when several characters stand for one code, the one in that code's own Unicode range (N33 is U+13212, not a look-alike elsewhere)
+  const URANGE = [['A', 0x13000], ['B', 0x13050], ['C', 0x13059], ['D', 0x13076], ['E', 0x130D2], ['F', 0x1310F], ['G', 0x1313F], ['H', 0x13183], ['I', 0x13188], ['K', 0x131A0], ['L', 0x131A6], ['M', 0x131AF],
+    ['N', 0x131EF], ['NL', 0x13220], ['NU', 0x13246], ['O', 0x13250], ['P', 0x132A4], ['Q', 0x132AD], ['R', 0x132B0], ['S', 0x132DD], ['T', 0x1331D], ['U', 0x1333C], ['V', 0x1336E], ['W', 0x133AF], ['X', 0x133CF], ['Y', 0x133D9], ['Z', 0x133E1], ['Aa', 0x1340D], ['', 0x13430]];
+  const catOf = cp => { let k = null; for (const [c, st] of URANGE) if (cp >= st) k = c; return k; };
+  function unicodeIndex(M) { const r = {};
+    Object.entries(M.uni).forEach(([ch, c]) => { const own = catOf(ch.codePointAt(0)) === (c.match(/^[A-Za-z]+/) || [''])[0];
+      if (!r[c] || (own && !r[c + '\u0000'])) { r[c] = ch; if (own) r[c + '\u0000'] = 1; } });
+    Object.keys(r).forEach(k => { if (k.endsWith('\u0000')) delete r[k]; }); return r; }
 
   const API = { makeStacker, parseInput, unicodeIndex, hieraticForms };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.AutoStack = API;
@@ -1120,6 +1127,9 @@ if ('serviceWorker' in navigator) {
 /* Line writer page: typed hieroglyphs -> auto-stacked blocks -> drawn line. */
 (function () {
   'use strict';
+  /* Hr with a suffix pronoun (=i, =f, =k, =s, =sn, =Tn, =tn, =t) or in Hry-ib: the face stands over the mouth */
+  const HRSUF = after => ['\u{13191}', '\u{13000}', '\u{13050}', '\u{133A1}', '\u{132F4}', '\u{1337F}'].includes(after[0])
+    || (after[0] === '\u{133CF}' && after[1] === '\u{13216}') || after.slice(0, 3).includes('\u{13123}');
   const LW = window.LineWriter, AS = window.AutoStack, $ = id => document.getElementById(id);
   let G = null, M = null, ST = null, U2C = null, rtl = true, timer = 0, GH = null, hier = false;
   const pref = { get(k, d) { try { const v = localStorage.getItem('lw.' + k); return v === null ? d : v; } catch (e) { return d; } },
@@ -1142,11 +1152,15 @@ if ('serviceWorker' in navigator) {
   /* Hr typed as face + stroke is written face over two strokes + stroke, or face over mouth + stroke
      before the suffixes f, i, k and in Hry-ib; the text box is corrected as you type */
   const HR = /\u{13077}(?:\u{133ED}|\u{1308B})?\u{133E4}/gu;
+  /* Hr written out in any form (face over two strokes or mouth, then the stroke; with or without the joiners);
+     the plain form D2-Z1 (a block break between) is not corrected */
+  const HRSRC = '(?:\u{13437})?\u{13077}(?:\u{13430}?(?:\u{133ED}|\u{1308B}))?(?:\u{13438})?\u{13431}?\u{133E4}';
+  const HRANY = new RegExp(HRSRC, 'u'), HRANYG = new RegExp(HRSRC, 'gu'), HRPLAIN = '\u{13077}-\u{133E4}', HREND = new RegExp('(' + HRSRC + '|\u{13077}-\u{133E4})$', 'u');
   function fixHr(ta) {
     const v = ta.value, cur = ta.selectionStart; let delta = 0;
     const out = v.replace(HR, (m, at) => {
-      const after = Array.from(v.slice(at + m.length, at + m.length + 8));
-      const special = ['\u{13191}', '\u{13000}', '\u{13050}', '\u{133A1}'].includes(after[0]) || after.slice(0, 3).includes('\u{13123}') || m.includes('\u{1308B}') && !after.length;
+      const after = Array.from(v.slice(at + m.length, at + m.length + 12).replace(/^[-\u{13430}-\u{13438}]+/u, '').replace(/[-\u{13430}-\u{13438}]/gu, ''));
+      const special = HRSUF(after) || m.includes('\u{1308B}') && !after.length;
       const r = special ? '\u{13077}\u{1308B}\u{133E4}' : '\u{13077}\u{133ED}\u{133E4}';
       if (r !== m && at < cur) delta += r.length - m.length;
       return r;
@@ -1208,7 +1222,10 @@ if ('serviceWorker' in navigator) {
     const c = alt ? alt[0] : G.sign[t] ? t : (/\d/.test(t) && lc) || G.phon[t];
     if (c && U2C[c]) { add(U2C[c], 'sign ' + c); addForms(U2C[c], 'sign ' + c); }
     INDEX.forEach(x => { if (x.phon.includes(t)) add(x.ch, 'sign ' + x.code); });
-    return out;
+    // Hr also as the plain face and stroke (D2-Z1), which the Hr correction leaves alone
+    const out2 = [];                                     // each right after the spelling it comes from
+    out.forEach(([eg, en]) => { out2.push([eg, en]); if (HRANY.test(eg)) { const pl = eg.replace(HRANYG, HRPLAIN); if (!seen.has(pl)) { seen.add(pl); out2.push([pl, (en ? en + ', ' : '') + 'Hr as D2-Z1']); } } });
+    return out2;
   }
   function showCyc() { const [, en] = CYC.list[CYC.i];
     $('lwMsg').textContent = CYC.list.length > 1 ? `${CYC.word}: ${CYC.i + 1} of ${CYC.list.length}${en ? ' (' + en + ')' : ''}. ⇄ or Shift+Space for the next one.` : `${CYC.word}${en ? ' (' + en + ')' : ''}`; }
@@ -1218,7 +1235,9 @@ if ('serviceWorker' in navigator) {
     // or the next key (often the space) is swallowed
     const had = document.activeElement === ta; if (had) ta.blur();
     ta.value = v.slice(0, CYC.start) + eg + v.slice(CYC.end); CYC.end = CYC.start + eg.length;
-    const p = CYC.end + Math.max(0, keep); if (had) ta.focus(); ta.setSelectionRange(p, p); fixHr(ta);
+    const p = CYC.end + Math.max(0, keep); if (had) ta.focus(); ta.setSelectionRange(p, p);
+    const len0 = ta.value.length; fixHr(ta);                // the Hr correction may change the word: keep the cycle on it
+    if (ta.value.length !== len0) { CYC.end += ta.value.length - len0; CYC.list[CYC.i] = [ta.value.slice(CYC.start, CYC.end), CYC.list[CYC.i][1]]; }
     clearTimeout(timer); fromText(); showCyc();
   }
   /* Shift+Space: the next spelling of the word just written (or of the transliteration before the cursor) */
@@ -1233,6 +1252,12 @@ if ('serviceWorker' in navigator) {
     spellLoad().then(() => {
       const atWord = CYC && v.slice(CYC.start, CYC.end) === CYC.list[CYC.i][0] && /^\s*$/.test(v.slice(CYC.end, pos));
       if (atWord) { CYC.i = (CYC.i + 1) % CYC.list.length; putCyc(ta); return; }
+      const tail = v.slice(0, pos).replace(/\s+$/, ''), hm = HREND.exec(tail);
+      if (hm) {                                          // Hr just before the cursor: Shift+Space switches to the plain D2-Z1 and back
+        const end = tail.length, start = end - hm[1].length, plain = hm[1] === HRPLAIN;
+        const corrected = plain ? '\u{13077}\u{133ED}\u{133E4}' : hm[1];
+        CYC = { start, end, list: [[corrected, 'Hr'], [HRPLAIN, 'Hr as D2-Z1']], i: plain ? 0 : 1, word: 'Hr' }; putCyc(ta); return;
+      }
       const before = Array.from(v.slice(0, pos).replace(/\s+$/, '')), last = before[before.length - 1], lastC = last && M.uni[last];
       if (lastC && FORMS[lastC]) {                      // a sign with a second form (Y1): Shift+Space switches between them
         const end = v.slice(0, pos).replace(/\s+$/, '').length, start = end - last.length;
@@ -1412,6 +1437,10 @@ if ('serviceWorker' in navigator) {
     Promise.all([fetch('lw-glyphs.json', { cache: 'no-cache' }).then(r => r.json()), fetch('lw-stack.json', { cache: 'no-cache' }).then(r => r.json())]).then(([g, m]) => {
       G = g; M = m; ST = AS.makeStacker(M, G); U2C = AS.unicodeIndex(M); buildIndex(); fromText(); spellLoad().then(fromText);
       if (!$('lwScript').hidden && pref.get('script', 'hiero') === 'hieratic') setScript(true);
+      if (/^#t=/.test(location.hash)) {                 // a line sent from the Line Reader
+        $('lwText').value = decodeURIComponent(location.hash.slice(3)); history.replaceState(null, '', location.pathname);
+        if (!$('lwScript').hidden) setScript(true); else fromText();
+      }
     }).catch(() => { $('lwStage').innerHTML = '<div class="lw-loading">The sign shapes could not be loaded. Check the connection and reload the page.</div>'; });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
