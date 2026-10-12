@@ -390,6 +390,12 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
   .lw-tool{ width:calc(100% + 300px); grid-template-columns:minmax(0,1fr) 276px; gap:12px 24px; }
 }
 .lw-rule .pb-code{ color:var(--ink); }
+/* compact: the input and the drawing are both in view while typing */
+.lw-main{ gap:8px; }
+.lw-tool textarea.lw-hiero{ font-size:26px; line-height:1.35; padding:8px 10px; min-height:0; }
+.lw-tool .lw-note:empty{ display:none; }
+.lw-tool .lw-bar{ margin:0; }
+.lw-stage{ min-height:90px; padding:10px 14px; }
 
 /* ---------- line reader ---------- */
 .lr-tool{ display:flex; flex-direction:column; gap:18px; margin:0 0 40px; }
@@ -985,7 +991,8 @@ if ('serviceWorker' in navigator) {
     const toks = mdc.split('-').map(b => { for (const k in LIG) if (H.sign[LIG[k]]) b = b.split(k).join(LIG[k]); return b; });
     for (let i = 0; i + 1 < toks.length; i++) if (toks[i] === 'O1' && toks[i + 1] === 'D21') toks.splice(i, 2, 'O1:D21');   // pr: the house stands on r
     // a word form written as a JSesh ligature inside a stack (D21:I10&D46, r over Dd) keeps the scribe's form
-    for (let i = 0; i < toks.length; i++) if (/&/.test(toks[i])) for (const k in (H.wordGlyph || {})) { const p = k.split(' '); if (p.length === 2) toks[i] = toks[i].split(p[0] + '&' + p[1]).join(H.wordGlyph[k]); }
+    // a two-sign word form inside a block (Dd as I10&D46, I10*D46 or I10:D46, as in r over Dd) is drawn as the scribe's word form
+    for (let i = 0; i < toks.length; i++) if (/[&*:]/.test(toks[i])) for (const k in (H.wordGlyph || {})) { const p = k.split(' '); if (p.length === 2) toks[i] = toks[i].replace(new RegExp('(?<![A-Za-z0-9_])' + p[0] + '[&*:]' + p[1] + '(?![A-Za-z0-9_])', 'g'), H.wordGlyph[k]); }
     // hieratic stacks the scribes use that the transcription writes in a row (rows of small signs over a long one)
     const ST_RULES = H.stackRules || {}, joined = toks.join('-');
     let j2 = joined; for (const k in ST_RULES) j2 = j2.split(k).join(ST_RULES[k]);
