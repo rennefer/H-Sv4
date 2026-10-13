@@ -451,6 +451,8 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lr-dens{ display:flex; align-items:center; gap:8px; font-family:'Inter',sans-serif; font-size:13px; color:var(--ink-on-dark); }
 .lr-dens input{ accent-color:var(--rubric); }
 .lr-tool .lw-stage{ display:flex; justify-content:flex-end; overflow-x:auto; }
+
+.lr-cutbar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; }
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -519,7 +521,8 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 
         <div class="lr-step" id="lrCut" hidden>
           <div class="lr-head"><span class="lw-label">2 · Word pieces</span>
-            <label class="lr-dens">Cuts <input type="range" id="lrDens" min="8" max="30" value="24" aria-label="How many cuts to suggest"> <span class="lw-hint">fewer &larr;&nbsp;&rarr; more</span></label></div>
+            <span class="lr-cutbar"><button type="button" id="lrFind">Find the words</button><label class="lr-dens">Cuts <input type="range" id="lrDens" min="8" max="30" value="24" aria-label="How many cuts to suggest"> <span class="lw-hint">fewer &larr;&nbsp;&rarr; more</span></label></span></div>
+          <p class="lw-hint" id="lrFindMsg" hidden></p>
           <p class="lw-hint">Click the line to add a cut; click a cut to remove it. The text runs right to left.</p>
           <div class="lr-canvas-wrap"><canvas id="lrLine"></canvas></div>
         </div>
@@ -541,7 +544,8 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 
       <h2>What the reader can and cannot do yet</h2>
       <p>Printed hieroglyphs: the reader finds the signs and how they are stacked, and compares them with the JSesh sign shapes and with signs learnt from the Horus and Seth transcriptions; how often signs follow each other in our texts helps it choose. A clean line from JSesh comes out almost entirely right; in the Horus and Seth transcriptions it reads about five signs in six correctly. Check the box before you use the line, and correct what it got wrong.</p>
-      <p>For every piece of your line the reader keeps only the ink of that piece, then two small neural networks guess the word. They learnt from about 11,500 word pictures that were checked by hand: the words of the Two Brothers, Horus and Seth and Wenamun, and the cleaned word pictures of the dictionary. The second network also finds which signs are in the piece and where, and the guesses are checked against the spellings of the words. Tested on pages it had not learnt from, with the words cut as they were checked, the first guess was right for 77&nbsp;% of the words in Two Brothers, 70&nbsp;% in Wenamun and 64&nbsp;% in Horus and Seth, and the right word was among the first five for 92&nbsp;%, 88&nbsp;% and 76&nbsp;%. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. The cuts it suggests fall where the ink thins out, which often but not always is where a word ends: move them where they belong for the best guesses.</p>
+      <p>For every piece of your line the reader keeps only the ink of that piece, then two small neural networks guess the word. They learnt from about 11,500 word pictures that were checked by hand: the words of the Two Brothers, Horus and Seth and Wenamun, and the cleaned word pictures of the dictionary. The second network also finds which signs are in the piece and where, and the guesses are checked against the spellings of the words. A word is its transliteration together with its spelling, so Hr written 𓅃𓅆 (Horus) and Hr written 𓁷𓏭𓏤 (upon) are different words. Tested on whole lines from pages it had not learnt from, cut where the checked words end, the first guess had the right word and spelling for 64&nbsp;% of the words in Two Brothers, 49&nbsp;% in Wenamun and 47&nbsp;% in Horus and Seth, and among the first five for 81&nbsp;%, 71&nbsp;% and 62&nbsp;%. </p>
+      <p><em>Find the words</em> lets the reader cut the line itself: it tries many cuts and keeps the split into words that the networks find most convincing (they have also learnt what a wrongly cut piece looks like). This takes some seconds. On the same test lines it found and read rightly about 47&nbsp;% of the words in Two Brothers, 30&nbsp;% in Wenamun and 35&nbsp;% in Horus and Seth, against about 13&nbsp;% with the quick cuts. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. The cuts it suggests fall where the ink thins out, which often but not always is where a word ends: move them where they belong for the best guesses.</p>
       <p>So for now it is an assistant: you make the choices, it does the looking up and the writing. It gets better as the cleaned words from our review are added, and better still once it reads sign by sign.</p>
       <p class="lw-credits">The transcription is written with the Line Writer: sign shapes from JSesh by Serge Rosmorduc and Serge J. P. Thomas (LGPL), stacking learnt from the JSesh encodings of the three stories.</p>
 
@@ -1365,6 +1369,35 @@ if ('serviceWorker' in navigator) {
     for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) out[(oy + y) * WW + ox + x] = small[y * nw + x];
     return out;
   }
+
+  /* ---------- finding the words: candidate cuts at dips of the ink; the split of the line that the networks
+     find most convincing (twin: rd/segtest.py, method B) ---------- */
+  function dips(ink, W, gap) {
+    const col = new Float64Array(W); for (let y = 0; y < 64; y++) for (let x = 0; x < W; x++) col[x] += ink[y * W + x];
+    const sm = new Float64Array(W); for (let x = 0; x < W; x++) { let s = 0; for (let d = -2; d <= 2; d++) if (x + d >= 0 && x + d < W) s += col[x + d]; sm[x] = s / 5; }
+    const c = []; for (let x = 2; x < W - 2; x++) if (sm[x] <= sm[x - 1] && sm[x] <= sm[x + 1]) c.push(x);
+    c.sort((a, b) => sm[a] - sm[b] || a - b); const out = [];
+    for (const x of c) if (out.every(y => Math.abs(x - y) >= gap)) out.push(x);
+    return out.sort((a, b) => a - b);
+  }
+  function gapFeat(ink, W, x) {
+    const HW = 32, win = new Float32Array(64 * 64);
+    for (let y = 0; y < 64; y++) for (let k = 0; k < 64; k++) { const xx = x - HW + k; if (xx >= 0 && xx < W) win[y * 64 + k] = ink[y * W + xx]; }
+    const f = resample(win, 64, 64, 16, 16), col = new Float32Array(64);
+    for (let y = 0; y < 64; y++) for (let k = 0; k < 64; k++) col[k] += win[y * 64 + k];
+    const prof = resample(col, 1, 64, 1, 16), out = new Float32Array(16 * 16 + 16 + 1);
+    out.set(f); for (let i = 0; i < 16; i++) out[256 + i] = prof[i] / 64;
+    out[272] = (col[HW - 2] + col[HW - 1] + col[HW] + col[HW + 1]) / 4 / 64;
+    return out;
+  }
+  function gapProb(G, f) {
+    let h = f;
+    for (let l = 0; l < G.W.length; l++) { const n = G.b[l].length, o = Float64Array.from(G.b[l]);
+      for (let i = 0; i < h.length; i++) { const v = h[i]; if (!v) continue; const r = G.W[l][i]; for (let j = 0; j < n; j++) o[j] += v * r[j]; }
+      if (l < G.W.length - 1) for (let j = 0; j < n; j++) if (o[j] < 0) o[j] = 0;
+      h = o; }
+    return 1 / (1 + Math.exp(-h[0]));
+  }
   function deq(t) { const raw = atob(t.q), n = raw.length, v = new Float32Array(n), sc = t.s, cols = t.shape[1];
     for (let i = 0; i < n; i++) v[i] = ((raw.charCodeAt(i) << 24) >> 24) * sc[i % cols]; return v; }
   function conv(x, H, W, C, Wt, b, F) {        // 3x3, same padding, then ReLU
@@ -1413,7 +1446,7 @@ if ('serviceWorker' in navigator) {
     function score(pic) {
       const r = nets.map(f => f(pic)), lp = r.map(o => logsoft(o.z));
       const q = r[1].a.map(v => 1 / (1 + Math.exp(-v))); let qn = 0; for (const v of q) qn += v * v; qn = Math.sqrt(qn) + 1e-9;
-      return M.words.map((w, i) => { let s = lp[0][i] + lp[1][i], best = 0;
+      return M.words.map((w, i) => { if (w[0] === '_junk') return -Infinity; let s = lp[0][i] + lp[1][i], best = 0;
         for (const v of SP[i]) { let d = 0; for (let k = 0; k < v.length; k++) if (v[k]) d += v[k] * q[k]; d /= qn; if (d > best) best = d; }
         return s + M.signW * best; });
     }
@@ -1426,9 +1459,38 @@ if ('serviceWorker' in navigator) {
       return votes.map(([w, v]) => { let s = v; if (prev != null) s += M.ctxW * Math.log(1 + (big.get(prev * 100000 + w) || 0)); return { w, score: s, word: M.words[w] }; })
         .sort((a, c) => c.score - a.score).slice(0, limit || 8);
     }
-    return { nearest, rank, words: M.words };
+    const junk = M.words.findIndex(w => w[0] === '_junk');
+    /* the best word for a piece (both nets' mean log-probability, 'not a word' left out) */
+    function bestWord(pic) {
+      const r = nets.map(f => f(pic)), lp = r.map(o => logsoft(o.z)); let b = -Infinity, a = -1;
+      for (let i = 0; i < M.words.length; i++) { if (i === junk) continue; const v = (lp[0][i] + lp[1][i]) / 2; if (v > b) { b = v; a = i; } }
+      return [b, a];
+    }
+    /* split the line into words: returns the cuts (columns of the 64-row line). onStep(done, total) for progress */
+    async function findWords(L, onStep) {
+      const P = M.seg, W = L.W, c = [0, ...dips(L.ink, W, 4), W], n = c.length, sc = new Map(), todo = [];
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < Math.min(n, i + 7); j++) { if (c[j] - c[i] > 200) break; todo.push([i, j]); }
+      for (let t = 0; t < todo.length; t++) {
+        const [i, j] = todo[t], pic = piecePicture(L, c[i], c[j]);
+        if (pic) sc.set(i * 10000 + j, bestWord(pic));
+        if (t % 8 === 7) { if (onStep) onStep(t + 1, todo.length); await new Promise(r => setTimeout(r, 0)); }
+      }
+      const pg = new Float64Array(n).fill(1);
+      for (let k = 1; k < n - 1; k++) pg[k] = Math.min(1, Math.max(1e-3, gapProb(M.gap, gapFeat(L.ink, W, c[k]))));
+      const D = new Float64Array(n).fill(-1e9), bp = new Array(n).fill(null); D[0] = 0;
+      for (let j = 1; j < n; j++) {
+        if (D[j - 1] - P.skip > D[j]) { D[j] = D[j - 1] - P.skip; bp[j] = [j - 1, null]; }
+        const cut = j < n - 1 ? P.gapW * Math.log(pg[j]) : 0;
+        for (let i = Math.max(0, j - 6); i < j; i++) { const v = sc.get(i * 10000 + j); if (!v) continue;
+          const s = D[i] + v[0] + P.bonus + cut; if (s > D[j]) { D[j] = s; bp[j] = [i, v[1]]; } }
+      }
+      const cuts = []; let j = n - 1;
+      while (j > 0 && bp[j]) { const i = bp[j][0]; if (i > 0) cuts.push(c[i]); j = i; }
+      return cuts.sort((a, b) => a - b);
+    }
+    return { nearest, rank, words: M.words, findWords };
   }
-  const API = { loadModel, piecePicture, prepareLine, inkMed, components };
+  const API = { loadModel, piecePicture, prepareLine, inkMed, components, dips, gapFeat };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WordNet = API;
 })(typeof window !== 'undefined' ? window : this);
 
@@ -2043,6 +2105,15 @@ if ('serviceWorker' in navigator) {
     $('lrRead').addEventListener('click', () => readLine(false));
     $('lrCopyU').addEventListener('click', e => copy($('lrStage').dataset.uni || '', e.target));
     $('lrCopyT').addEventListener('click', e => copy($('lrTr').textContent, e.target));
+    $('lrFind').addEventListener('click', () => {
+      if (!line) return; const b = $('lrFind'), msg = $('lrFindMsg'); b.disabled = true; msg.hidden = false; msg.textContent = 'Finding the words…';
+      loadAll().then(() => { if (!line.L2) line.L2 = window.WordNet.prepareLine(line.px, line.W64);
+        return MODEL.findWords(line.L2, (d, n) => { msg.textContent = `Finding the words… ${Math.round(100 * d / n)} %`; }); })
+        .then(cuts => { line.cuts = cuts.map(x => Math.round(x / 2)); choice.clear(); drawLine(); buildPieces();
+          msg.textContent = 'The reader has placed the cuts. Check them.'; })
+        .catch(() => { msg.textContent = 'The words could not be found. Set the cuts by hand.'; })
+        .finally(() => { b.disabled = false; });
+    });
     $('lrDens').addEventListener('change', () => { if (!line) return; line.cuts = R.suggestCuts(line.map, density()); choice.clear(); drawLine(); if (MODEL) buildPieces(); });
     framePointer(); cutPointer();
     window.addEventListener('resize', () => { if (img && !$('lrFrame').hidden) { const c = $('lrSrc'); const maxW = c.parentElement.clientWidth || 760; fscale = Math.min(1, maxW / img.naturalWidth, 420 / img.naturalHeight); c.width = Math.round(img.naturalWidth * fscale); c.height = Math.round(img.naturalHeight * fscale); drawFrame(); } if (line) drawLine(); });
