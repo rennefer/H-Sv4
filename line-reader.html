@@ -1910,7 +1910,7 @@ if ('serviceWorker' in navigator) {
       const parsed = AS.parseInput(text, SM, G);
       const known = new Set(GH.words || []);
       const mdc = parsed.map(p => ST.blocksToMdC(ST.toBlocks(p.units), { words: true, known, wordGlyph: GH.wordGlyph })).filter(Boolean).join('-..-');
-      const L = LW.layoutLine(AS.hieraticForms(mdc, GH), GH, { direction: 'rtl', skip: 0.4, wordGap: 3, tightSkip: -0.6, lowForms: true, spaceW: 5, hieratic: { quadW: 30, squash: 0.3 } });
+      const L = LW.layoutLine(AS.hieraticForms(mdc, GH), GH, { direction: 'rtl', skip: -0.6, wordGap: 3, tightSkip: -0.6, lowForms: true, spaceW: 5, hieratic: { quadW: 30, squash: 0.3 } });
       $('lrPStage').innerHTML = mdc.trim() ? LW.toSVG(L, GH, { unit: 4 }) : '<div class="lw-loading">No signs.</div>';
       $('lrPStage').scrollLeft = $('lrPStage').scrollWidth;
     } catch (e) { $('lrPStage').innerHTML = '<div class="lw-loading">This line could not be drawn.</div>'; }

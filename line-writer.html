@@ -1527,8 +1527,8 @@ if ('serviceWorker' in navigator) {
     let L;
     const GD = hier && GH ? GH : G;
     if (GD === GH) mdc = AS.hieraticForms(mdc, GH);
-    /* hieratic: signs sit close as in the papyri, words a little apart, known words closer still; low signs drop below the line */
-    const lopts = GD === GH ? { direction: rtl ? 'rtl' : 'ltr', skip: 0.4, wordGap: 3, tightSkip: -0.6, lowForms: true, spaceW: 5, hieratic: { quadW: 30, squash: 0.3 } } : { direction: rtl ? 'rtl' : 'ltr' };
+    /* hieratic: signs sit close as in the papyri (every word as close as the known words), a space between words; more spaces add room; low signs drop below the line */
+    const lopts = GD === GH ? { direction: rtl ? 'rtl' : 'ltr', skip: -0.6, wordGap: 3, tightSkip: -0.6, lowForms: true, spaceW: 5, hieratic: { quadW: 30, squash: 0.3 } } : { direction: rtl ? 'rtl' : 'ltr' };
     try { L = LW.layoutLine(mdc, GD, lopts); } catch (e) { $('lwMsg').textContent = 'This line could not be drawn.'; return; }
     LAST = L;
     $('lwStage').innerHTML = mdc.trim() ? LW.toSVG(L, GD, { unit, ids: true }) : '<div class="lw-loading">Type some signs above.</div>';
