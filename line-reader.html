@@ -453,6 +453,13 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lr-tool .lw-stage{ display:flex; justify-content:flex-end; overflow-x:auto; }
 
 .lr-cutbar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; }
+
+.lr-signs{ display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin:2px 0 8px; font-family:'Inter',sans-serif; font-size:12.5px; color:var(--ink-soft-on-dark); }
+.lr-signs-lab{ font-style:italic; }
+.lr-group{ display:inline-flex; align-items:center; gap:4px; border:1px solid var(--line); border-radius:3px; padding:2px 7px; background:rgba(0,0,0,.12); color:var(--ink-on-dark); }
+.lr-group .g{ font-family:'Noto Sans Egyptian Hieroglyphs','Segoe UI Historic',sans-serif; font-size:18px; line-height:1; }
+.lr-group .c{ font-size:11px; color:var(--ink-soft-on-dark); font-variant-numeric:tabular-nums; }
+.lr-signbtn{ font:inherit; font-size:12px; background:transparent; color:var(--ink-soft-on-dark); border:1px solid var(--line); border-radius:3px; padding:3px 9px; cursor:pointer; }
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -523,7 +530,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
           <div class="lr-head"><span class="lw-label">2 · Word pieces</span>
             <span class="lr-cutbar"><button type="button" id="lrFind">Find the words</button><label class="lr-dens">Cuts <input type="range" id="lrDens" min="8" max="30" value="24" aria-label="How many cuts to suggest"> <span class="lw-hint">fewer &larr;&nbsp;&rarr; more</span></label></span></div>
           <p class="lw-hint" id="lrFindMsg" hidden></p>
-          <p class="lw-hint">Click the line to add a cut; click a cut to remove it. The text runs right to left.</p>
+          <p class="lw-hint">The reader first shows quick cuts, then looks for the words and moves the cuts there (some seconds). Click the line to add a cut; click a cut to remove it. The text runs right to left.</p>
           <div class="lr-canvas-wrap"><canvas id="lrLine"></canvas></div>
         </div>
 
@@ -545,7 +552,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
       <h2>What the reader can and cannot do yet</h2>
       <p>Printed hieroglyphs: the reader finds the signs and how they are stacked, and compares them with the JSesh sign shapes and with signs learnt from the Horus and Seth transcriptions; how often signs follow each other in our texts helps it choose. A clean line from JSesh comes out almost entirely right; in the Horus and Seth transcriptions it reads about five signs in six correctly. Check the box before you use the line, and correct what it got wrong.</p>
       <p>For every piece of your line the reader keeps only the ink of that piece, then two small neural networks guess the word. They learnt from about 11,500 word pictures that were checked by hand: the words of the Two Brothers, Horus and Seth and Wenamun, and the cleaned word pictures of the dictionary. The second network also finds which signs are in the piece and where, and the guesses are checked against the spellings of the words. A word is its transliteration together with its spelling, so Hr written 𓅃𓅆 (Horus) and Hr written 𓁷𓏭𓏤 (upon) are different words. Tested on whole lines from pages it had not learnt from, cut where the checked words end, the first guess had the right word and spelling for 64&nbsp;% of the words in Two Brothers, 49&nbsp;% in Wenamun and 47&nbsp;% in Horus and Seth, and among the first five for 81&nbsp;%, 71&nbsp;% and 62&nbsp;%. </p>
-      <p><em>Find the words</em> lets the reader cut the line itself: it tries many cuts and keeps the split into words that the networks find most convincing (they have also learnt what a wrongly cut piece looks like). This takes some seconds. On the same test lines it found and read rightly about 47&nbsp;% of the words in Two Brothers, 30&nbsp;% in Wenamun and 35&nbsp;% in Horus and Seth, against about 13&nbsp;% with the quick cuts. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. The cuts it suggests fall where the ink thins out, which often but not always is where a word ends: move them where they belong for the best guesses.</p>
+      <p>The reader cuts the line itself (<em>Find the words</em> runs again after you change the line): it tries many cuts and keeps the split into words that the networks find most convincing (they have also learnt what a wrongly cut piece looks like). This takes some seconds. On the same test lines it found and read rightly about 47&nbsp;% of the words in Two Brothers, 30&nbsp;% in Wenamun and 35&nbsp;% in Horus and Seth, against about 13&nbsp;% with the quick cuts. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. The cuts it suggests fall where the ink thins out, which often but not always is where a word ends: move them where they belong for the best guesses.</p>
       <p>So for now it is an assistant: you make the choices, it does the looking up and the writing. It gets better as the cleaned words from our review are added, and better still once it reads sign by sign.</p>
       <p class="lw-credits">The transcription is written with the Line Writer: sign shapes from JSesh by Serge Rosmorduc and Serge J. P. Thomas (LGPL), stacking learnt from the JSesh encodings of the three stories.</p>
 
@@ -1398,6 +1405,75 @@ if ('serviceWorker' in navigator) {
       h = o; }
     return 1 / (1 + Math.exp(-h[0]));
   }
+
+  /* ---------- the signs in a piece: the piece is cut again from the photo to its own height, its ink split into
+     column groups, and the group network says which signs are in each group (twin: rd/groups_try2.py) ---------- */
+  function makeGroupNet(N) {
+    const P = N.params.map(deq), ch = [1, 16, 32, 64], nOut = N.params[N.params.length - 1].shape[1];
+    return function (pic) {
+      let x = pic, H = 32, W = 48;
+      for (let l = 0; l < 3; l++) { x = conv(x, H, W, ch[l], P[2 * l], P[2 * l + 1], ch[l + 1]); x = pool(x, H, W, ch[l + 1]); H >>= 1; W >>= 1; }
+      const e = dense(x, P[6], P[7], 256, true), z = dense(e, P[8], P[9], nOut, false);
+      return z.map(v => 1 / (1 + Math.exp(-v)));
+    };
+  }
+  /* ink parts at least half inside columns a..b of a 64-row picture: whole height, centred in 64 x 96, halved to 32 x 48 */
+  function groupPic(ink, W, comp, a, b) {
+    const lab = comp.lab, n = comp.n, tot = new Float64Array(n + 1), ins = new Float64Array(n + 1);
+    a = Math.max(0, Math.round(a)); b = Math.round(b);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < W; x++) { const l = lab[y * W + x]; if (!l) continue; tot[l]++; if (x >= a && x < b) ins[l]++; }
+    const keep = l => l && ins[l] >= 0.5 * tot[l]; let c0 = W, c1 = -1, cnt = 0;
+    for (let y = 0; y < 64; y++) for (let x = 0; x < W; x++) if (keep(lab[y * W + x])) { cnt++; if (x < c0) c0 = x; if (x > c1) c1 = x; }
+    if (cnt < 4) return null;
+    let w = c1 - c0 + 1, sub = new Float32Array(64 * w);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < w; x++) sub[y * w + x] = keep(lab[y * W + c0 + x]) ? 1 : 0;
+    if (w > 96) { sub = resample(sub, 64, w, 64, 96); w = 96; }
+    const big = new Float32Array(64 * 96), ox = (96 - w) >> 1;
+    for (let y = 0; y < 64; y++) for (let x = 0; x < w; x++) big[y * 96 + ox + x] = sub[y * w + x];
+    const out = new Float32Array(32 * 48);
+    for (let y = 0; y < 32; y++) for (let x = 0; x < 48; x++) {
+      const v = (big[(2 * y) * 96 + 2 * x] + big[(2 * y) * 96 + 2 * x + 1] + big[(2 * y + 1) * 96 + 2 * x] + big[(2 * y + 1) * 96 + 2 * x + 1]) / 4;
+      out[y * 48 + x] = Math.floor(v * 255 + 1e-6) / 255; }
+    return out;
+  }
+  function groupDips(ink, W) {
+    const col = new Float64Array(W); for (let y = 0; y < 64; y++) for (let x = 0; x < W; x++) col[x] += ink[y * W + x];
+    const sm = new Float64Array(W); for (let x = 0; x < W; x++) sm[x] = ((x > 0 ? col[x - 1] : 0) + col[x] + (x < W - 1 ? col[x + 1] : 0)) / 3;
+    const c = []; for (let x = 2; x < W - 2; x++) if (sm[x] <= sm[x - 1] && sm[x] <= sm[x + 1]) c.push(x);
+    c.sort((a, b) => sm[a] - sm[b] || a - b); const out = [];
+    for (const x of c) if (out.every(y => Math.abs(x - y) >= 3)) out.push(x);
+    return out.sort((a, b) => a - b);
+  }
+  /* rgba of the word (cut to its height, scaled to 64 rows) -> groups right to left: [{signs:[{code,p}]}] */
+  function signGroups(net, cls, rgba, W0, B) {
+    const ink0 = inkMed(rgba, W0, 64), comp0 = components(ink0, W0, 64);
+    // the word: all its ink, columns trimmed
+    let c0 = W0, c1 = -1; for (let y = 0; y < 64; y++) for (let x = 0; x < W0; x++) if (ink0[y * W0 + x]) { if (x < c0) c0 = x; if (x > c1) c1 = x; }
+    if (c1 < 0) return [];
+    const W = c1 - c0 + 1, ink = new Float32Array(64 * W);
+    for (let y = 0; y < 64; y++) for (let x = 0; x < W; x++) ink[y * W + x] = ink0[y * W0 + c0 + x];
+    const comp = components(ink, W, 64), c = [0, ...groupDips(ink, W), W], n = c.length, seg = new Map();
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < Math.min(n, i + 5); j++) {
+      if (c[j] - c[i] > 100) break; const pic = groupPic(ink, W, comp, c[i], c[j]); if (!pic) continue;
+      const p = net(pic); let m = 0; for (const v of p) if (v > m) m = v; seg.set(i * 1000 + j, { p, best: Math.log(Math.max(m, 1e-6)) }); }
+    const D = new Float64Array(n).fill(-1e9), bp = new Array(n).fill(null); D[0] = 0;
+    for (let j = 1; j < n; j++) for (let i = Math.max(0, j - 4); i < j; i++) { const v = seg.get(i * 1000 + j); if (!v) continue;
+      const s = D[i] + v.best + B; if (s > D[j]) { D[j] = s; bp[j] = i; } }
+    const out = []; let j = n - 1;
+    while (j > 0 && bp[j] != null) { const i = bp[j], v = seg.get(i * 1000 + j);
+      const top = Array.from(v.p.keys()).sort((a, b) => v.p[b] - v.p[a]).slice(0, 2).filter(k => v.p[k] >= 0.15).map(k => ({ code: cls[k], p: v.p[k] }));
+      out.push({ signs: top }); j = i; }
+    return out;            // from the right end of the word to the left
+  }
+  /* rows and columns of the ink parts at least half inside columns x0..x1 of the line (or null) */
+  function pieceBox(L, x0, x1) {
+    const W = L.W, lab = L.comp.lab, n = L.comp.n, tot = new Float64Array(n + 1), ins = new Float64Array(n + 1);
+    x0 = Math.max(0, Math.round(x0)); x1 = Math.min(W, Math.round(x1));
+    for (let y = 0; y < 64; y++) for (let x = 0; x < W; x++) { const l = lab[y * W + x]; if (!l) continue; tot[l]++; if (x >= x0 && x < x1) ins[l]++; }
+    let r0 = 64, r1 = -1, c0 = W, c1 = -1;
+    for (let y = 0; y < 64; y++) for (let x = 0; x < W; x++) { const l = lab[y * W + x]; if (l && ins[l] >= 0.5 * tot[l]) { if (y < r0) r0 = y; if (y > r1) r1 = y; if (x < c0) c0 = x; if (x > c1) c1 = x; } }
+    return r1 < 0 ? null : { r0, r1, c0, c1 };
+  }
   function deq(t) { const raw = atob(t.q), n = raw.length, v = new Float32Array(n), sc = t.s, cols = t.shape[1];
     for (let i = 0; i < n; i++) v[i] = ((raw.charCodeAt(i) << 24) >> 24) * sc[i % cols]; return v; }
   function conv(x, H, W, C, Wt, b, F) {        // 3x3, same padding, then ReLU
@@ -1488,9 +1564,11 @@ if ('serviceWorker' in navigator) {
       while (j > 0 && bp[j]) { const i = bp[j][0]; if (i > 0) cuts.push(c[i]); j = i; }
       return cuts.sort((a, b) => a - b);
     }
-    return { nearest, rank, words: M.words, findWords };
+    const gnet = M.group ? makeGroupNet(M.group) : null;
+    function signs(rgba, W) { return gnet ? signGroups(gnet, M.group.cls, rgba, W, M.group.B || 1) : null; }
+    return { nearest, rank, words: M.words, findWords, signs, glyphs: (M.group && M.group.glyph) || {} };
   }
-  const API = { loadModel, piecePicture, prepareLine, inkMed, components, dips, gapFeat };
+  const API = { loadModel, piecePicture, prepareLine, inkMed, components, dips, gapFeat, groupPic, groupDips, signGroups, makeGroupNet, pieceBox };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WordNet = API;
 })(typeof window !== 'undefined' ? window : this);
 
@@ -1910,7 +1988,7 @@ if ('serviceWorker' in navigator) {
       const parsed = AS.parseInput(text, SM, G);
       const known = new Set(GH.words || []);
       const mdc = parsed.map(p => ST.blocksToMdC(ST.toBlocks(p.units), { words: true, known, wordGlyph: GH.wordGlyph })).filter(Boolean).join('-..-');
-      const L = LW.layoutLine(AS.hieraticForms(mdc, GH), GH, { direction: 'rtl', skip: -0.6, wordGap: 3, tightSkip: -0.6, lowForms: true, spaceW: 5, hieratic: { quadW: 30, squash: 0.3 } });
+      const L = LW.layoutLine(AS.hieraticForms(mdc, GH), GH, { direction: 'rtl', skip: -0.6, wordGap: -0.6, tightSkip: -0.6, lowForms: true, spaceW: 5, hieratic: { quadW: 30, squash: 0.3 } });
       $('lrPStage').innerHTML = mdc.trim() ? LW.toSVG(L, GH, { unit: 4 }) : '<div class="lw-loading">No signs.</div>';
       $('lrPStage').scrollLeft = $('lrPStage').scrollWidth;
     } catch (e) { $('lrPStage').innerHTML = '<div class="lw-loading">This line could not be drawn.</div>'; }
@@ -1970,12 +2048,12 @@ if ('serviceWorker' in navigator) {
     x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, W, H);
     const px = x.getImageData(0, 0, W, H).data;
     const ink = R.ink64(px, W, H), map = R.soft32(ink, W, H);
-    line = { src: c, map, W: map.W, px, W64: W, cuts: R.suggestCuts(map, density()) }; voteCache.clear();
+    signCache && signCache.clear(); line = { src: c, map, W: map.W, px, W64: W, f, img, cuts: R.suggestCuts(map, density()) }; voteCache.clear();
     choice.clear();
     $('lrCut').hidden = false; $('lrPieces').hidden = false; $('lrOut').hidden = false;
     $('lrList').innerHTML = '<li class="lw-hint">Loading the word pictures&hellip;</li>';
     drawLine();
-    loadAll().then(() => { buildPieces(); }).catch(() => { $('lrList').innerHTML = '<li class="lw-note">The word pictures could not be loaded. Check the connection and reload the page.</li>'; });
+    loadAll().then(() => { buildPieces(); $('lrFind').click(); }).catch(() => { $('lrList').innerHTML = '<li class="lw-note">The word pictures could not be loaded. Check the connection and reload the page.</li>'; });
     $('lrCut').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   }
   let lscale = 1;
@@ -2014,6 +2092,32 @@ if ('serviceWorker' in navigator) {
       if (near >= 0) line.cuts.splice(near, 1); else line.cuts.push(Math.round(x));
       choice.clear(); drawLine(); buildPieces();
     });
+  }
+
+  /* the signs the sign network sees in a piece, group by group from the right */
+  const signCache = new Map();
+  function pieceSigns(p) {
+    const key = p[0] + ':' + p[1]; if (signCache.has(key)) return signCache.get(key);
+    if (!line.L2) line.L2 = window.WordNet.prepareLine(line.px, line.W64);
+    const bx = window.WordNet.pieceBox(line.L2, p[0] * 2, p[1] * 2); let out = [];
+    if (bx) {
+      const f = line.f, sx = f[2] / line.W64, sy = f[3] / 64;
+      const x0 = f[0] + Math.max(0, bx.c0 - 2) * sx, x1 = f[0] + Math.min(line.W64, bx.c1 + 3) * sx, y0 = f[1] + Math.max(0, bx.r0 - 2) * sy, y1 = f[1] + Math.min(64, bx.r1 + 3) * sy;
+      const W = Math.max(4, Math.round((x1 - x0) * 64 / (y1 - y0))), c = document.createElement('canvas'); c.width = W; c.height = 64;
+      const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high'; x.drawImage(line.img, x0, y0, x1 - x0, y1 - y0, 0, 0, W, 64);
+      out = MODEL.signs(x.getImageData(0, 0, W, 64).data, W) || [];
+    }
+    signCache.set(key, out); return out;
+  }
+  function showSigns(el, p) {
+    const gs = pieceSigns(p); el.innerHTML = '';
+    const lab = document.createElement('span'); lab.className = 'lr-signs-lab'; lab.textContent = gs.length ? 'Signs it sees, right to left:' : 'No clear signs found.'; el.appendChild(lab);
+    gs.forEach(g => { const s = document.createElement('span'); s.className = 'lr-group';
+      if (!g.signs.length) { s.textContent = '?'; s.title = 'not sure'; }
+      g.signs.forEach((x, k) => { if (k) s.append(' or ');
+        const gl = document.createElement('span'); gl.className = 'g'; gl.textContent = MODEL.glyphs[x.code] || ''; s.appendChild(gl);
+        const c = document.createElement('span'); c.className = 'c'; c.textContent = x.code.toUpperCase() + ' ' + Math.round(100 * x.p) + '%'; s.appendChild(c); });
+      el.appendChild(s); });
   }
 
   /* ---------- 3: candidates for every piece ---------- */
@@ -2063,7 +2167,15 @@ if ('serviceWorker' in navigator) {
           b.addEventListener('click', () => { choice.set(i, k); buildPieces(); }); found.appendChild(b); });
       });
       tools.querySelector('.lr-skip').addEventListener('click', () => { if (choice.get(i) === -1) choice.delete(i); else choice.set(i, -1); buildPieces(); });
-      li.appendChild(row); li.appendChild(tools); list.appendChild(li);
+      li.appendChild(row);
+      // how sure is the first guess? (both networks' scores, as shares of the shown guesses)
+      const vs = voteCache.get(key) || []; let conf = 0;
+      if (vs.length) { const m = Math.max(...vs.map(v => v[1])); const z = vs.reduce((a, v) => a + Math.exp((v[1] - m) / 2), 0); conf = 1 / z; }
+      const sg = document.createElement('div'); sg.className = 'lr-signs';
+      if (MODEL.signs) {
+        if (conf < 0.5) showSigns(sg, p); else { const b = document.createElement('button'); b.type = 'button'; b.className = 'lr-signbtn'; b.textContent = 'Show the signs'; b.onclick = () => showSigns(sg, p); sg.appendChild(b); }
+      }
+      li.appendChild(sg); li.appendChild(tools); list.appendChild(li);
       prev = (ch != null && ch >= 0) ? ch : (cands[0] ? cands[0].w : null);
     });
     writeOut(pcs.length);
@@ -2110,7 +2222,7 @@ if ('serviceWorker' in navigator) {
       loadAll().then(() => { if (!line.L2) line.L2 = window.WordNet.prepareLine(line.px, line.W64);
         return MODEL.findWords(line.L2, (d, n) => { msg.textContent = `Finding the words… ${Math.round(100 * d / n)} %`; }); })
         .then(cuts => { line.cuts = cuts.map(x => Math.round(x / 2)); choice.clear(); drawLine(); buildPieces();
-          msg.textContent = 'The reader has placed the cuts. Check them.'; })
+          msg.textContent = 'The reader has placed the cuts where it found words. Check them: click the line to add a cut, click a cut to remove it.'; })
         .catch(() => { msg.textContent = 'The words could not be found. Set the cuts by hand.'; })
         .finally(() => { b.disabled = false; });
     });
