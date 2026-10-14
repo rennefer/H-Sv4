@@ -465,6 +465,17 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 <meta name="theme-color" content="#a8461d">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<style id="phone-tabs">
+/* phones and tablets: bigger side tabs, easier to see and tap */
+@media (max-width: 900px), (pointer: coarse) {
+  .sb-zone{ width:34px; }
+  .sb-handle{ width:34px; height:132px; }
+  .sb-handle .bar{ width:4px; height:40px; }
+  .search-zone{ width:34px; }
+  .search-handle{ width:34px; height:120px; }
+  .search-handle .sh-glyph{ font-size:22px; }
+}
+</style>
 </head><body>
 <div class="sb-zone"><div class="sb-handle"><div class="bar"></div></div></div>
 <aside class="sidebar">
@@ -551,9 +562,9 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 
       <h2>What the reader can and cannot do yet</h2>
       <p>Printed hieroglyphs: the reader finds the signs and how they are stacked, and compares them with the JSesh sign shapes and with signs learnt from the Horus and Seth transcriptions; how often signs follow each other in our texts helps it choose. A clean line from JSesh comes out almost entirely right; in the Horus and Seth transcriptions it reads about five signs in six correctly. Check the box before you use the line, and correct what it got wrong.</p>
-      <p>For every piece of your line the reader keeps only the ink of that piece, then two small neural networks guess the word. They learnt from about 11,500 word pictures that were checked by hand: the words of the Two Brothers, Horus and Seth and Wenamun, and the cleaned word pictures of the dictionary. The second network also finds which signs are in the piece and where, and the guesses are checked against the spellings of the words. A word is its transliteration together with its spelling, so Hr written 𓅃𓅆 (Horus) and Hr written 𓁷𓏭𓏤 (upon) are different words. Tested on whole lines from pages it had not learnt from, cut where the checked words end, the first guess had the right word and spelling for 64&nbsp;% of the words in Two Brothers, 49&nbsp;% in Wenamun and 47&nbsp;% in Horus and Seth, and among the first five for 81&nbsp;%, 71&nbsp;% and 62&nbsp;%. </p>
-      <p>The reader cuts the line itself (<em>Find the words</em> runs again after you change the line): it tries many cuts and keeps the split into words that the networks find most convincing (they have also learnt what a wrongly cut piece looks like). This takes some seconds. On the same test lines it found and read rightly about 47&nbsp;% of the words in Two Brothers, 30&nbsp;% in Wenamun and 35&nbsp;% in Horus and Seth, against about 13&nbsp;% with the quick cuts. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. The cuts it suggests fall where the ink thins out, which often but not always is where a word ends: move them where they belong for the best guesses.</p>
-      <p>So for now it is an assistant: you make the choices, it does the looking up and the writing. It gets better as the cleaned words from our review are added, and better still once it reads sign by sign.</p>
+      <p>For every piece of your line the reader keeps only the ink of that piece, then two small neural networks guess the word. They learnt from about 11,500 word pictures that were checked by hand: the words of the Two Brothers, Horus and Seth and Wenamun, and the cleaned word pictures of the dictionary. The second network also finds which signs are in the piece and where, and the guesses are checked against the spellings of the words. Tested on whole lines from pages it had not learnt from, cut where the checked words end, the first guess had the right word and spelling for 64&nbsp;% of the words in Two Brothers, 49&nbsp;% in Wenamun and 47&nbsp;% in Horus and Seth, and among the first five for 81&nbsp;%, 71&nbsp;% and 62&nbsp;%. </p>
+      <p>The reader cuts the line itself as soon as it is loaded (press <em>Find the words</em> to do it again): it tries many cuts and keeps the split into words that the networks find most convincing (they have also learnt what a wrongly cut piece looks like). This takes some seconds. On the same test lines it found and read rightly about 47&nbsp;% of the words in Two Brothers, 30&nbsp;% in Wenamun and 35&nbsp;% in Horus and Seth, against about 13&nbsp;% with the quick cuts. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. Its cuts are guesses: check them, and move them to where the words really end for the best guesses.</p>
+      <p>Where it is not sure of a piece, it shows the signs it sees in it, group by group from the right, so you can read a word it does not know. So for now it is an assistant: you make the choices, it does the looking up and the writing. It gets better with every word that is checked and every sign that is boxed.</p>
       <p class="lw-credits">The transcription is written with the Line Writer: sign shapes from JSesh by Serge Rosmorduc and Serge J. P. Thomas (LGPL), stacking learnt from the JSesh encodings of the three stories.</p>
 
     </main>

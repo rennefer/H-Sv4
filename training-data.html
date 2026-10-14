@@ -237,6 +237,17 @@ footer{
 }
 .footer-logo{ display:block; height:58px; width:auto; margin:0 auto 10px; filter:drop-shadow(0 2px 4px var(--shadow)); }
 </style>
+<style id="phone-tabs">
+/* phones and tablets: bigger side tabs, easier to see and tap */
+@media (max-width: 900px), (pointer: coarse) {
+  .sb-zone{ width:34px; }
+  .sb-handle{ width:34px; height:132px; }
+  .sb-handle .bar{ width:4px; height:40px; }
+  .search-zone{ width:34px; }
+  .search-handle{ width:34px; height:120px; }
+  .search-handle .sh-glyph{ font-size:22px; }
+}
+</style>
 </head>
 <body>
 <div class="sb-zone"><div class="sb-handle"><div class="bar"></div></div></div>
