@@ -408,11 +408,30 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 
 .lw-font a{ color:var(--rubric); }
 .lw-font a:hover{ color:var(--ink-on-dark); }
+
+/* suggested words over the box, as on a phone keyboard */
+.lw-suggest{ display:flex; gap:6px; min-width:0; overflow-x:auto; scrollbar-width:thin; padding:2px 0 6px; min-height:34px; }
+.lw-suggest:empty{ visibility:hidden; }
+.lw-sug{ flex:none; display:inline-flex; align-items:baseline; gap:6px; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:14px; padding:3px 11px 3px 9px; cursor:pointer; font-family:'Inter',sans-serif; font-size:12px; line-height:1.2; }
+.lw-sug .g{ font-family:'Noto Sans Egyptian Hieroglyphs','Segoe UI Historic',sans-serif; font-size:19px; line-height:1; }
+.lw-sug .t{ font-style:italic; color:var(--ink-soft); }
+.lw-sug:hover, .lw-sug:focus-visible{ border-color:var(--rubric); outline:none; }
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<style id="phone-tabs">
+/* phones and tablets: bigger side tabs, easier to see and tap */
+@media (max-width: 900px), (pointer: coarse) {
+  .sb-zone{ width:34px; }
+  .sb-handle{ width:34px; height:132px; }
+  .sb-handle .bar{ width:4px; height:40px; }
+  .search-zone{ width:34px; }
+  .search-handle{ width:34px; height:120px; }
+  .search-handle .sh-glyph{ font-size:22px; }
+}
+</style>
 </head><body>
 <div class="sb-zone"><div class="sb-handle"><div class="bar"></div></div></div>
 <aside class="sidebar">
@@ -460,6 +479,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
           <button type="button" id="lwImport" class="lw-imp" title="Read a picture of printed hieroglyphs into the box. You can also paste a picture into the box.">Import picture</button>
           <input type="file" id="lwFile" accept="image/*" hidden>
         </div>
+        <div id="lwSuggest" class="lw-suggest" role="group" aria-label="Suggested words: tap one to put it in"></div>
         <textarea id="lwText" class="lw-hiero" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" rows="2" placeholder="𓆓𓂧𓈖𓆑"></textarea>
         <div class="lw-keys" role="group" aria-label="Stacking keys">
           <span class="lw-label">Fix a block</span>
@@ -499,6 +519,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
         <aside class="lw-rules" aria-label="How to type">
           <h3 class="lw-label">How to type</h3>
         <p class="lw-rule">A space starts a new word; more spaces add room between words. The signs are stacked for you.</p>
+        <p class="lw-rule">Words are suggested over the box while you type a transliteration, and after each word the words that most often follow it in the three stories. Tap one to put it in.</p>
         <p class="lw-rule">To fix a block, use JSesh keys: <code class="pb-code">𓈖:𓆑</code> above, <code class="pb-code">𓏏*𓏤</code> beside, <code class="pb-code">( )</code> group, <code class="pb-code">-</code> new block.</p>
         <p class="lw-rule">Codes and sound values work too: <code class="pb-code">G17G1</code>, <code class="pb-code">D:d n f</code>.</p>
         <p class="lw-rule">Type a transliteration like <code class="pb-code">Dd</code>. <kbd>Shift</kbd>+<kbd>Space</kbd> or <em>⇄ spellings</em> puts in the hieroglyphs; press again for other spellings and stackings, the most common first.</p>
@@ -1778,6 +1799,44 @@ if ('serviceWorker' in navigator) {
   }
 
   function init() {
+
+    /* suggested words over the box: while a transliteration is typed, the words it can begin; after a word, the words
+       that most often follow it in the three stories (lw-predict.json); tap one to put it in */
+    let PRED = null;
+    fetch('lw-predict.json', { cache: 'no-cache' }).then(r => r.json()).then(j => { PRED = j; suggest(); }).catch(() => {});
+    spellLoad().then(() => suggest());
+    const sigOf = t => Array.from(t || '').filter(c => { const p = c.codePointAt(0); return p >= 0x13000 && p <= 0x1342F; }).join('');
+    function sugChip(sp, tr, en, place) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'lw-sug'; b.title = en || '';
+      b.innerHTML = '<span class="g"></span><span class="t"></span>'; b.firstChild.textContent = sp; b.lastChild.textContent = tr;
+      b.addEventListener('mousedown', e => e.preventDefault());          // keep the cursor in the box
+      b.addEventListener('click', () => { const ta = $('lwText'), v = ta.value, [a, z, txt] = place(sp), pos = a + txt.length;
+        ta.value = v.slice(0, a) + txt + v.slice(z); ta.focus(); ta.setSelectionRange(pos, pos); CYC = null;
+        ta.dispatchEvent(new Event('input', { bubbles: true })); suggest(); });
+      return b;
+    }
+    function suggest() {
+      const box = $('lwSuggest'); if (!box) return; box.innerHTML = '';
+      const ta = $('lwText'), pos = ta.selectionStart, before = ta.value.slice(0, pos), tok = (before.match(/(\S*)$/) || ['', ''])[1], a = pos - tok.length;
+      const after = ta.value.slice(pos), z = pos + ((after.match(/^\S*/) || [''])[0].length);
+      let items = [], place;
+      if (/^[A-Za-z.=\-]+$/.test(tok) && SPELLN) {                           // a transliteration being typed: the words it can begin
+        const n = norm(tok), seen = new Set();
+        Object.keys(SPELLN).filter(k => k.startsWith(n)).forEach(k => SPELLN[k].forEach(x => { if (!seen.has(x[0])) { seen.add(x[0]); items.push([x[0], x[3], x[2], x[1] + (k === n ? 1e6 : 0)]); } }));
+        items.sort((p, q) => q[3] - p[3]); place = sp => [a, z, sp + ' '];
+      } else if (PRED) {                                                     // after a word (or at the start): what usually comes next
+        const prevTok = tok || (before.trimEnd().match(/(\S+)$/) || ['', ''])[1];
+        let key = sigOf(prevTok);
+        if (!key && /^[A-Za-z.=\-]+$/.test(prevTok) && SPELLN[norm(prevTok)]) key = SPELLN[norm(prevTok)][0][0];
+        items = ((key && PRED.next[key]) || (!prevTok ? PRED.start : [])).map(x => [x[0], x[1], x[2], x[3]]);
+        place = tok ? (sp => [pos, pos, ' ' + sp + ' ']) : (sp => [pos, pos, (before && !/\s$/.test(before) ? ' ' : '') + sp + ' ']);
+      }
+      items.slice(0, 7).forEach(x => box.appendChild(sugChip(x[0], x[1], x[2], place)));
+    }
+    $('lwText').addEventListener('input', () => suggest());
+    $('lwText').addEventListener('keyup', e => { if (/^Arrow|Home|End/.test(e.key)) suggest(); });
+    $('lwText').addEventListener('click', () => suggest());
+    $('lwText').addEventListener('focus', () => suggest());
     $('lwText').addEventListener('keydown', cycle);
     $('lwText').addEventListener('input', e => { if (e.isComposing) return; fixHr($('lwText')); soon(fromText)(); });   // a space is only a space; Shift+Space puts in the hieroglyphs
     $('lwIn').addEventListener('input', soon(fromCode));
