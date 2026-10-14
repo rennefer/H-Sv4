@@ -672,6 +672,17 @@ nav.tabs a::before{
 <meta name="theme-color" content="#a8461d">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<style id="phone-tabs">
+/* phones and tablets: bigger side tabs, easier to see and tap */
+@media (max-width: 900px), (pointer: coarse) {
+  .sb-zone{ width:34px; }
+  .sb-handle{ width:34px; height:132px; }
+  .sb-handle .bar{ width:4px; height:40px; }
+  .search-zone{ width:34px; }
+  .search-handle{ width:34px; height:120px; }
+  .search-handle .sh-glyph{ font-size:22px; }
+}
+</style>
 </head><body>
 <div class="sb-zone"><div class="sb-handle"><div class="bar"></div></div></div>
 <aside class="sidebar">
