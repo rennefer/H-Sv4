@@ -531,7 +531,8 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 
       <section class="lr-tool" aria-label="Line reader">
         <div class="lr-drop" id="lrDrop" tabindex="0">
-          <p><strong>Drop a photo of a line here</strong>, paste one, or <label class="lr-file">choose a file<input type="file" id="lrFile" accept="image/*"></label></p>
+          <p><strong>Drop a photo of a line here</strong>, paste one, or <label class="lr-file">choose a file<input type="file" id="lrFile" accept="image/*,.tif,.tiff"></label> (JPEG, PNG or TIFF)</p>
+          <p class="lw-note" id="lrTiffMsg" hidden></p>
           <p class="lw-hint" id="lrDropHint">One line of hieratic, cut fairly close above and below. Drag across the photo to frame the line if it shows more.</p>
         </div>
 
@@ -1199,6 +1200,129 @@ if ('serviceWorker' in navigator) {
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.AutoStack = API;
 })(typeof window !== 'undefined' ? window : this);
 
+/* A small TIFF reader for the Line Reader (browsers cannot show TIFF pictures themselves).
+   Reads the first picture of a TIFF file: uncompressed, LZW, PackBits, Deflate and JPEG compression; strips or tiles;
+   1, 8 or 16 bits; grey, RGB(A), palette and CMYK. Returns a canvas.  Usage: TIFF.toCanvas(arrayBuffer) -> Promise<canvas> */
+(function (root) {
+  'use strict';
+  const TYPES = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 16: 8 };
+  function readIFD(dv, off, le) {
+    const n = dv.getUint16(off, le), tags = {};
+    for (let i = 0; i < n; i++) {
+      const e = off + 2 + i * 12, tag = dv.getUint16(e, le), type = dv.getUint16(e + 2, le), cnt = dv.getUint32(e + 4, le);
+      const size = (TYPES[type] || 1) * cnt, p = size <= 4 ? e + 8 : dv.getUint32(e + 8, le), v = [];
+      for (let k = 0; k < cnt && k < 1 << 20; k++) {
+        if (type === 3 || type === 8) v.push(dv.getUint16(p + 2 * k, le));
+        else if (type === 4 || type === 9 || type === 13) v.push(dv.getUint32(p + 4 * k, le));
+        else if (type === 5 || type === 10) v.push(dv.getUint32(p + 8 * k, le) / dv.getUint32(p + 8 * k + 4, le));
+        else v.push(dv.getUint8(p + k));
+      }
+      tags[tag] = { type, v, p, cnt };
+    }
+    return tags;
+  }
+  function lzw(src) {
+    const pre = new Int32Array(4096), suf = new Uint8Array(4096), len = new Int32Array(4096), first = new Uint8Array(4096);
+    let out = new Uint8Array(Math.max(1024, src.length * 4)), n = 0, bits = 9, pos = 0, next = 258, prev = -1;
+    for (let i = 0; i < 256; i++) { pre[i] = -1; suf[i] = i; len[i] = 1; first[i] = i; }
+    const total = src.length * 8;
+    const put = c => { const L = len[c]; if (n + L > out.length) { const o = new Uint8Array((n + L) * 2); o.set(out); out = o; }
+      let k = c; for (let i = L - 1; i >= 0; i--) { out[n + i] = suf[k]; k = pre[k]; } n += L; };
+    while (pos + bits <= total) {
+      let code = 0; for (let i = 0; i < bits; i++) { code = (code << 1) | ((src[pos >> 3] >> (7 - (pos & 7))) & 1); pos++; }
+      if (code === 257) break;
+      if (code === 256) { next = 258; bits = 9; prev = -1; continue; }
+      if (prev < 0) { put(code); prev = code; continue; }
+      if (code < next) { put(code); if (next < 4096) { pre[next] = prev; suf[next] = first[code]; len[next] = len[prev] + 1; first[next] = first[prev]; next++; } }
+      else { if (next < 4096) { pre[next] = prev; suf[next] = first[prev]; len[next] = len[prev] + 1; first[next] = first[prev]; next++; } put(next - 1); }
+      prev = code;
+      if (next + 1 >= (1 << bits) && bits < 12) bits++;
+    }
+    return out.subarray(0, n);
+  }
+  function packbits(src) {
+    const out = []; let i = 0;
+    while (i < src.length) { const n = (src[i] << 24) >> 24; i++;
+      if (n >= 0) { for (let k = 0; k <= n; k++) out.push(src[i + k]); i += n + 1; }
+      else if (n !== -128) { for (let k = 0; k < 1 - n; k++) out.push(src[i]); i++; } }
+    return new Uint8Array(out);
+  }
+  async function inflate(src) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot unpack this TIFF (Deflate).');
+    const ds = new DecompressionStream('deflate'), w = ds.writable.getWriter(); w.write(src); w.close();
+    return new Uint8Array(await new Response(ds.readable).arrayBuffer());
+  }
+  async function jpegBlock(buf, tables) {
+    let bytes = buf;
+    if (tables && tables.length > 4) {            // JPEGTables: SOI + tables + EOI; the block: SOI + scan + EOI
+      const t = tables.subarray(0, tables.length - 2), b = buf.subarray(2);
+      bytes = new Uint8Array(t.length + b.length); bytes.set(t); bytes.set(b, t.length);
+    }
+    const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/jpeg' }));
+    const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+    const x = c.getContext('2d'); x.drawImage(bmp, 0, 0); return x.getImageData(0, 0, c.width, c.height).data;
+  }
+  async function toCanvas(ab) {
+    const dv = new DataView(ab), bo = dv.getUint16(0);
+    if (bo !== 0x4949 && bo !== 0x4D4D) throw new Error('Not a TIFF file.');
+    const le = bo === 0x4949;
+    if (dv.getUint16(2, le) === 43) throw new Error('BigTIFF files are not supported. Save the picture as an ordinary TIFF, PNG or JPEG.');
+    const t = readIFD(dv, dv.getUint32(4, le), le), g = (k, d) => t[k] ? t[k].v[0] : d, a = k => t[k] ? t[k].v : null;
+    const W = g(256), H = g(257), bps = a(258) || [1], spp = g(277, 1), comp = g(259, 1), photo = g(262, 1), pred = g(317, 1), planar = g(284, 1);
+    const bits = bps[0], extra = a(338) || [], fill = g(266, 1);
+    if (!W || !H) throw new Error('The TIFF has no picture size.');
+    if (W * H > 30e6) throw new Error('This TIFF is very large (' + W + ' × ' + H + '). Crop it to the lines you want to read first.');
+    const tiled = !!t[322], tw = tiled ? g(322) : W, th = tiled ? g(323) : g(278, H);
+    const offs = a(tiled ? 324 : 273), counts = a(tiled ? 325 : 279);
+    const jt = t[347] ? new Uint8Array(ab, t[347].p, t[347].cnt) : null;
+    const out = new Uint8ClampedArray(W * H * 4); out.fill(255);
+    const map = a(320), across = tiled ? Math.ceil(W / tw) : 1;
+    const bpr = Math.ceil(tw * (planar === 2 ? 1 : spp) * bits / 8);    // bytes per row of a block
+    for (let bi = 0; bi < offs.length; bi++) {
+      const plane = planar === 2 ? Math.floor(bi / (offs.length / spp)) : 0, bj = planar === 2 ? bi % (offs.length / spp) : bi;
+      const bx = tiled ? (bj % across) * tw : 0, by = tiled ? Math.floor(bj / across) * th : bj * th;
+      const raw = new Uint8Array(ab, offs[bi], counts ? counts[bi] : ab.byteLength - offs[bi]);
+      if (comp === 7 || comp === 6) {             // JPEG: the browser decodes the block (colour already converted)
+        const px = await jpegBlock(raw, jt), bw = tw, bh = Math.min(th, px.length / 4 / bw);
+        for (let y = 0; y < bh && by + y < H; y++) for (let x = 0; x < bw && bx + x < W; x++) {
+          const s = (y * bw + x) * 4, d = ((by + y) * W + bx + x) * 4; out[d] = px[s]; out[d + 1] = px[s + 1]; out[d + 2] = px[s + 2]; }
+        continue;
+      }
+      let b = comp === 1 ? raw : comp === 5 ? lzw(raw) : comp === 32773 ? packbits(raw) : (comp === 8 || comp === 32946) ? await inflate(raw) : null;
+      if (!b) throw new Error('This TIFF uses a compression the reader cannot unpack (' + comp + '). Save it as PNG or JPEG.');
+      if (fill === 2 && bits < 8) b = b.map(v => { let r = 0; for (let i = 0; i < 8; i++) r |= ((v >> i) & 1) << (7 - i); return r; });
+      const ns = planar === 2 ? 1 : spp, rows = Math.min(th, H - by);
+      const dvb = new DataView(b.buffer, b.byteOffset, b.byteLength);
+      for (let y = 0; y < (tiled ? th : rows); y++) {
+        const row = new Float64Array(tw * ns);
+        for (let x = 0; x < tw * ns; x++) {
+          const o = y * bpr;
+          if (bits === 8) row[x] = b[o + x] || 0;
+          else if (bits === 16) row[x] = (o + 2 * x + 1 < b.length) ? dvb.getUint16(o + 2 * x, le) : 0;
+          else if (bits === 32) row[x] = (o + 4 * x + 3 < b.length) ? (t[339] && t[339].v[0] === 3 ? dvb.getFloat32(o + 4 * x, le) * 255 : dvb.getUint32(o + 4 * x, le) / 16843009) : 0;
+          else { const bit = x * bits, by8 = b[o + (bit >> 3)] || 0; row[x] = (by8 >> (8 - bits - (bit & 7))) & ((1 << bits) - 1); }
+        }
+        if (pred === 2) for (let x = ns; x < tw * ns; x++) row[x] = bits === 16 ? (row[x] + row[x - ns]) & 65535 : bits === 8 ? (row[x] + row[x - ns]) & 255 : row[x] + row[x - ns];
+        if (by + y >= H) break;
+        const max = bits === 16 ? 65535 : bits === 32 ? 255 : (1 << bits) - 1;
+        for (let x = 0; x < tw && bx + x < W; x++) {
+          const d = ((by + y) * W + bx + x) * 4, v = k => row[x * ns + k] * 255 / max;
+          if (planar === 2) { if (plane < 3) out[d + plane] = (photo <= 1) ? 0 : v(0); if (photo <= 1 && plane === 0) { const q = photo === 0 ? 255 - v(0) : v(0); out[d] = out[d + 1] = out[d + 2] = q; } continue; }
+          if (photo === 3 && map) { const i = row[x * ns], n = map.length / 3; out[d] = map[i] >> 8; out[d + 1] = map[i + n] >> 8; out[d + 2] = map[i + 2 * n] >> 8; }
+          else if (photo === 2 || photo === 6) { out[d] = v(0); out[d + 1] = v(1); out[d + 2] = v(2); if (spp > 3 && extra.length && extra[0]) out[d + 3] = v(3); }
+          else if (photo === 5) { const c = v(0), m = v(1), yy = v(2), kk = v(3); out[d] = (255 - c) * (255 - kk) / 255; out[d + 1] = (255 - m) * (255 - kk) / 255; out[d + 2] = (255 - yy) * (255 - kk) / 255; }
+          else { const q = photo === 0 ? 255 - v(0) : v(0); out[d] = out[d + 1] = out[d + 2] = q; }
+        }
+      }
+    }
+    // a white background under any transparency
+    for (let i = 0; i < out.length; i += 4) if (out[i + 3] < 255) { const al = out[i + 3] / 255; out[i] = out[i] * al + 255 * (1 - al); out[i + 1] = out[i + 1] * al + 255 * (1 - al); out[i + 2] = out[i + 2] * al + 255 * (1 - al); out[i + 3] = 255; }
+    const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').putImageData(new ImageData(out, W, H), 0, 0);
+    return c;
+  }
+  root.TIFF = { toCanvas };
+})(typeof window !== 'undefined' ? window : this);
+
 /* Line reader core (website side). Twin of scan/core.py: same ink finding, same features,
    so pieces of an imported line can be compared with the word pictures of our three papyri. */
 (function (root) {
@@ -1469,7 +1593,7 @@ if ('serviceWorker' in navigator) {
     return out.sort((a, b) => a - b);
   }
   /* rgba of the word (cut to its height, scaled to 64 rows) -> groups right to left: [{signs:[{code,p}]}] */
-  function signGroups(net, cls, rgba, W0, B) {
+  function signGroups(net, cls, rgba, W0, B, full) {
     const ink0 = inkMed(rgba, W0, 64), comp0 = components(ink0, W0, 64);
     // the word: all its ink, columns trimmed
     let c0 = W0, c1 = -1; for (let y = 0; y < 64; y++) for (let x = 0; x < W0; x++) if (ink0[y * W0 + x]) { if (x < c0) c0 = x; if (x > c1) c1 = x; }
@@ -1486,7 +1610,8 @@ if ('serviceWorker' in navigator) {
     const out = []; let j = n - 1;
     while (j > 0 && bp[j] != null) { const i = bp[j], v = seg.get(i * 1000 + j);
       const top = Array.from(v.p.keys()).sort((a, b) => v.p[b] - v.p[a]).slice(0, 2).filter(k => v.p[k] >= 0.15).map(k => ({ code: cls[k], p: v.p[k] }));
-      out.push({ signs: top }); j = i; }
+      const o = { signs: top }; if (full) o.top8 = Array.from(v.p.keys()).sort((a, b) => v.p[b] - v.p[a]).slice(0, 8).map(k => [cls[k], +v.p[k].toFixed(4)]);
+      out.push(o); j = i; }
     return out;            // from the right end of the word to the left
   }
   /* rows and columns of the ink parts at least half inside columns x0..x1 of the line (or null) */
@@ -2045,11 +2170,18 @@ if ('serviceWorker' in navigator) {
 
   /* ---------- 1: import and frame ---------- */
   function useFile(file) {
-    if (!file || !/^image\//.test(file.type)) return;
-    const u = URL.createObjectURL(file), im = new Image();
-    im.onload = () => { img = im; frame = null; showFrame(); };
-    im.src = u;
+    if (!file) return;
+    const tif = /tiff?$/i.test(file.type) || /\.tiff?$/i.test(file.name || '');
+    if (!tif && !/^image\//.test(file.type)) return;
+    const im = new Image();
+    im.onload = () => { img = im; frame = null; const m = $('lrTiffMsg'); if (m) m.hidden = true; showFrame(); };
+    if (!tif) { im.src = URL.createObjectURL(file); return; }
+    // TIFF: browsers cannot show it, so it is unpacked here (tiff.js) and handed on as a PNG
+    file.arrayBuffer().then(ab => window.TIFF.toCanvas(ab)).then(c => new Promise(r => c.toBlob(r, 'image/png')))
+      .then(b => { im.src = URL.createObjectURL(b); })
+      .catch(e => { $('lrList').innerHTML = ''; alertMsg((e && e.message) || 'The TIFF file could not be read.'); });
   }
+  function alertMsg(t) { const d = $('lrTiffMsg'); if (d) { d.textContent = t; d.hidden = false; } }
   let fscale = 1;
   function showFrame() {
     $('lrFrame').hidden = false; $('lrCut').hidden = true; $('lrPieces').hidden = true; $('lrOut').hidden = true; $('lrPrint').hidden = true;
