@@ -409,6 +409,14 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lw-font a{ color:var(--rubric); }
 .lw-font a:hover{ color:var(--ink-on-dark); }
 
+/* suggested words over the box, as on a phone keyboard */
+.lw-suggest{ display:flex; gap:6px; min-width:0; overflow-x:auto; scrollbar-width:thin; padding:2px 0 6px; min-height:34px; }
+.lw-suggest:empty{ visibility:hidden; }
+.lw-sug{ flex:none; display:inline-flex; align-items:baseline; gap:6px; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:14px; padding:3px 11px 3px 9px; cursor:pointer; font-family:'Inter',sans-serif; font-size:12px; line-height:1.2; }
+.lw-sug .g{ font-family:'Noto Sans Egyptian Hieroglyphs','Segoe UI Historic',sans-serif; font-size:19px; line-height:1; }
+.lw-sug .t{ font-style:italic; color:var(--ink-soft); }
+.lw-sug:hover, .lw-sug:focus-visible{ border-color:var(--rubric); outline:none; }
+
 /* ---------- line reader ---------- */
 .lr-tool{ display:flex; flex-direction:column; gap:18px; margin:0 0 40px; }
 .lr-drop{ border:2px dashed var(--panel-line); border-radius:4px; padding:22px; text-align:center; background:var(--panel-bg); }
@@ -460,6 +468,10 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lr-group .g{ font-family:'Noto Sans Egyptian Hieroglyphs','Segoe UI Historic',sans-serif; font-size:18px; line-height:1; }
 .lr-group .c{ font-size:11px; color:var(--ink-soft-on-dark); font-variant-numeric:tabular-nums; }
 .lr-signbtn{ font:inherit; font-size:12px; background:transparent; color:var(--ink-soft-on-dark); border:1px solid var(--line); border-radius:3px; padding:3px 9px; cursor:pointer; }
+
+.lr-cand .l{ font-family:'EB Garamond',serif; font-size:11px; letter-spacing:.02em; opacity:.65; text-align:center; }
+.lr-cand .l::before{ content:'lemma '; font-variant:small-caps; }
+.lr-cand .e.mine::before{ content:'my translation: '; font-style:normal; font-size:10.5px; opacity:.75; }
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -562,8 +574,9 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 
       <h2>What the reader can and cannot do yet</h2>
       <p>Printed hieroglyphs: the reader finds the signs and how they are stacked, and compares them with the JSesh sign shapes and with signs learnt from the Horus and Seth transcriptions; how often signs follow each other in our texts helps it choose. A clean line from JSesh comes out almost entirely right; in the Horus and Seth transcriptions it reads about five signs in six correctly. Check the box before you use the line, and correct what it got wrong.</p>
-      <p>For every piece of your line the reader keeps only the ink of that piece, then two small neural networks guess the word. They learnt from about 11,500 word pictures that were checked by hand: the words of the Two Brothers, Horus and Seth and Wenamun, and the cleaned word pictures of the dictionary. The second network also finds which signs are in the piece and where, and the guesses are checked against the spellings of the words. Tested on whole lines from pages it had not learnt from, cut where the checked words end, the first guess had the right word and spelling for 64&nbsp;% of the words in Two Brothers, 49&nbsp;% in Wenamun and 47&nbsp;% in Horus and Seth, and among the first five for 81&nbsp;%, 71&nbsp;% and 62&nbsp;%. </p>
-      <p>The reader cuts the line itself as soon as it is loaded (press <em>Find the words</em> to do it again): it tries many cuts and keeps the split into words that the networks find most convincing (they have also learnt what a wrongly cut piece looks like). This takes some seconds. On the same test lines it found and read rightly about 47&nbsp;% of the words in Two Brothers, 30&nbsp;% in Wenamun and 35&nbsp;% in Horus and Seth, against about 13&nbsp;% with the quick cuts. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. Its cuts are guesses: check them, and move them to where the words really end for the best guesses.</p>
+      <p>For every piece of your line the reader keeps only the ink of that piece, then two small neural networks guess the word. They learnt from about 13,900 word pictures that were checked by hand: the words of the Two Brothers, Horus and Seth and Wenamun, and the cleaned word pictures of the dictionary. The second network also finds which signs are in the piece and where, and the guesses are checked against the spellings of the words. Tested on whole lines from pages it had not learnt from, cut where the checked words end, the first guess had the right word and spelling for 51&nbsp;% of the words in Two Brothers, 34&nbsp;% in Wenamun and 54&nbsp;% in Horus and Seth, and among the first five for 69&nbsp;%, 49&nbsp;% and 68&nbsp;%. (These test pages now hold many more checked words, rare ones too, so the numbers are not comparable with earlier ones.) </p>
+      <p>The reader cuts the line itself as soon as it is loaded (press <em>Find the words</em> to do it again): it tries many cuts and keeps the split into words that the networks find most convincing (they have also learnt what a wrongly cut piece looks like). This takes some seconds. On the same test lines it found and read rightly about 44&nbsp;% of the words in Two Brothers, 31&nbsp;% in Wenamun and 50&nbsp;% in Horus and Seth (its words lined up in order with the words of each line). Two words written over each other, like <i>n</i> over <i>f</i>, cannot be cut apart, so the reader reads the commonest of these pairs together as one piece. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. Its cuts are guesses: check them, and move them to where the words really end for the best guesses.</p>
+      <p>Under each guessed word stands its lemma, the dictionary word it belongs to, with its meaning from R.&nbsp;O. Faulkner, <em>A Concise Dictionary of Middle Egyptian</em>. Where the word could not be matched in that dictionary, my own translation is shown instead, marked as such.</p>
       <p>Where it is not sure of a piece, it shows the signs it sees in it, group by group from the right, so you can read a word it does not know. So for now it is an assistant: you make the choices, it does the looking up and the writing. It gets better with every word that is checked and every sign that is boxed.</p>
       <p class="lw-credits">The transcription is written with the Line Writer: sign shapes from JSesh by Serge Rosmorduc and Serge J. P. Thomas (LGPL), stacking learnt from the JSesh encodings of the three stories.</p>
 
@@ -1547,16 +1560,26 @@ if ('serviceWorker' in navigator) {
         .sort((a, c) => c.score - a.score).slice(0, limit || 8);
     }
     const junk = M.words.findIndex(w => w[0] === '_junk');
+    const nw = M.words.map(w => (w[5] && w[5].length) || 1);   // a stacked pair is two words
     /* the best word for a piece (both nets' mean log-probability, 'not a word' left out) */
     function bestWord(pic) {
-      const r = nets.map(f => f(pic)), lp = r.map(o => logsoft(o.z)); let b = -Infinity, a = -1;
-      for (let i = 0; i < M.words.length; i++) { if (i === junk) continue; const v = (lp[0][i] + lp[1][i]) / 2; if (v > b) { b = v; a = i; } }
+      const r = nets.map(f => f(pic)), lp = r.map(o => logsoft(o.z)), v = new Float64Array(M.words.length);
+      for (let i = 0; i < M.words.length; i++) v[i] = i === junk ? -Infinity : (lp[0][i] + lp[1][i]) / 2;
+      return v;
+    }
+    /* the best word for a piece of a given width: a word much wider or narrower than it usually is loses (M.wstat) */
+    function pickWord(v, width, ww) {
+      let b = -Infinity, a = -1; const lw = Math.log(Math.max(1, width)), S = M.wstat;
+      for (let i = 0; i < v.length; i++) { let x = v[i]; if (x === -Infinity) continue;
+        if (ww && S && S[i]) { const z = (lw - S[i][0]) / S[i][1]; x -= ww * 0.5 * Math.min(z * z, 16); }
+        if (x > b) { b = x; a = i; } }
       return [b, a];
     }
     /* split the line into words: returns the cuts (columns of the 64-row line). onStep(done, total) for progress */
-    async function findWords(L, onStep) {
-      const P = M.seg, W = L.W, c = [0, ...dips(L.ink, W, 4), W], n = c.length, sc = new Map(), todo = [];
-      for (let i = 0; i < n; i++) for (let j = i + 1; j < Math.min(n, i + 7); j++) { if (c[j] - c[i] > 200) break; todo.push([i, j]); }
+    async function findWords(L, onStep, Plist) {
+      const W = L.W, c = [0, ...dips(L.ink, W, 4), W], n = c.length, sc = new Map(), todo = [];
+      const WIN = Math.max(...(Plist || [M.seg]).map(P => P.win || 6));      // longest piece, in cut points
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < Math.min(n, i + WIN + 1); j++) { if (c[j] - c[i] > 200) break; todo.push([i, j]); }
       for (let t = 0; t < todo.length; t++) {
         const [i, j] = todo[t], pic = piecePicture(L, c[i], c[j]);
         if (pic) sc.set(i * 10000 + j, bestWord(pic));
@@ -1564,16 +1587,20 @@ if ('serviceWorker' in navigator) {
       }
       const pg = new Float64Array(n).fill(1);
       for (let k = 1; k < n - 1; k++) pg[k] = Math.min(1, Math.max(1e-3, gapProb(M.gap, gapFeat(L.ink, W, c[k]))));
-      const D = new Float64Array(n).fill(-1e9), bp = new Array(n).fill(null); D[0] = 0;
-      for (let j = 1; j < n; j++) {
-        if (D[j - 1] - P.skip > D[j]) { D[j] = D[j - 1] - P.skip; bp[j] = [j - 1, null]; }
-        const cut = j < n - 1 ? P.gapW * Math.log(pg[j]) : 0;
-        for (let i = Math.max(0, j - 6); i < j; i++) { const v = sc.get(i * 10000 + j); if (!v) continue;
-          const s = D[i] + v[0] + P.bonus + cut; if (s > D[j]) { D[j] = s; bp[j] = [i, v[1]]; } }
+      function dp(P) {
+        const D = new Float64Array(n).fill(-1e9), bp = new Array(n).fill(null); D[0] = 0;
+        const pb = P.pairBonus != null ? P.pairBonus : 2 * P.bonus;   // a stacked pair counts as two words
+        for (let j = 1; j < n; j++) {
+          if (D[j - 1] - P.skip > D[j]) { D[j] = D[j - 1] - P.skip; bp[j] = [j - 1, null]; }
+          const cut = j < n - 1 ? P.gapW * Math.log(pg[j]) : 0;
+          for (let i = Math.max(0, j - (P.win || 6)); i < j; i++) { const vv = sc.get(i * 10000 + j); if (!vv) continue; const v = pickWord(vv, c[j] - c[i], P.widthW || 0);
+            const s = D[i] + v[0] + (nw[v[1]] > 1 ? pb : P.bonus) + cut; if (s > D[j]) { D[j] = s; bp[j] = [i, v[1]]; } }
+        }
+        const cuts = []; let j = n - 1;
+        while (j > 0 && bp[j]) { const i = bp[j][0]; if (i > 0) cuts.push(c[i]); j = i; }
+        return cuts.sort((a, b) => a - b);
       }
-      const cuts = []; let j = n - 1;
-      while (j > 0 && bp[j]) { const i = bp[j][0]; if (i > 0) cuts.push(c[i]); j = i; }
-      return cuts.sort((a, b) => a - b);
+      return Plist ? Plist.map(dp) : dp(M.seg);
     }
     const gnet = M.group ? makeGroupNet(M.group) : null;
     function signs(rgba, W) { return gnet ? signGroups(gnet, M.group.cls, rgba, W, M.group.B || 1) : null; }
@@ -1970,7 +1997,7 @@ if ('serviceWorker' in navigator) {
   function loadAll() {
     if (ready) return ready;
     ready = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lr-wordnet.json'].map(u => fetch(u, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
-      .then(([g, sm, m]) => { G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0]); MODEL = window.WordNet.loadModel(m); });
+      .then(([g, sm, m]) => { G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0, w[4] || null, w[5] || null]); MODEL = window.WordNet.loadModel(m); });
     return ready;
   }
 
@@ -2163,7 +2190,7 @@ if ('serviceWorker' in navigator) {
       cands.forEach(c => {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'lr-cand' + (ch === c.w ? ' on' : '');
         b.setAttribute('aria-pressed', ch === c.w);
-        b.innerHTML = `<span class="g">${wordGlyphs(c.word, 34)}</span><span class="t">${esc(c.word[0])}</span><span class="e">${esc(c.word[2] || '')}</span>`;
+        b.innerHTML = `<span class="g">${wordGlyphs(c.word, 34)}</span><span class="t">${esc(c.word[0])}</span>${lemmaHTML(c.word)}`;
         b.addEventListener('click', () => { choice.set(i, ch === c.w ? undefined : c.w); if (choice.get(i) === undefined) choice.delete(i); buildPieces(); });
         row.appendChild(b);
       });
@@ -2172,9 +2199,9 @@ if ('serviceWorker' in navigator) {
       const inp = tools.querySelector('input'), found = tools.querySelector('.lr-found');
       inp.addEventListener('input', () => {
         const q = inp.value.trim().toLowerCase(); if (!q) { found.innerHTML = ''; return; }
-        const hits = MODEL.words.map((w, k) => [w, k]).filter(([w]) => w[0].toLowerCase().startsWith(q) || (w[2] || '').toLowerCase().includes(q)).sort((a, b) => b[0][3] - a[0][3]).slice(0, 10);
+        const hits = MODEL.words.map((w, k) => [w, k]).filter(([w]) => w[0].toLowerCase().startsWith(q) || (w[2] || '').toLowerCase().includes(q) || (w[4] ? (w[4][0] + ' ' + w[4][1]).toLowerCase().includes(q) : false)).sort((a, b) => b[0][3] - a[0][3]).slice(0, 10);
         found.innerHTML = ''; hits.forEach(([w, k]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'lr-cand small';
-          b.innerHTML = `<span class="g">${wordGlyphs(w, 26)}</span><span class="t">${esc(w[0])}</span><span class="e">${esc(w[2] || '')}</span>`;
+          b.innerHTML = `<span class="g">${wordGlyphs(w, 26)}</span><span class="t">${esc(w[0])}</span>${lemmaHTML(w)}`;
           b.addEventListener('click', () => { choice.set(i, k); buildPieces(); }); found.appendChild(b); });
       });
       tools.querySelector('.lr-skip').addEventListener('click', () => { if (choice.get(i) === -1) choice.delete(i); else choice.set(i, -1); buildPieces(); });
@@ -2191,6 +2218,11 @@ if ('serviceWorker' in navigator) {
     });
     writeOut(pcs.length);
   }
+  // the meaning shown for a word: its lemma in Faulkner's Concise Dictionary of Middle Egyptian, or else Katrine's own translation
+  function lemmaHTML(w) {
+    if (w[4]) return `<span class="l">${esc(w[4][0])}</span><span class="e">${esc(w[4][1])}</span>`;
+    return `<span class="e mine">${esc(w[2] || '')}</span>`;
+  }
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   /* ---------- 4: the transcription of the chosen words ---------- */
@@ -2198,7 +2230,7 @@ if ('serviceWorker' in navigator) {
     const chosen = []; for (let i = 0; i < n; i++) { const c = choice.get(i); if (c != null && c >= 0) chosen.push(MODEL.words[c]); }
     const uni = chosen.map(w => w[1]).filter(Boolean).join(' ');
     $('lrTr').textContent = chosen.map(w => w[0]).join(' ');
-    $('lrEn').textContent = chosen.map(w => w[2]).filter(Boolean).join(' · ');
+    $('lrEn').textContent = chosen.map(w => w[4] ? w[4][1].split(';')[0] : w[2]).filter(Boolean).join(' · ');
     if (!chosen.length) { $('lrStage').innerHTML = '<div class="lw-loading">Choose a word for a piece to start the transcription.</div>'; return; }
     try { const p = AS.parseInput(uni, SM, G)[0];
       const L = LW.layoutLine(ST.toMdC(p.units), G, { direction: 'rtl' });
