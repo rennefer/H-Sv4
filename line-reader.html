@@ -474,6 +474,20 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lr-cand .e.mine::before{ content:'my translation: '; font-style:normal; font-size:10.5px; opacity:.75; }
 
 .lr-cand .lr-bysigns{ display:block; font-size:11px; letter-spacing:.03em; opacity:.75; margin-top:2px; font-variant:small-caps; }
+
+.lr-busy{ margin:10px 0 12px; padding:12px 14px 10px; background:#f4ecd6; color:#2a2116; border:2px solid var(--rubric); border-radius:6px; box-shadow:0 0 0 4px rgba(194,95,44,.18); font-family:'Inter',sans-serif; }
+.lr-busy-top{ display:flex; align-items:center; gap:10px; font-size:15px; font-weight:600; }
+.lr-busy-t{ flex:1; min-width:0; }
+.lr-busy-p{ font-variant-numeric:tabular-nums; color:var(--rubric-deep); font-size:16px; }
+.lr-busy-dot{ width:12px; height:12px; border-radius:50%; background:var(--rubric); flex:none; animation:lrPulse 1s ease-in-out infinite; }
+@keyframes lrPulse{ 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.35; transform:scale(.7); } }
+.lr-busy-bar{ height:12px; margin-top:9px; background:rgba(42,33,22,.14); border-radius:6px; overflow:hidden; }
+.lr-busy-bar i{ display:block; height:100%; width:0; border-radius:6px; transition:width .25s ease;
+  background:repeating-linear-gradient(45deg, var(--rubric) 0 10px, var(--rubric-deep) 10px 20px); background-size:28px 28px; animation:lrStripe 1s linear infinite; }
+@keyframes lrStripe{ from{ background-position:0 0; } to{ background-position:28px 0; } }
+.lr-busy-n{ margin-top:7px; font-size:12.5px; color:#6b5c44; }
+#lrPieces.lr-working .lr-list{ opacity:.45; pointer-events:none; filter:grayscale(.4); transition:opacity .2s; }
+@media (prefers-reduced-motion: reduce){ .lr-busy-dot, .lr-busy-bar i{ animation:none; } }
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -555,6 +569,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
         <div class="lr-step" id="lrCut" hidden>
           <div class="lr-head"><span class="lw-label">2 · Word pieces</span>
             <span class="lr-cutbar"><button type="button" id="lrFind">Find the words</button><label class="lr-dens">Cuts <input type="range" id="lrDens" min="8" max="30" value="24" aria-label="How many cuts to suggest"> <span class="lw-hint">fewer &larr;&nbsp;&rarr; more</span></label></span></div>
+          <div class="lr-busy" id="lrBusy" hidden role="status" aria-live="polite"><div class="lr-busy-top"><span class="lr-busy-dot" aria-hidden="true"></span><span class="lr-busy-t"></span><span class="lr-busy-p"></span></div><div class="lr-busy-bar"><i></i></div><div class="lr-busy-n"></div></div>
           <p class="lw-hint" id="lrFindMsg" hidden></p>
           <p class="lw-hint">The reader first shows quick cuts, then looks for the words and moves the cuts there (some seconds). Click the line to add a cut; click a cut to remove it. The text runs right to left.</p>
           <div class="lr-canvas-wrap"><canvas id="lrLine"></canvas></div>
@@ -563,6 +578,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
         <div class="lr-step" id="lrPieces" hidden>
           <div class="lr-head"><span class="lw-label">3 · Choose the words</span>
             <span class="lw-hint">Best guesses first. If none fits, search for the word or leave the piece out.</span></div>
+          <div class="lr-busy" id="lrBusy2" hidden role="status" aria-live="polite"><div class="lr-busy-top"><span class="lr-busy-dot" aria-hidden="true"></span><span class="lr-busy-t"></span><span class="lr-busy-p"></span></div><div class="lr-busy-bar"><i></i></div><div class="lr-busy-n"></div></div>
           <p class="lw-note" id="lrSeqMsg" hidden></p>
 <ol class="lr-list" id="lrList"></ol>
         </div>
@@ -583,6 +599,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
       <p>When the two networks are unsure of a piece (under 80&nbsp;%), a third network, the sign reader, reads its signs one after the other from the right, as it learnt them from the spellings of the checked words, and every known word is scored by how well its spelling fits what it read. The two scores are added. This lets the reader name words it has never seen in a picture, as long as their spelling is in our word lists; such guesses are marked <em>found by its signs</em>. On the test pages, cut where the checked words end, it raised the right first guess from 51&nbsp;% to 56&nbsp;% of the words.</p>
       <p>Under each guessed word stands its lemma, the dictionary word it belongs to, with its meaning from R.&nbsp;O. Faulkner, <em>A Concise Dictionary of Middle Egyptian</em>. Where the word could not be matched in that dictionary, my own translation is shown instead, marked as such.</p>
       <p>Where it is not sure of a piece, it shows the signs it sees in it, group by group from the right, so you can read a word it does not know. So for now it is an assistant: you make the choices, it does the looking up and the writing. It gets better with every word that is checked and every sign that is boxed.</p>
+      <p class="lw-credits" id="lrVer"></p>
       <p class="lw-credits">The transcription is written with the Line Writer: sign shapes from JSesh by Serge Rosmorduc and Serge J. P. Thomas (LGPL), stacking learnt from the JSesh encodings of the three stories.</p>
 
     </main>
@@ -2214,24 +2231,37 @@ if ('serviceWorker' in navigator) {
     return sc.slice(0, n).map(c => ({ w: c.w, score: c.score, word: ALLW[c.w], signs: c.signs }));
   }
   /* the sign reader works through the unsure pieces one by one, then the list is drawn again */
-  const seqTodo = new Map(); let seqBusy = false;
+  /* a clear progress panel while the reader works; the list of guesses is dimmed until it is done */
+  function busy(id, text, frac, note) { const el = $(id); if (!el) return; el.hidden = false;
+    el.querySelector('.lr-busy-t').textContent = text; el.querySelector('.lr-busy-p').textContent = frac == null ? '' : Math.round(100 * frac) + ' %';
+    el.querySelector('.lr-busy-bar i').style.width = (frac == null ? 0 : Math.max(2, 100 * frac)) + '%'; el.querySelector('.lr-busy-n').textContent = note || '';
+    const p = $('lrPieces'); if (p) p.classList.add('lr-working'); }
+  function busyDone(id) { const el = $(id); if (el) el.hidden = true;
+    if ($('lrBusy').hidden && $('lrBusy2').hidden) { const p = $('lrPieces'); if (p) p.classList.remove('lr-working'); } }
+  const seqTodo = new Map(); let seqBusy = false; let MODEL_SEG = null;
   async function seqWork() {
     if (seqBusy || !seqTodo.size) return; seqBusy = true; const msg = $('lrSeqMsg'), lineNow = line;
     let k = 0; const n = seqTodo.size;
     for (const [key, [p, votes]] of seqTodo) { if (line !== lineNow) break;
-      if (msg) { msg.hidden = false; msg.textContent = `Reading the signs of the unsure words… ${++k} of ${n}`; }
+      ++k; busy('lrBusy2', `Step 2 of 2: reading the signs of the unsure words (${k} of ${n})`, (k - 1) / n, 'The guesses below will change when this is done.');
       await new Promise(r => setTimeout(r, 0)); seqRead(key, p, votes); }
-    seqTodo.clear(); seqBusy = false; if (msg) msg.hidden = true;
+    seqTodo.clear(); seqBusy = false; if (msg) msg.hidden = true; busyDone('lrBusy2');
     if (line === lineNow) buildPieces();
   }
   function loadAll() {
     if (ready) return ready;
     ready = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lr-wordnet.json'].map(u => fetch(u, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
-      .then(([g, sm, m]) => { G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0, w[4] || null, w[5] || null]); MODEL = window.WordNet.loadModel(m); ALLW = MODEL.words.slice(); })
+      .then(([g, sm, m]) => { MODEL_SEG = m.seg; G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0, w[4] || null, w[5] || null]); MODEL = window.WordNet.loadModel(m); ALLW = MODEL.words.slice(); })
       .then(() => fetch('lr-seq.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null))
       .then(S => { if (!S || !window.SignSeq) return;               // the sign reader (optional)
         SEQ = window.SignSeq.makeSeq(S, window.WordNet);
-        SEQ.LEX.forEach(e => { if (e.w >= 0) e.idx = e.w; else { e.idx = ALLW.length; ALLW.push([e.tr, e.eg, e.en || '', 0, e.lem || null, null]); } }); });
+        /* link the sign reader's words to the word model by transliteration and spelling (not by position), so a sign
+           reader and a word model from different updates can never be mixed up */
+        const kk = (t, g) => (t || '').replace(/j/g, 'i').replace(/[.\-= ]/g, '') + '|' + (g || ''), at = new Map();
+        MODEL.words.forEach((w, i) => { if (!w[5] && !at.has(kk(w[0], w[1]))) at.set(kk(w[0], w[1]), i); });
+        let linked = 0;
+        SEQ.LEX.forEach(e => { const i = at.get(kk(e.tr, e.eg)); if (i != null) { e.idx = i; linked++; } else { e.idx = ALLW.length; ALLW.push([e.tr, e.eg, e.en || '', 0, e.lem || null, null]); } });
+        SEQ.linked = linked; }).then(() => { const v = $('lrVer'); if (v) v.textContent = `Reader in use: word networks with ${MODEL.words.length.toLocaleString('en')} words, pieces up to ${(MODEL_SEG && MODEL_SEG.win) || 6} cut points` + (SEQ ? `; sign reader with ${SEQ.LEX.length.toLocaleString('en')} spellings (${SEQ.linked.toLocaleString('en')} linked).` : '; sign reader not loaded.'); });
     return ready;
   }
 
@@ -2561,13 +2591,14 @@ if ('serviceWorker' in navigator) {
     $('lrCopyU').addEventListener('click', e => copy($('lrStage').dataset.uni || '', e.target));
     $('lrCopyT').addEventListener('click', e => copy($('lrTr').textContent, e.target));
     $('lrFind').addEventListener('click', () => {
-      if (!line) return; const b = $('lrFind'), msg = $('lrFindMsg'); b.disabled = true; msg.hidden = false; msg.textContent = 'Finding the words…';
+      if (!line) return; const b = $('lrFind'), msg = $('lrFindMsg'); b.disabled = true; msg.hidden = true;
+      busy('lrBusy', 'Step 1 of 2: finding the words', 0, 'Please wait: the cuts and the guesses below will change when this is done.');
       loadAll().then(() => { if (!line.L2) line.L2 = window.WordNet.prepareLine(line.px, line.W64);
-        return MODEL.findWords(line.L2, (d, n) => { msg.textContent = `Finding the words… ${Math.round(100 * d / n)} %`; }); })
+        return MODEL.findWords(line.L2, (d, n) => { busy('lrBusy', 'Step 1 of 2: finding the words', d / n, 'Please wait: the cuts and the guesses below will change when this is done.'); }); })
         .then(cuts => { line.cuts = cuts.map(x => Math.round(x / 2)); line.found = true; choice.clear(); drawLine(); buildPieces();
-          msg.textContent = 'The reader has placed the cuts where it found words. Check them: click the line to add a cut, click a cut to remove it.'; })
-        .catch(() => { line.found = true; msg.textContent = 'The words could not be found. Set the cuts by hand.'; })
-        .finally(() => { b.disabled = false; });
+          msg.hidden = false; msg.textContent = 'The reader has placed the cuts where it found words. Check them: click the line to add a cut, click a cut to remove it.'; })
+        .catch(() => { line.found = true; msg.hidden = false; msg.textContent = 'The words could not be found. Set the cuts by hand.'; })
+        .finally(() => { b.disabled = false; busyDone('lrBusy'); });
     });
     $('lrDens').addEventListener('change', () => { if (!line) return; line.cuts = R.suggestCuts(line.map, density()); choice.clear(); drawLine(); if (MODEL) buildPieces(); });
     framePointer(); cutPointer();
