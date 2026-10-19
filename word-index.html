@@ -692,7 +692,9 @@ nav.tabs a::before{
 .loc-more{ font-family:'Inter',sans-serif; font-size:11.5px; background:none; border:1px dashed var(--line); border-radius:3px; padding:2px 8px; color:var(--ink-soft); cursor:pointer; }
 .loc-more:hover{ border-color:var(--rubric); color:var(--rubric-deep); }
 @media (max-width:640px){ .wi-row{ grid-template-columns:1fr; } .wi-back{ margin-left:0; } }
-.wi-head .wi-alts{ font-family:'Inter',sans-serif; font-size:11px; color:var(--ink-faint); margin-top:1px; overflow-wrap:anywhere; }
+.wi-head .wi-lemma{ font-family:'Spectral',serif; font-size:13px; color:var(--ink-soft); margin-top:3px; }
+.wi-lemma .wi-lem-tag{ font-family:'Inter',sans-serif; font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); margin-right:6px; }
+.wi-alts{ font-family:'Inter',sans-serif; font-size:11px; color:var(--ink-faint); margin-top:1px; overflow-wrap:anywhere; }
 .wi-mold{ font-family:'Inter',sans-serif; font-style:normal; font-size:9.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-faint); border:1px solid var(--line); border-radius:10px; padding:1px 7px; vertical-align:middle; white-space:nowrap; }
 .wi-fam{ grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 12px; padding-bottom:9px; margin-bottom:3px; border-bottom:1px solid var(--line); }
 .wi-fam-name{ font-family:'Spectral',serif; font-weight:600; font-size:17px; color:var(--ink); }
@@ -739,6 +741,7 @@ nav.tabs a::before{
     </div>
     <a class="sb-link" href="playbook.html" style="margin-top:14px;"><span class="g">𓏛</span>Playbook</a>
     <a class="sb-link" href="line-writer.html"><span class="g">𓏞</span>Line Writer</a>
+    <a class="sb-link" href="line-reader.html"><span class="g">𓁹</span>Line Reader</a>
     <a class="sb-link" href="ateniit.html"><span class="g">𓈖</span>Ateniit – the game</a>
   </nav>
 </aside>
@@ -775,7 +778,7 @@ nav.tabs a::before{
     <div class="result-count" id="wiCount">Loading the word index…</div>
     <div id="wiResults"></div>
     <button class="load-more" id="wiMore" style="display:none;">Show more words</button>
-    <p class="wi-note">Words are gathered into families: a base word with its forms (Dd with Ddt and Ddin; pAy with pAiif, pAii.i, pAiik). Pick a form to see its locations. The families are made by rule, so some may be wrong. Horus and Seth locations come from the dictionary's own word list; Wenamun and Two Brothers locations come from the AI annotations on those pages. Opening one takes you to that line (with the word marked, for Wenamun and Two Brothers). Orange locations are words whose dictionary link is uncertain; a dashed frame round a picture means the word's position on the hieratic is uncertain.</p>
+    <p class="wi-note">Words are gathered into families: a base word with its forms (Dd with Ddt and Ddin; pAy with pAiif, pAii.i, pAiik). Pick a form to see its locations. The families are made by rule, so some may be wrong. Horus and Seth locations come from the dictionary's own word list; Wenamun and Two Brothers locations come from the AI annotations on those pages. Opening one takes you to that line (with the word marked, for Wenamun and Two Brothers). Orange locations are words whose dictionary link is uncertain; a dashed frame round a picture means the word's position on the hieratic is uncertain. The pictures of Wenamun and Two Brothers words are cut with the boxes checked by hand in the word review (5,295 words so far). Under a word stands its <em>lemma</em>, the dictionary word it belongs to, with its meaning from R.&nbsp;O. Faulkner, <em>A Concise Dictionary of Middle Egyptian</em>, where it could be matched by its transliteration and meaning; the search finds those meanings too.</p>
   </section>
 
   </div>
@@ -787,7 +790,7 @@ nav.tabs a::before{
    Optional: word-index-images.json, a map "src:page.line:k" -> picture of that word cut from the hieratic photo.
    If that file exists its pictures are shown on the location chips; without it the page works as text only. */
 (function(){
-  const WI_V = '4fe11c2d1b';   /* stamp of the data files; changes on every rebuild so an older cached copy is never used */
+  const WI_V = '984bd92401';   /* stamp of the data files; changes on every rebuild so an older cached copy is never used */
   const PAGE_SIZE = 80, CHIPS = 18;   /* chips shown per manuscript before "+ N more" */
   let closeStart = 0, WI = null, GROUPS = [], FAMS = [], shown = PAGE_SIZE, current = [], IMGS = null, src = 'all';
   const $ = id => document.getElementById(id);
@@ -814,7 +817,7 @@ nav.tabs a::before{
       const d = '';
       const key = wordKey(canon);
       let g = map.get(key);
-      if(!g){ g = {m:canon, d:d, ds:new Set(), en:new Map(), occ:[], spell:new Map(), written:new Map()}; map.set(key, g); }
+      if(!g){ g = {key:key, m:canon, d:d, ds:new Set(), en:new Map(), occ:[], spell:new Map(), written:new Map()}; map.set(key, g); }
       g.occ.push(o); (o[7]||[]).forEach(x=>g.ds.add(x));
       const e = (o[5]||'').trim(); if(e) g.en.set(e, (g.en.get(e)||0)+1);
       g.spell.set(canon, (g.spell.get(canon)||0)+1);
@@ -834,7 +837,8 @@ nav.tabs a::before{
       g.alts = Array.from(g.written.entries()).sort((a,b)=>b[1]-a[1]).map(x=>x[0]).filter(x=> wordKey(x) !== wordKey(g.m));
       g.sm = normT(g.m);
       g.sms = [g.sm].concat(g.alts.map(normT));
-      g.sen = normIJ(g.enList.join(' | '));
+      g.lem = (WI.lem && WI.lem[g.key]) || null;      /* the lemma in Faulkner's Concise Dictionary of Middle Egyptian */
+      g.sen = normIJ(g.enList.join(' | ') + (g.lem ? ' | ' + g.lem[1] : ''));
       g.sloc = g.occ.map(o=>locText(o).toLowerCase()).join(' | ');
       return g;
     });
@@ -1022,6 +1026,7 @@ nav.tabs a::before{
         '<div class="translit">' + esc(g.m) + (g.mold ? ' <span class="wi-mold" title="Named after Moldenke\u2019s glossary to the Tale of Two Brothers">Moldenke</span>' : '') + '</div>' +
         (g.alts.length ? '<div class="wi-alts">also written ' + esc(g.alts.slice(0, 6).join(', ')) + (g.alts.length > 6 ? ', \u2026' : '') + '</div>' : '') +
         '<div class="english">' + esc(g.enList.slice(0, 6).join('; ')) + (g.enList.length > 6 ? '; …' : '') + '</div>' +
+        (g.lem ? '<div class="wi-lemma" title="Lemma in R. O. Faulkner, A Concise Dictionary of Middle Egyptian"><span class="wi-lem-tag">lemma</span><i>' + esc(g.lem[0]) + '</i> \u00b7 ' + esc(g.lem[1]) + '</div>' : '') +
         '<div class="wi-cnt">' + occ.length + ' location' + (occ.length === 1 ? '' : 's') + '</div>' +
         '<div class="wi-dict">' + dict + '</div></div>' +
         '<div class="wi-locs">' + locs + '</div></div>';
