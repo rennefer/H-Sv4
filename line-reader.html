@@ -472,6 +472,8 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lr-cand .l{ font-family:'EB Garamond',serif; font-size:11px; letter-spacing:.02em; opacity:.65; text-align:center; }
 .lr-cand .l::before{ content:'lemma '; font-variant:small-caps; }
 .lr-cand .e.mine::before{ content:'my translation: '; font-style:normal; font-size:10.5px; opacity:.75; }
+
+.lr-cand .lr-bysigns{ display:block; font-size:11px; letter-spacing:.03em; opacity:.75; margin-top:2px; font-variant:small-caps; }
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -561,7 +563,8 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
         <div class="lr-step" id="lrPieces" hidden>
           <div class="lr-head"><span class="lw-label">3 · Choose the words</span>
             <span class="lw-hint">Best guesses first. If none fits, search for the word or leave the piece out.</span></div>
-          <ol class="lr-list" id="lrList"></ol>
+          <p class="lw-note" id="lrSeqMsg" hidden></p>
+<ol class="lr-list" id="lrList"></ol>
         </div>
 
         <div class="lr-step" id="lrOut" hidden>
@@ -576,7 +579,8 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
       <h2>What the reader can and cannot do yet</h2>
       <p>Printed hieroglyphs: the reader finds the signs and how they are stacked, and compares them with the JSesh sign shapes and with signs learnt from the Horus and Seth transcriptions; how often signs follow each other in our texts helps it choose. A clean line from JSesh comes out almost entirely right; in the Horus and Seth transcriptions it reads about five signs in six correctly. Check the box before you use the line, and correct what it got wrong.</p>
       <p>For every piece of your line the reader keeps only the ink of that piece, then two small neural networks guess the word. They learnt from about 13,900 word pictures that were checked by hand: the words of the Two Brothers, Horus and Seth and Wenamun, and the cleaned word pictures of the dictionary. The second network also finds which signs are in the piece and where, and the guesses are checked against the spellings of the words. Tested on whole lines from pages it had not learnt from, cut where the checked words end, the first guess had the right word and spelling for 50&nbsp;% of the words in Two Brothers, 39&nbsp;% in Wenamun and 56&nbsp;% in Horus and Seth, and among the first five for 68&nbsp;%, 57&nbsp;% and 70&nbsp;%. (These test pages now hold many more checked words, rare ones too, so the numbers are not comparable with earlier ones.) </p>
-      <p>The reader cuts the line itself as soon as it is loaded (press <em>Find the words</em> to do it again): it tries many cuts and keeps the split into words that the networks find most convincing (they have also learnt what a wrongly cut piece looks like). This takes some seconds. On the same test lines it found and read rightly about 48&nbsp;% of the words in Two Brothers, 35&nbsp;% in Wenamun and 54&nbsp;% in Horus and Seth (its words lined up in order with the words of each line). A line that clearly slants is first levelled, column by column, so that its words are read whole. Two words written over each other, like <i>n</i> over <i>f</i>, cannot be cut apart, so the reader reads the commonest of these pairs together as one piece. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. Its cuts are guesses: check them, and move them to where the words really end for the best guesses.</p>
+      <p>The reader cuts the line itself as soon as it is loaded (press <em>Find the words</em> to do it again): it tries many cuts and keeps the split into words that the networks find most convincing (they have also learnt what a wrongly cut piece looks like). This takes some seconds. On the same test lines it found and read rightly about 48&nbsp;% of the words in Two Brothers, 35&nbsp;% in Wenamun and 54&nbsp;% in Horus and Seth (its words lined up in order with the words of each line). A line that clearly slants is first levelled, column by column, so that its words are read whole. When the whole picture is read and it also shows parts of the lines above or below, the reader takes the strongest line of writing in it; to read another line, or for the best result, draw a frame around the line. Two words written over each other, like <i>n</i> over <i>f</i>, cannot be cut apart, so the reader reads the commonest of these pairs together as one piece. It only knows words it has seen; a word that is not in our papyri will be given the nearest word it knows. Its cuts are guesses: check them, and move them to where the words really end for the best guesses.</p>
+      <p>When the two networks are unsure of a piece (under 80&nbsp;%), a third network, the sign reader, reads its signs one after the other from the right, as it learnt them from the spellings of the checked words, and every known word is scored by how well its spelling fits what it read. The two scores are added. This lets the reader name words it has never seen in a picture, as long as their spelling is in our word lists; such guesses are marked <em>found by its signs</em>. On the test pages, cut where the checked words end, it raised the right first guess from 51&nbsp;% to 56&nbsp;% of the words.</p>
       <p>Under each guessed word stands its lemma, the dictionary word it belongs to, with its meaning from R.&nbsp;O. Faulkner, <em>A Concise Dictionary of Middle Egyptian</em>. Where the word could not be matched in that dictionary, my own translation is shown instead, marked as such.</p>
       <p>Where it is not sure of a piece, it shows the signs it sees in it, group by group from the right, so you can read a word it does not know. So for now it is an assistant: you make the choices, it does the looking up and the writing. It gets better with every word that is checked and every sign that is boxed.</p>
       <p class="lw-credits">The transcription is written with the Line Writer: sign shapes from JSesh by Serge Rosmorduc and Serge J. P. Thomas (LGPL), stacking learnt from the JSesh encodings of the three stories.</p>
@@ -1508,6 +1512,20 @@ if ('serviceWorker' in navigator) {
   function prepareLine(rgba, W) { const ink = inkMed(rgba, W, 64); return { ink, W, comp: components(ink, W, 64) }; }
   /* a piece (columns x0..x1 of the 64-row line): the ink parts at least half inside it, trimmed, scaled to 40 rows,
      in the middle of a 40 x 96 picture. Twin: piece() in rd/prep3.py and canvas() in rd/cnn.py */
+  /* the piece's own ink, trimmed (for the sign reader): { sub, h2, w2 } or null */
+  function pieceInk(L, x0, x1) {
+    const W = L.W, H = 64, lab = L.comp.lab, n = L.comp.n; x0 = Math.max(0, Math.round(x0)); x1 = Math.min(W, Math.round(x1));
+    if (x1 - x0 < 2) return null;
+    const tot = new Float64Array(n + 1), ins = new Float64Array(n + 1);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const l = lab[y * W + x]; if (!l) continue; tot[l]++; if (x >= x0 && x < x1) ins[l]++; }
+    let r0 = H, r1 = -1, c0 = W, c1 = -1, cnt = 0;
+    const keep = l => l && ins[l] >= 0.5 * tot[l];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (keep(lab[y * W + x])) { cnt++; if (y < r0) r0 = y; if (y > r1) r1 = y; if (x < c0) c0 = x; if (x > c1) c1 = x; }
+    if (cnt < 6) return null;
+    const h2 = r1 - r0 + 1, w2 = c1 - c0 + 1, sub = new Float32Array(h2 * w2);
+    for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) sub[y * w2 + x] = keep(lab[(r0 + y) * W + c0 + x]) ? 1 : 0;
+    return { sub, h2, w2 };
+  }
   function piecePicture(L, x0, x1) {
     const W = L.W, H = 64, lab = L.comp.lab, n = L.comp.n; x0 = Math.max(0, Math.round(x0)); x1 = Math.min(W, Math.round(x1));
     if (x1 - x0 < 2) return null;
@@ -1731,8 +1749,58 @@ if ('serviceWorker' in navigator) {
     function signs(rgba, W) { return gnet ? signGroups(gnet, M.group.cls, rgba, W, M.group.B || 1) : null; }
     return { nearest, rank, words: M.words, findWords, signs, glyphs: (M.group && M.group.glyph) || {} };
   }
-  const API = { loadModel, piecePicture, prepareLine, inkMed, components, dips, gapFeat, groupPic, groupDips, signGroups, makeGroupNet, pieceBox };
+  const API = { loadModel, piecePicture, pieceInk, resample, conv, pool, dense, deq, logsoft, prepareLine, inkMed, components, dips, gapFeat, groupPic, groupDips, signGroups, makeGroupNet, pieceBox };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WordNet = API;
+})(typeof window !== 'undefined' ? window : this);
+
+/* The sign reader: reads the signs of a word in order (a network trained on the checked words and their spellings,
+   CTC), and scores every known spelling against what it read. Twin: rd/seq.py and rd/seqeval.py */
+(function (root) {
+  'use strict';
+  function makeSeq(S, WN) {
+    const P = S.params.map(WN.deq), [C1, C2, C3, DH] = S.C, HH = 32, WW = 128, T = 32, V = S.signs.length + 2;
+    const si = new Map(S.signs.map((s, i) => [s, i + 1])), OTHER = S.signs.length + 1;
+    /* log-probabilities (T x V) of the signs along the word, read from the right */
+    function read(L, x0, x1) {
+      const pk = WN.pieceInk(L, x0, x1); if (!pk) return null;
+      const { sub, h2, w2 } = pk, k = HH / h2, nw = Math.max(2, Math.min(WW, Math.round(w2 * k))), nh = Math.max(2, Math.min(HH, Math.round(h2 * k)));
+      const small = WN.resample(sub, h2, w2, nh, nw), x = new Float32Array(HH * WW), oy = (HH - nh) >> 1;
+      for (let y = 0; y < nh; y++) for (let xx = 0; xx < nw; xx++) x[(oy + y) * WW + xx] = small[y * nw + (nw - 1 - xx)];   // flipped: read left to right
+      let h = WN.conv(x, 32, 128, 1, P[0], P[1], C1); h = WN.pool(h, 32, 128, C1);
+      h = WN.conv(h, 16, 64, C1, P[2], P[3], C2); h = WN.pool(h, 16, 64, C2);
+      h = WN.conv(h, 8, 32, C2, P[4], P[5], C3); h = WN.conv(h, 8, 32, C3, P[6], P[7], C3);
+      const e = [];
+      for (let t = 0; t < T; t++) { const col = new Float32Array(8 * C3);
+        for (let y = 0; y < 8; y++) for (let c = 0; c < C3; c++) col[y * C3 + c] = h[(y * 32 + t) * C3 + c];
+        e.push(WN.dense(col, P[8], P[9], DH, true)); }
+      const out = [];
+      for (let t = 0; t < T; t++) { const cat = new Float32Array(DH * 5);
+        for (let i = 0; i < 5; i++) { const tt = t + i - 2; if (tt >= 0 && tt < T) cat.set(e[tt], i * DH); }
+        const z = WN.dense(WN.dense(cat, P[10], P[11], DH, true), P[12], P[13], V, false); out.push(WN.logsoft(Array.from(z))); }
+      return out;
+    }
+    const labels = s => Array.from(s).filter(c => { const p = c.codePointAt(0); return p >= 0x13000 && p <= 0x1342F; }).map(c => si.get(c) || OTHER);
+    /* log P(spelling | the word) for one spelling */
+    function score(lp, lab) {
+      const L = lab.length, S2 = 2 * L + 1, NEG = -1e30; if (!L) return NEG;
+      const ext = new Int32Array(S2); for (let i = 0; i < L; i++) ext[2 * i + 1] = lab[i];
+      let a = new Float64Array(S2).fill(NEG); a[0] = lp[0][0]; a[1] = lp[0][ext[1]];
+      const lae = (p, q) => p === NEG ? q : q === NEG ? p : Math.max(p, q) + Math.log1p(Math.exp(-Math.abs(p - q)));
+      for (let t = 1; t < T; t++) { const b = new Float64Array(S2).fill(NEG);
+        for (let s = 0; s < S2; s++) { let v = a[s]; if (s > 0) v = lae(v, a[s - 1]); if (s > 1 && ext[s] && ext[s] !== ext[s - 2]) v = lae(v, a[s - 2]);
+          b[s] = v === NEG ? NEG : v + lp[t][ext[s]]; }
+        a = b; }
+      return lae(a[S2 - 1], a[S2 - 2]);
+    }
+    const LEX = S.lexicon.map(e => ({ tr: e[0], eg: e[1], en: e[2], lem: e[3] || null, w: e[4], lab: labels(e[1]) }));
+    /* every known word, best first: [{ entry, s }] */
+    function bestWords(lp, k) {
+      return LEX.map(e => ({ e, s: score(lp, e.lab) })).sort((p, q) => q.s - p.s).slice(0, k || 10);
+    }
+    return { read, score, bestWords, LEX, labels };
+  }
+  const API = { makeSeq };
+  if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.SignSeq = API;
 })(typeof window !== 'undefined' ? window : this);
 
 /* Printed hieroglyphs -> sign codes. Twin of ocr/ocr.py: the ink is cut into its pieces, the pieces into blocks
@@ -2119,10 +2187,51 @@ if ('serviceWorker' in navigator) {
   const choice = new Map(), voteCache = new Map();                       // piece index -> word index | -1 (left out)
 
   /* ---------- loading data ---------- */
+  let SEQ = null, ALLW = [];
+  const seqCache = new Map();
+  /* the word nets' guesses, and for a piece they are unsure of (under 80 %) also the sign reader's: it reads the
+     signs in order and scores every known spelling; the two are added (twin: rd/seqcombine.py, weight 0.6 for the signs) */
+  function guesses(p, key, votes, prev, conf, n) {
+    if (!SEQ || conf >= 0.8 || !votes.length) return MODEL.rank(votes, prev, n);
+    if (!seqCache.has(key)) { seqTodo.set(key, [p, votes]); return MODEL.rank(votes, prev, n); }   // read later, without blocking the page
+    return seqGuesses(key, votes, prev, n);
+  }
+  function seqRead(key, p, votes) {
+    if (!seqCache.has(key)) {
+      const lp = SEQ.read(line.L2, p[0] * 2, p[1] * 2);
+      if (!lp) seqCache.set(key, null);
+      else {
+        const m = Math.max(...votes.map(v => v[1])), z = Math.log(votes.reduce((a, v) => a + Math.exp((v[1] - m) / 2), 0));
+        const lw = new Map(votes.map(v => [v[0], (v[1] - m) / 2 - z]));
+        const sc = SEQ.LEX.map(e => ({ w: e.idx, score: (lw.has(e.idx) ? lw.get(e.idx) : -8) + 0.6 * SEQ.score(lp, e.lab), signs: !lw.has(e.idx) }));
+        votes.forEach(v => { if (!sc.some(c => c.w === v[0])) sc.push({ w: v[0], score: lw.get(v[0]) - 30 }); });
+        seqCache.set(key, sc.sort((a, b) => b.score - a.score).slice(0, 12));
+      }
+    }
+  }
+  function seqGuesses(key, votes, prev, n) {
+    const sc = seqCache.get(key); if (!sc) return MODEL.rank(votes, prev, n);
+    return sc.slice(0, n).map(c => ({ w: c.w, score: c.score, word: ALLW[c.w], signs: c.signs }));
+  }
+  /* the sign reader works through the unsure pieces one by one, then the list is drawn again */
+  const seqTodo = new Map(); let seqBusy = false;
+  async function seqWork() {
+    if (seqBusy || !seqTodo.size) return; seqBusy = true; const msg = $('lrSeqMsg'), lineNow = line;
+    let k = 0; const n = seqTodo.size;
+    for (const [key, [p, votes]] of seqTodo) { if (line !== lineNow) break;
+      if (msg) { msg.hidden = false; msg.textContent = `Reading the signs of the unsure words… ${++k} of ${n}`; }
+      await new Promise(r => setTimeout(r, 0)); seqRead(key, p, votes); }
+    seqTodo.clear(); seqBusy = false; if (msg) msg.hidden = true;
+    if (line === lineNow) buildPieces();
+  }
   function loadAll() {
     if (ready) return ready;
     ready = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lr-wordnet.json'].map(u => fetch(u, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
-      .then(([g, sm, m]) => { G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0, w[4] || null, w[5] || null]); MODEL = window.WordNet.loadModel(m); });
+      .then(([g, sm, m]) => { G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0, w[4] || null, w[5] || null]); MODEL = window.WordNet.loadModel(m); ALLW = MODEL.words.slice(); })
+      .then(() => fetch('lr-seq.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null))
+      .then(S => { if (!S || !window.SignSeq) return;               // the sign reader (optional)
+        SEQ = window.SignSeq.makeSeq(S, window.WordNet);
+        SEQ.LEX.forEach(e => { if (e.w >= 0) e.idx = e.w; else { e.idx = ALLW.length; ALLW.push([e.tr, e.eg, e.en || '', 0, e.lem || null, null]); } }); });
     return ready;
   }
 
@@ -2239,21 +2348,42 @@ if ('serviceWorker' in navigator) {
     return { slope: b, Hb, bg, top: X => yc - Hb / 2 + b * ((X - f[0]) * kx - w / 2) * ky };
   }
 
+  /* the band of the strongest line of writing (when the picture also shows parts of the lines above or below);
+     twin of ink_band() in rd/deskew.py */
+  function inkBand(f, st) {
+    const w = Math.max(8, Math.round(f[2] * 96 / st.Hb)), c = document.createElement('canvas'); c.width = w; c.height = 96;
+    const x = c.getContext('2d', { willReadFrequently: true }), cw = f[2] / w;
+    if (st.slope) { x.fillStyle = st.bg; x.fillRect(0, 0, w, 96); for (let xo = 0; xo < w; xo++) { const X = f[0] + xo * cw; x.drawImage(img, X, st.top(X + cw / 2), cw, st.Hb, xo, 0, 1, 96); } }
+    else x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, w, 96);
+    const ink = window.WordNet.inkMed(x.getImageData(0, 0, w, 96).data, w, 96), prof = new Float64Array(96);
+    for (let y = 0; y < 96; y++) { let s = 0; for (let xx = 0; xx < w; xx++) s += ink[y * w + xx]; prof[y] = s; }
+    const sm = prof.map((_, y) => { let s = 0; for (let d = -2; d <= 2; d++) { const yy = y + d; if (yy >= 0 && yy < 96) s += prof[yy]; } return s / 5; });
+    let top = 0; for (let y = 1; y < 96; y++) if (sm[y] > sm[top]) top = y;
+    const t = 0.35 * sm[top]; let r0 = top, r1 = top;
+    while (r0 > 0 && sm[r0 - 1] >= t) r0--; while (r1 < 95 && sm[r1 + 1] >= t) r1++;
+    let h = r1 - r0 + 1; if (h >= 0.75 * 96) return st;
+    h = Math.max(h, 0.3 * 96); const cy = (r0 + r1 + 1) / 2, y0 = Math.max(0, cy - h / 2 - 0.15 * h), y1 = Math.min(96, cy + h / 2 + 0.15 * h);
+    const k = st.Hb / 96, base = st.top, bg = st.bg || (() => { const d = x.getImageData(0, 0, w, 96).data; let r = 0, g = 0, b = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; } const n = d.length / 4; return `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`; })();
+    return { slope: st.slope, band: true, Hb: (y1 - y0) * k, bg, top: X => base(X) + y0 * k };
+  }
+
   /* ---------- 2: the line, its ink and the cuts ---------- */
   function readLine(whole) {
     const f = (!whole && frame) ? frame : [0, 0, img.naturalWidth, img.naturalHeight];
     if (mode === 'print') { readPrint(f); return; }
-    const H = R.H64, st = straighten(f), W = Math.max(8, Math.round(f[2] * H / st.Hb));
+    let st = straighten(f);
+    if (whole || !frame) st = inkBand(f, st);           // a whole picture: only the strongest line of writing in it
+    const H = R.H64, W = Math.max(8, Math.round(f[2] * H / st.Hb));
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high';
-    if (st.slope) {                                   // a slanting line: each column is moved up or down to level it
+    if (st.slope || st.band) {                        // a slanting line: each column is moved up or down to level it
       x.fillStyle = st.bg; x.fillRect(0, 0, W, H);
       const cw = f[2] / W;
       for (let xo = 0; xo < W; xo++) { const X = f[0] + xo * cw; x.drawImage(img, X, st.top(X + cw / 2), cw, st.Hb, xo, 0, 1, H); }
     } else x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, W, H);
     const px = x.getImageData(0, 0, W, H).data;
     const ink = R.ink64(px, W, H), map = R.soft32(ink, W, H);
-    signCache && signCache.clear(); line = { src: c, map, W: map.W, px, W64: W, f, st, img, cuts: R.suggestCuts(map, density()) }; voteCache.clear();
+    signCache && signCache.clear(); seqCache.clear(); seqTodo.clear(); line = { src: c, map, W: map.W, px, W64: W, f, st, img, cuts: R.suggestCuts(map, density()) }; voteCache.clear();
     choice.clear();
     $('lrCut').hidden = false; $('lrPieces').hidden = false; $('lrOut').hidden = false;
     $('lrList').innerHTML = '<li class="lw-hint">Loading the word pictures&hellip;</li>';
@@ -2343,14 +2473,18 @@ if ('serviceWorker' in navigator) {
   }
   function buildPieces() {
     const list = $('lrList'); list.innerHTML = '';
+    if (!seqBusy) seqTodo.clear();                     // only the pieces shown now
     const pcs = pieces(); let prev = null;
     pcs.forEach((p, i) => {
       const key = p[0] + ':' + p[1];
       if (!line.L2) line.L2 = window.WordNet.prepareLine(line.px, line.W64);
       if (!voteCache.has(key)) voteCache.set(key, MODEL.nearest(window.WordNet.piecePicture(line.L2, p[0] * 2, p[1] * 2), 12));
       const ch = choice.get(i);
-      const cands = MODEL.rank(voteCache.get(key), prev, 6);
-      if (ch != null && ch >= 0 && !cands.some(c => c.w === ch)) cands.unshift({ w: ch, word: MODEL.words[ch] });
+      // how sure is the first guess? (both networks' scores, as shares of the shown guesses)
+      const vs = voteCache.get(key) || []; let conf = 0;
+      if (vs.length) { const m = Math.max(...vs.map(v => v[1])); const z = vs.reduce((a, v) => a + Math.exp((v[1] - m) / 2), 0); conf = 1 / z; }
+      const cands = guesses(p, key, vs, prev, conf, 6);
+      if (ch != null && ch >= 0 && !cands.some(c => c.w === ch)) cands.unshift({ w: ch, word: ALLW[ch] });
       const li = document.createElement('li'); li.className = 'lr-item';
       const head = document.createElement('div'); head.className = 'lr-item-head';
       head.innerHTML = `<span class="lr-num">${i + 1}</span>`; head.appendChild(pieceThumb(p)); li.appendChild(head);
@@ -2358,7 +2492,7 @@ if ('serviceWorker' in navigator) {
       cands.forEach(c => {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'lr-cand' + (ch === c.w ? ' on' : '');
         b.setAttribute('aria-pressed', ch === c.w);
-        b.innerHTML = `<span class="g">${wordGlyphs(c.word, 34)}</span><span class="t">${esc(c.word[0])}</span>${lemmaHTML(c.word)}`;
+        b.innerHTML = `<span class="g">${wordGlyphs(c.word, 34)}</span><span class="t">${esc(c.word[0])}</span>${lemmaHTML(c.word)}${c.signs ? '<span class="lr-bysigns">found by its signs</span>' : ''}`;
         b.addEventListener('click', () => { choice.set(i, ch === c.w ? undefined : c.w); if (choice.get(i) === undefined) choice.delete(i); buildPieces(); });
         row.appendChild(b);
       });
@@ -2367,16 +2501,13 @@ if ('serviceWorker' in navigator) {
       const inp = tools.querySelector('input'), found = tools.querySelector('.lr-found');
       inp.addEventListener('input', () => {
         const q = inp.value.trim().toLowerCase(); if (!q) { found.innerHTML = ''; return; }
-        const hits = MODEL.words.map((w, k) => [w, k]).filter(([w]) => w[0].toLowerCase().startsWith(q) || (w[2] || '').toLowerCase().includes(q) || (w[4] ? (w[4][0] + ' ' + w[4][1]).toLowerCase().includes(q) : false)).sort((a, b) => b[0][3] - a[0][3]).slice(0, 10);
+        const hits = ALLW.map((w, k) => [w, k]).filter(([w]) => w[0].toLowerCase().startsWith(q) || (w[2] || '').toLowerCase().includes(q) || (w[4] ? (w[4][0] + ' ' + w[4][1]).toLowerCase().includes(q) : false)).sort((a, b) => b[0][3] - a[0][3]).slice(0, 10);
         found.innerHTML = ''; hits.forEach(([w, k]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'lr-cand small';
           b.innerHTML = `<span class="g">${wordGlyphs(w, 26)}</span><span class="t">${esc(w[0])}</span>${lemmaHTML(w)}`;
           b.addEventListener('click', () => { choice.set(i, k); buildPieces(); }); found.appendChild(b); });
       });
       tools.querySelector('.lr-skip').addEventListener('click', () => { if (choice.get(i) === -1) choice.delete(i); else choice.set(i, -1); buildPieces(); });
       li.appendChild(row);
-      // how sure is the first guess? (both networks' scores, as shares of the shown guesses)
-      const vs = voteCache.get(key) || []; let conf = 0;
-      if (vs.length) { const m = Math.max(...vs.map(v => v[1])); const z = vs.reduce((a, v) => a + Math.exp((v[1] - m) / 2), 0); conf = 1 / z; }
       const sg = document.createElement('div'); sg.className = 'lr-signs';
       if (MODEL.signs) {
         if (conf < 0.5) showSigns(sg, p); else { const b = document.createElement('button'); b.type = 'button'; b.className = 'lr-signbtn'; b.textContent = 'Show the signs'; b.onclick = () => showSigns(sg, p); sg.appendChild(b); }
@@ -2385,6 +2516,7 @@ if ('serviceWorker' in navigator) {
       prev = (ch != null && ch >= 0) ? ch : (cands[0] ? cands[0].w : null);
     });
     writeOut(pcs.length);
+    if (seqTodo.size && line.found) setTimeout(seqWork, 0);   // only once the words have been found (not for the quick first cuts)
   }
   // the meaning shown for a word: its lemma in Faulkner's Concise Dictionary of Middle Egyptian, or else Katrine's own translation
   function lemmaHTML(w) {
@@ -2395,7 +2527,7 @@ if ('serviceWorker' in navigator) {
 
   /* ---------- 4: the transcription of the chosen words ---------- */
   function writeOut(n) {
-    const chosen = []; for (let i = 0; i < n; i++) { const c = choice.get(i); if (c != null && c >= 0) chosen.push(MODEL.words[c]); }
+    const chosen = []; for (let i = 0; i < n; i++) { const c = choice.get(i); if (c != null && c >= 0) chosen.push(ALLW[c]); }
     const uni = chosen.map(w => w[1]).filter(Boolean).join(' ');
     $('lrTr').textContent = chosen.map(w => w[0]).join(' ');
     $('lrEn').textContent = chosen.map(w => w[4] ? w[4][1].split(';')[0] : w[2]).filter(Boolean).join(' · ');
@@ -2432,9 +2564,9 @@ if ('serviceWorker' in navigator) {
       if (!line) return; const b = $('lrFind'), msg = $('lrFindMsg'); b.disabled = true; msg.hidden = false; msg.textContent = 'Finding the words…';
       loadAll().then(() => { if (!line.L2) line.L2 = window.WordNet.prepareLine(line.px, line.W64);
         return MODEL.findWords(line.L2, (d, n) => { msg.textContent = `Finding the words… ${Math.round(100 * d / n)} %`; }); })
-        .then(cuts => { line.cuts = cuts.map(x => Math.round(x / 2)); choice.clear(); drawLine(); buildPieces();
+        .then(cuts => { line.cuts = cuts.map(x => Math.round(x / 2)); line.found = true; choice.clear(); drawLine(); buildPieces();
           msg.textContent = 'The reader has placed the cuts where it found words. Check them: click the line to add a cut, click a cut to remove it.'; })
-        .catch(() => { msg.textContent = 'The words could not be found. Set the cuts by hand.'; })
+        .catch(() => { line.found = true; msg.textContent = 'The words could not be found. Set the cuts by hand.'; })
         .finally(() => { b.disabled = false; });
     });
     $('lrDens').addEventListener('change', () => { if (!line) return; line.cuts = R.suggestCuts(line.map, density()); choice.clear(); drawLine(); if (MODEL) buildPieces(); });
