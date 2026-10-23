@@ -532,7 +532,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 
       <h2>How the stacking is guessed</h2>
       <p>The writer has learnt from about 26,000 blocks in the Two Brothers, Horus and Seth and Wenamun, encoded sign by sign after Gardiner's <em>Late Egyptian Stories</em>. For every run of signs it knows how often those signs were written together as one block, and in what arrangement, and it chooses the grouping of your line that the texts make most likely. Signs it has never seen together are grouped by their shape: low broad signs take a row of their own, small signs share a row. Tested on lines it had not learnt from, it put the same signs together and stacked them the same way in 93&nbsp;% of the blocks.</p>
-      <p>The hieratic signs are traced from the Horus and Seth, one photo per sign chosen by hand. Their sizes are learnt from the reviewed words of Two Brothers: every word box tells how high its signs stand together, and from about 2,300 words each sign gets its own height. Signs that do not have a hieratic form yet are drawn as the printed sign in grey. The preposition Hr is always written with the face over the two strokes and the single stroke beside them; in Hry-ib and before the suffixes f, i and k the mouth takes the place of the two strokes.</p>
+      <p>The hieratic signs are traced from the Tale of Two Brothers, one photo per sign chosen by hand. Their sizes are learnt from the reviewed words of Two Brothers: every word box tells how high its signs stand together, and from about 2,300 words each sign gets its own height. Signs that do not have a hieratic form yet are drawn as the printed sign in grey. The preposition Hr is always written with the face over the two strokes and the single stroke beside them; in Hry-ib and before the suffixes f, i and k the mouth takes the place of the two strokes.</p>
       <p>The hieratic was checked against the photos of Horus and Seth, and some words are traced from them. Signs missing from the Two Brothers list are traced from Möller's <em>Hieratische Paläographie</em> II (19th–21st dynasty columns).</p>
       <p class="lw-credits">Sign shapes and the drawing rules come from JSesh by Serge Rosmorduc, with signs drawn by Serge J. P. Thomas (LGPL). The stacking was learnt from the encodings of the Two Brothers by Serge Rosmorduc (CC-BY), of Horus and Seth by Laurent Cimasoni and of Wenamun by Patricia Cassonnet, distributed with JSesh. Signs after Möller come from the Hieratische Paläographie DB (M. Nagai, T. Waki, Y. Takahashi, S. Nakamura), images of the University of Tokyo, CC BY 4.0.</p>
 
@@ -1013,6 +1013,15 @@ if ('serviceWorker' in navigator) {
     // a word form written as a JSesh ligature inside a stack (D21:I10&D46, r over Dd) keeps the scribe's form
     // a two-sign word form inside a block (Dd as I10&D46, I10*D46 or I10:D46, as in r over Dd) is drawn as the scribe's word form
     for (let i = 0; i < toks.length; i++) if (/[&*:]/.test(toks[i])) for (const k in (H.wordGlyph || {})) { const p = k.split(' '); if (p.length === 2) toks[i] = toks[i].replace(new RegExp('(?<![A-Za-z0-9_])' + p[0] + '[&*:]' + p[1] + '(?![A-Za-z0-9_])', 'g'), H.wordGlyph[k]); }
+    // a ligature of three or more signs inside a block, so that signs can stand over and under it (N35:R8*R8*R8 -> N35:L_R8x3):
+    // signs side by side (* or &) anywhere in a row, signs one over the other (:) only where they make up whole rows
+    const LONG = Object.keys(H.wordGlyph || {}).filter(k => k.split(' ').length > 2 && H.sign[H.wordGlyph[k]]).sort((a, b) => b.split(' ').length - a.split(' ').length);
+    const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (let i = 0; i < toks.length; i++) if (/[&*:]/.test(toks[i])) for (const k of LONG) {
+      const p = k.split(' ').map(esc), code = H.wordGlyph[k];
+      toks[i] = toks[i].replace(new RegExp('(?<![A-Za-z0-9_&\\\\])' + p[0] + '([*&])' + p.slice(1).join('\\1') + '(?![A-Za-z0-9_&\\\\])', 'g'), code)
+                       .replace(new RegExp('(?<=^|[:(])' + p.join(':') + '(?=$|[:)])', 'g'), code);
+    }
     // hieratic stacks the scribes use that the transcription writes in a row (rows of small signs over a long one)
     const ST_RULES = H.stackRules || {}, joined = toks.join('-');
     let j2 = joined; for (const k in ST_RULES) j2 = j2.split(k).join(ST_RULES[k]);

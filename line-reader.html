@@ -488,6 +488,13 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lr-busy-n{ margin-top:7px; font-size:12.5px; color:#6b5c44; }
 #lrPieces.lr-working .lr-list{ opacity:.45; pointer-events:none; filter:grayscale(.4); transition:opacity .2s; }
 @media (prefers-reduced-motion: reduce){ .lr-busy-dot, .lr-busy-bar i{ animation:none; } }
+
+/* the line's signs, editable (step 4) */
+.lr-signs{margin-top:10px}
+.lr-signs label{display:block;font-size:13px;color:var(--lw-muted,#8a7a60);margin-bottom:4px}
+.lr-signs textarea{width:100%;box-sizing:border-box;font:22px/1.5 'Noto Sans Egyptian Hieroglyphs','Segoe UI Historic',system-ui,sans-serif;padding:6px 8px;border:1px solid var(--lw-line,#c9b893);border-radius:6px;background:#fffaf0;color:#2a2116;resize:vertical}
+.lr-signs-row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:4px;min-height:28px}
+.lr-signs-msg{font-size:13px;color:#b0452a}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -587,6 +594,11 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
           <div class="lr-head"><span class="lw-label">4 · Transcription</span>
             <span class="lr-btns"><button type="button" id="lrCopyU">Copy hieroglyphs</button><button type="button" id="lrCopyT">Copy transliteration</button></span></div>
           <div class="lw-stage" id="lrStage"></div>
+          <div class="lr-signs">
+            <label for="lrSigns">The signs of the line. Add or change signs here: type a Gardiner code (G17, N35) or a sound value (Dd, n), or paste hieroglyphs. A space ends a word. The drawing above follows what you type.</label>
+            <textarea id="lrSigns" rows="2" spellcheck="false" autocomplete="off"></textarea>
+            <div class="lr-signs-row"><span class="lr-signs-msg" id="lrSignsMsg"></span><button type="button" id="lrSignsReset" hidden>Back to the chosen words</button></div>
+          </div>
           <p class="lr-translit" id="lrTr"></p>
           <p class="lr-english" id="lrEn"></p>
         </div>
@@ -1611,23 +1623,37 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
   function pieceInk(L, x0, x1) {
     const W = L.W, H = 64, lab = L.comp.lab, n = L.comp.n; x0 = Math.max(0, Math.round(x0)); x1 = Math.min(W, Math.round(x1));
     if (x1 - x0 < 2) return null;
-    const tot = new Float64Array(n + 1), ins = new Float64Array(n + 1);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const l = lab[y * W + x]; if (!l) continue; tot[l]++; if (x >= x0 && x < x1) ins[l]++; }
+    const tot = new Float64Array(n + 1), ins = new Float64Array(n + 1), mnx = new Int32Array(n + 1).fill(W), mxx = new Int32Array(n + 1).fill(-1);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const l = lab[y * W + x]; if (!l) continue; tot[l]++; if (x >= x0 && x < x1) ins[l]++; if (x < mnx[l]) mnx[l] = x; if (x > mxx[l]) mxx[l] = x; }
     let r0 = H, r1 = -1, c0 = W, c1 = -1, cnt = 0;
-    const keep = l => l && ins[l] >= 0.7 * tot[l], part = l => l && ins[l] >= 12 && ins[l] < 0.7 * tot[l];   // a part running on into a neighbour: only its bit inside the piece (+2 px)
+    /* a part reaching more than PO.out columns past the cut (a stroke of the neighbour joined to this word) is clipped too */
+    const reach = l => Math.max(0, x0 - mnx[l]) + Math.max(0, mxx[l] - (x1 - 1));
+    const keep = l => l && ins[l] >= 0.7 * tot[l] && reach(l) <= PO.out, part = l => l && ins[l] >= 12 && !keep(l);   // a part running on into a neighbour: only its bit inside the piece (+2 px)
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (keep(lab[y * W + x]) || (x >= x0 - 2 && x < x1 + 2 && part(lab[y * W + x]))) { cnt++; if (y < r0) r0 = y; if (y > r1) r1 = y; if (x < c0) c0 = x; if (x > c1) c1 = x; }
     if (cnt < 6) return null;
     const h2 = r1 - r0 + 1, w2 = c1 - c0 + 1, sub = new Float32Array(h2 * w2);
     for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) { const xx = c0 + x, l = lab[(r0 + y) * W + xx]; sub[y * w2 + x] = (keep(l) || (xx >= x0 - 2 && xx < x1 + 2 && part(l))) ? 1 : 0; }
     return { sub, h2, w2 };
   }
+  const PO = { out: Infinity };      // piece options (see setPieceOpts)
+  function setPieceOpts(o) { Object.assign(PO, o); }
+  /* how much of a piece's ink belongs to strokes that lie mostly outside it (bits of the neighbour's signs) */
+  function borrowed(L, x0, x1) {
+    const W = L.W, lab = L.comp.lab, n = L.comp.n; x0 = Math.max(0, Math.round(x0)); x1 = Math.min(W, Math.round(x1));
+    if (!L.compTot) { const t = new Float64Array(n + 1); for (let i = 0; i < lab.length; i++) if (lab[i]) t[lab[i]]++; L.compTot = t; }
+    const ins = new Map(); let all = 0;
+    for (let y = 0; y < 64; y++) for (let x = x0; x < x1; x++) { const l = lab[y * W + x]; if (!l) continue; all++; ins.set(l, (ins.get(l) || 0) + 1); }
+    if (!all) return 0; let b = 0; for (const [l, v] of ins) if (v < 0.5 * L.compTot[l]) b += v; return b / all;
+  }
   function piecePicture(L, x0, x1) {
     const W = L.W, H = 64, lab = L.comp.lab, n = L.comp.n; x0 = Math.max(0, Math.round(x0)); x1 = Math.min(W, Math.round(x1));
     if (x1 - x0 < 2) return null;
-    const tot = new Float64Array(n + 1), ins = new Float64Array(n + 1);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const l = lab[y * W + x]; if (!l) continue; tot[l]++; if (x >= x0 && x < x1) ins[l]++; }
+    const tot = new Float64Array(n + 1), ins = new Float64Array(n + 1), mnx = new Int32Array(n + 1).fill(W), mxx = new Int32Array(n + 1).fill(-1);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const l = lab[y * W + x]; if (!l) continue; tot[l]++; if (x >= x0 && x < x1) ins[l]++; if (x < mnx[l]) mnx[l] = x; if (x > mxx[l]) mxx[l] = x; }
     let r0 = H, r1 = -1, c0 = W, c1 = -1, cnt = 0;
-    const keep = l => l && ins[l] >= 0.7 * tot[l], part = l => l && ins[l] >= 12 && ins[l] < 0.7 * tot[l];   // a part running on into a neighbour: only its bit inside the piece (+2 px)
+    /* a part reaching more than PO.out columns past the cut (a stroke of the neighbour joined to this word) is clipped too */
+    const reach = l => Math.max(0, x0 - mnx[l]) + Math.max(0, mxx[l] - (x1 - 1));
+    const keep = l => l && ins[l] >= 0.7 * tot[l] && reach(l) <= PO.out, part = l => l && ins[l] >= 12 && !keep(l);   // a part running on into a neighbour: only its bit inside the piece (+2 px)
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (keep(lab[y * W + x]) || (x >= x0 - 2 && x < x1 + 2 && part(lab[y * W + x]))) { cnt++; if (y < r0) r0 = y; if (y > r1) r1 = y; if (x < c0) c0 = x; if (x > c1) c1 = x; }
     if (cnt < 6) return null;
     const h2 = r1 - r0 + 1, w2 = c1 - c0 + 1, sub = new Float32Array(h2 * w2);
@@ -1849,6 +1875,10 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
       seqLabs.set(k, w[5] && w[5].length ? w[5].reduce((a, p) => a.concat(R.labels(p[1] || '')), []) : R.labels(w[1] || '')); } return seqLabs.get(k); };
     const pmi = (a, b) => (G && a >= 0 && b >= 0 && a < NC && b < NC) ? G.pmi[a][b] : 0;
     const nw = M.words.map(w => (w[5] && w[5].length) || 1);   // a stacked pair is two words
+    /* signs in each word (its spelling): for the incentive to find long words first (Katrine) */
+    const nsg = M.words.map(w => { const cnt = s => Array.from(s || '').filter(ch => { const q = ch.codePointAt(0); return q >= 0x13000 && q <= 0x1342F; }).length;
+      return w[5] && w[5].length ? w[5].reduce((a, p) => a + cnt(p[1]), 0) : cnt(w[1]); });
+    const longB = (P, w) => P.lenW ? P.lenW * Math.max(0, Math.min(8, nsg[w]) - 1) : 0;
     /* the best word for a piece (both nets' mean log-probability, 'not a word' left out) */
     function bestWord(pic) {
       const r = nets.map(f => f(pic)), lp = r.map(o => logsoft(o.z)), v = new Float64Array(M.words.length);
@@ -1889,6 +1919,8 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
       const sv = new Map();      // per setting: the nets' words checked by the sign reader (others left out)
       function seqVec(P, key) { const k2 = key + '|' + P.seqW; if (sv.has(k2)) return sv.get(k2); const e = sc3.get(key); if (!e) return null;
         const [bwv, top, ct] = e, v3 = new Float64Array(bwv.length).fill(-Infinity); top.forEach((k, t) => { v3[k] = bwv[k] + P.seqW * ct[t]; }); sv.set(k2, v3); return v3; }
+      const borC = new Map(), borF = (i, j) => { const k = i * 10000 + j; if (!borC.has(k)) borC.set(k, borrowed(L, c[i], c[j])); return borC.get(k); };
+      let curP = null; const bor = (i, j) => { const f = borF(i, j); return curP && curP.borrowMin ? (f >= curP.borrowMin ? 1 : 0) : f * f; };   // borrowMin: only pieces (nearly) all made of the neighbour's strokes
       const pg = new Float64Array(n).fill(1);
       for (let k = 1; k < n - 1; k++) pg[k] = Math.min(1, Math.max(1e-3, gapProb(M.gap, gapFeat(L.ink, W, c[k]))));
       function dp(P) {
@@ -1898,7 +1930,7 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
           if (D[j - 1] - P.skip > D[j]) { D[j] = D[j - 1] - P.skip; bp[j] = [j - 1, null]; }
           const cut = j < n - 1 ? P.gapW * Math.log(pg[j]) : 0;
           for (let i = Math.max(0, j - (P.win || 6)); i < j; i++) { const vv = P.seqW && useSeq ? seqVec(P, i * 10000 + j) : (P.signCut ? sc2 : sc).get(i * 10000 + j); if (!vv) continue; const v = pickWord(vv, c[j] - c[i], P.widthW || 0);
-            const s = D[i] + v[0] + (nw[v[1]] > 1 ? pb : P.bonus) + cut; if (s > D[j]) { D[j] = s; bp[j] = [i, v[1]]; } }
+            const s = D[i] + v[0] + (nw[v[1]] > 1 ? pb : P.bonus) + longB(P, v[1]) + cut - (P.borrowW ? P.borrowW * bor(i, j) : 0); if (s > D[j]) { D[j] = s; bp[j] = [i, v[1]]; } }
         }
         const cuts = []; let j = n - 1; const path = []; findWords.last = path;
         while (j > 0 && bp[j]) { const i = bp[j][0]; path.push([c[i], c[j], bp[j][1], -1, D[j]]); if (i > 0) cuts.push(c[i]); j = i; }
@@ -1914,7 +1946,7 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
           for (let i = Math.max(0, j - (P.win || 6)); i < j; i++) { const vv = P.seqW && useSeq ? seqVec(P, i * 10000 + j) : (P.signCut ? sc2 : sc).get(i * 10000 + j); if (!vv) continue;
             let bc = cand.get(i * 10000 + j); if (!bc) { bc = pickByClass(vv, c[j] - c[i], P.widthW || 0); cand.set(i * 10000 + j, bc); }
             const sureX = P.classSure ? (sure.get(i * 10000 + j) || 0) : 1;   // grammar counts only as much as the piece is surely a word
-            for (const [k, [x, w]] of bc) { const f = k >> 5, l = k & 31, base = x + (nw[w] > 1 ? pb : P.bonus) + cut;
+            for (const [k, [x, w]] of bc) { const f = k >> 5, l = k & 31, base = x + (nw[w] > 1 ? pb : P.bonus) + longB(P, w) + cut - (P.borrowW ? P.borrowW * bor(i, j) : 0);
               for (let a = 0; a < K; a++) { const d = D[i][a]; if (d < -1e8) continue;
                 const s = d + base + (a === NONE ? 0 : LW * (P.classSure ? sureX * SU[i][a] : 1) * (P.classNeg ? Math.min(0, pmi(l, a) + (P.classTol || 0)) : pmi(l, a))); if (s > D[j][f]) { D[j][f] = s; bp[j][f] = [i, a, w]; SU[j][f] = sureX; } } } }
         }
@@ -1923,8 +1955,40 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
         while (j > 0 && bp[j][st]) { const [i, a] = bp[j][st]; path.push([c[i], c[j], bp[j][st][2], st, D[j][st]]); if (i > 0 && bp[j][st][2] != null) cuts.push(c[i]); else if (i > 0 && bp[j][st][2] == null) cuts.push(c[i]); j = i; st = a; }
         return cuts.sort((a, b) => a - b);
       }
-      const run = P => (G && P.classW) ? dpG(P) : dp(P);
+      const run = P => { curP = P; return (G && P.classW) ? dpG(P) : dp(P); };
       return Plist ? Plist.map(run) : run(M.seg);
+    }
+    /* Katrine's spill-over check: a piece made mostly of strokes that run on into the word beside it is tried joined to
+       that word. If the joined piece still reads as the same word (or that word with something under it), the piece was
+       only the end of that word (the tip of Dd that touches Hr) and the cut between them is taken away. */
+    function spillMerge(L, cuts, opt) {
+      const O = Object.assign({ minShare: 0.6 }, opt || {}), W = L.W, lab = L.comp.lab;
+      if (!L.compTot) { const t = new Float64Array(L.comp.n + 1); for (let i = 0; i < lab.length; i++) if (lab[i]) t[lab[i]]++; L.compTot = t; }
+      const top = (a, b) => { const pic = piecePicture(L, a, b); if (!pic) return null; const v = nearest(pic, 1); return v.length && v[0][0] !== junk ? v[0] : null; };
+      const firsts = i => { const w = M.words[i]; return (w[5] && w[5].length ? w[5].map(p => p[0]) : [w[0]]).map(t => (t || '').replace(/[.\-= ]/g, '')); };
+      const same = (i, j) => { const a = firsts(i), b = firsts(j); return a[0] === b[0]; };
+      let c = [0, ...cuts.slice().sort((a, b) => a - b), W], changed = true, merged = [];
+      while (changed) { changed = false;
+        for (let k = 0; k < c.length - 1 && !changed; k++) {
+          const a = c[k], b = c[k + 1]; let all = 0, out = 0, left = 0, right = 0;
+          const ins = new Map(); for (let y = 0; y < 64; y++) for (let x = Math.round(a); x < Math.round(b); x++) { const l = lab[y * W + x]; if (!l) continue; all++; ins.set(l, (ins.get(l) || 0) + 1); }
+          if (!all) continue;
+          let nOut = 0; for (const [l, v] of ins) { if (v >= 0.5 * L.compTot[l]) continue; out += v; if (v >= 0.1 * all) nOut++;      // a stroke mostly outside the piece: on which side is the rest?
+            let lw = 0, rw = 0; for (let y = 0; y < 64; y++) for (let x = 0; x < W; x++) if (lab[y * W + x] === l) { if (x < a) lw++; else if (x >= b) rw++; }
+            if (lw > rw) left += v; else right += v; }
+          if (out < O.minShare * all || nOut < (O.minComps || 1)) continue;      // minComps: several strokes run on into the word (the ends of a sign), not one joining stroke
+          const side = left > right ? -1 : 1, nb = side < 0 ? [c[k - 1], a] : [b, c[k + 2]];
+          if (nb[0] == null || nb[1] == null) continue;
+          const wn = top(nb[0], nb[1]), wm = top(Math.min(a, nb[0]), Math.max(b, nb[1]));
+          if (!(wn && wm && same(wn[0], wm[0]))) continue;
+          let dc = null;
+          if (O.seqTol != null && M.seqReader) {      // the sign reader: the joined piece must not show signs the word does not have
+            const R = M.seqReader, lab = seqLab(wn[0]), l1 = R.read(L, nb[0], nb[1]), l2 = R.read(L, Math.min(a, nb[0]), Math.max(b, nb[1]));
+            if (l1 && l2 && lab.length) { dc = R.score(l2, lab) - R.score(l1, lab); if (dc < -O.seqTol) { spillMerge.tried = (spillMerge.tried || []).concat([[a, b, M.words[wn[0]][0], dc]]); continue; } } }
+          merged.push([a, b, M.words[wn[0]][0], M.words[wm[0]][0], dc, nOut, out / all]); c.splice(side < 0 ? k : k + 1, 1); changed = true;
+        } }
+      spillMerge.last = merged;
+      return c.slice(1, -1);
     }
     const gnet = M.group ? makeGroupNet(M.group) : null;
     function signs(rgba, W) { return gnet ? signGroups(gnet, M.group.cls, rgba, W, M.group.B || 1) : null; }
@@ -1954,9 +2018,9 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
       }
       return best ? [best[1], best[2]] : null;
     }
-    return { nearest, rank, scoreAll: score, pieceInfo, junk, setSeq: S => { M.seqReader = S; }, junkP: pic => { const r = nets.map(f => f(pic)), lp = r.map(o => logsoft(o.z)); return [Math.exp(lp[0][junk]), Math.exp(lp[1][junk])]; }, words: M.words, findWords, signs, overshoot, wclass: i => [wcF[i], wcL[i]], pmi, pieceScore: (L, a, b) => { const pic = piecePicture(L, a, b); return pic ? bestWord(pic) : null; }, glyphs: (M.group && M.group.glyph) || {} };
+    return { nearest, rank, spillMerge, scoreAll: score, pieceInfo, junk, setSeq: S => { M.seqReader = S; }, junkP: pic => { const r = nets.map(f => f(pic)), lp = r.map(o => logsoft(o.z)); return [Math.exp(lp[0][junk]), Math.exp(lp[1][junk])]; }, words: M.words, findWords, signs, overshoot, wclass: i => [wcF[i], wcL[i]], pmi, pieceScore: (L, a, b) => { const pic = piecePicture(L, a, b); return pic ? bestWord(pic) : null; }, glyphs: (M.group && M.group.glyph) || {} };
   }
-  const API = { loadModel, gapProb, piecePicture, partsPicture, pieceParts, pieceInk, resample, conv, pool, dense, deq, logsoft, prepareLine, inkMed, components, dips, gapFeat, groupPic, groupDips, signGroups, makeGroupNet, pieceBox };
+  const API = { loadModel, gapProb, setPieceOpts, borrowed, piecePicture, partsPicture, pieceParts, pieceInk, resample, conv, pool, dense, deq, logsoft, prepareLine, inkMed, components, dips, gapFeat, groupPic, groupDips, signGroups, makeGroupNet, pieceBox };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WordNet = API;
 })(typeof window !== 'undefined' ? window : this);
 
@@ -2390,7 +2454,7 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
     || (after[0] === '\u{133CF}' && after[1] === '\u{13216}') || after.slice(0, 3).includes('\u{13123}');
   const R = window.LineReader, LW = window.LineWriter, AS = window.AutoStack, $ = id => document.getElementById(id);
   let G = null, ST = null, SM = null, MODEL = null, ready = null;
-  let img = null, frame = null, line = null;     // line: {canvas, map, W, cuts:[], pieces:[]}
+  let img = null, imgP = null, frame = null, line = null;   // imgP: the picture the reader works on (colours turned round for light signs)     // line: {canvas, map, W, cuts:[], pieces:[]}
   const choice = new Map(), voteCache = new Map();                       // piece index -> word index | -1 (left out)
 
   /* ---------- loading data ---------- */
@@ -2451,8 +2515,8 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
   function loadAll() {
     if (ready) return ready;
     ready = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lr-wordnet.json'].map(u => fetch(u, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
-      .then(([g, sm, m]) => { if (window.LR_GRAMMAR) { m.grammar = window.LR_GRAMMAR; Object.assign(m.seg, { classW: 0.5, classSure: true }); }   // word classes (Late Egyptian grammar), only between pieces that are surely words
-        Object.assign(m.seg, { seqW: 0.3, skip: 3 });   // while cutting, the sign reader checks that a piece's signs match its word (no ink left over or missing)
+      .then(([g, sm, m]) => { if (window.LR_GRAMMAR) { m.grammar = window.LR_GRAMMAR; Object.assign(m.seg, { classW: 1.0, classSure: true }); }   // word classes (Late Egyptian grammar), only between pieces that are surely words
+        Object.assign(m.seg, { bonus: 2.2, pairBonus: 3.52, skip: 4, gapW: 0.9, seqW: 0.25, lenW: 0.45, borrowW: 0.5 });   // settings found by evolution (Katrine's idea), Oct 2026: a blend of two runs, each evolved on half of the held-back lines   // spill-over join (spillMerge) tested 22 Oct, not switched on: see rd/post2   // while cutting, the sign reader checks that a piece's signs match its word (no ink left over or missing)
         MODEL_SEG = m.seg; G = g; SM = sm; ST = AS.makeStacker(SM, G); m.words = m.words.map(w => [w[0] || '', w[1] || '', w[2] || '', w[3] || 0, w[4] || null, w[5] || null]); MODEL = window.WordNet.loadModel(m); ALLW = MODEL.words.slice(); })
       .then(() => fetch('lr-seq.json', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).catch(() => null))
       .then(S => { if (!S || !window.SignSeq) return;               // the sign reader (optional)
@@ -2509,13 +2573,29 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
     }).catch(() => { $('lrPStage').innerHTML = '<div class="lw-loading">The sign shapes could not be loaded. Check the connection and reload the page.</div>'; });
   }
 
+  /* light signs on a dark ground (painted or gilded texts, negatives): the reader works on a copy with the colours turned
+     round, so the signs become dark ink on a light ground. Decided from the grey values: the few far-off values (the signs)
+     lie on the light side of the usual (ground) value instead of the dark side. */
+  function polarity(im) {
+    const W = im.naturalWidth, H = im.naturalHeight, k = Math.min(1, 600 / Math.max(W, H)), w = Math.max(1, Math.round(W * k)), h = Math.max(1, Math.round(H * k));
+    const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0, w, h);
+    const d = x.getImageData(0, 0, w, h).data, g = new Uint8Array(w * h); for (let i = 0; i < g.length; i++) g[i] = (d[4 * i] + d[4 * i + 1] + d[4 * i + 2]) / 3;
+    const s = Array.from(g).sort((a, b) => a - b), q = f => s[Math.min(s.length - 1, Math.floor(f * s.length))], m = q(0.5);
+    let blk = 0; for (const v of g) if (v < 35) blk++;                        // a photo on a black mount is papyrus as usual
+    if (!(q(0.95) - m > 1.3 * (m - q(0.05)) && m < 170 && blk < 0.12 * g.length)) return im;
+    const C = document.createElement('canvas'); C.width = W; C.height = H; const X = C.getContext('2d', { willReadFrequently: true }); X.drawImage(im, 0, 0);
+    const D = X.getImageData(0, 0, W, H); for (let i = 0; i < D.data.length; i += 4) { D.data[i] = 255 - D.data[i]; D.data[i + 1] = 255 - D.data[i + 1]; D.data[i + 2] = 255 - D.data[i + 2]; }
+    X.putImageData(D, 0, 0); return C;
+  }
   /* ---------- 1: import and frame ---------- */
   function useFile(file) {
     if (!file) return;
     const tif = /tiff?$/i.test(file.type) || /\.tiff?$/i.test(file.name || '');
     if (!tif && !/^image\//.test(file.type)) return;
     const im = new Image();
-    im.onload = () => { img = im; frame = null; const m = $('lrTiffMsg'); if (m) m.hidden = true; showFrame(); };
+    im.onload = () => { img = im; imgP = polarity(im); frame = null; const m = $('lrTiffMsg'); if (m) m.hidden = true;
+      if (imgP !== im) alertMsg('Light signs on a dark ground: the reader turns the colours round (inside, not on the screen) so that the signs read as ink.');
+      showFrame(); };
     if (!tif) { im.src = URL.createObjectURL(file); return; }
     // TIFF: browsers cannot show it, so it is unpacked here (tiff.js) and handed on as a PNG
     file.arrayBuffer().then(ab => window.TIFF.toCanvas(ab)).then(c => new Promise(r => c.toBlob(r, 'image/png')))
@@ -2556,7 +2636,7 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
   function straighten(f) {
     const plain = { slope: 0, Hb: f[3], top: () => f[1] };
     const w = Math.max(8, Math.round(f[2] * 96 / f[3])), c = document.createElement('canvas'); c.width = w; c.height = 96;
-    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, w, 96);
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(imgP || img, f[0], f[1], f[2], f[3], 0, 0, w, 96);
     const rgba = x.getImageData(0, 0, w, 96).data, ink = window.WordNet.inkMed(rgba, w, 96);
     const xs = [], cy = [], wt = [];
     for (let x0 = 0; x0 < w; x0 += 24) { const x1 = Math.min(w, x0 + 48); let m = 0, sy = 0;
@@ -2582,15 +2662,33 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
 
   /* the band of the strongest line of writing (when the picture also shows parts of the lines above or below);
      twin of ink_band() in rd/deskew.py */
+  /* a ruling (a border line painted along the text): ink that, with 2 rows of slack up and down (a ruling may slant),
+     runs on unbroken far longer than any sign. Returns a mask of those ink pixels. */
+  function rulingMask(ink, w, h, minRun) {
+    const dil = new Uint8Array(w * h), out = new Uint8Array(w * h); let any = false;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let v = 0; for (let d = -2; d <= 2 && !v; d++) { const yy = y + d; if (yy >= 0 && yy < h && ink[yy * w + x]) v = 1; } dil[y * w + x] = v; }
+    for (let y = 0; y < h; y++) { let x = 0;
+      while (x < w) { if (!dil[y * w + x]) { x++; continue; } let e = x, gap = 0, last = x;
+        while (e < w && gap <= 4) { if (dil[y * w + e]) { last = e; gap = 0; } else gap++; e++; }
+        if (last - x + 1 >= minRun) { any = true; for (let yy = Math.max(0, y - 2); yy <= Math.min(h - 1, y + 2); yy++) for (let xx = x; xx <= last; xx++) if (ink[yy * w + xx]) out[yy * w + xx] = 1; }
+        x = last + 1; } }
+    return any ? out : null;
+  }
   function inkBand(f, st) {
     const w = Math.max(8, Math.round(f[2] * 96 / st.Hb)), c = document.createElement('canvas'); c.width = w; c.height = 96;
     const x = c.getContext('2d', { willReadFrequently: true }), cw = f[2] / w;
-    if (st.slope) { x.fillStyle = st.bg; x.fillRect(0, 0, w, 96); for (let xo = 0; xo < w; xo++) { const X = f[0] + xo * cw; x.drawImage(img, X, st.top(X + cw / 2), cw, st.Hb, xo, 0, 1, 96); } }
-    else x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, w, 96);
+    if (st.slope) { x.fillStyle = st.bg; x.fillRect(0, 0, w, 96); for (let xo = 0; xo < w; xo++) { const X = f[0] + xo * cw; x.drawImage(imgP || img, X, st.top(X + cw / 2), cw, st.Hb, xo, 0, 1, 96); } }
+    else x.drawImage(imgP || img, f[0], f[1], f[2], f[3], 0, 0, w, 96);
     const ink = window.WordNet.inkMed(x.getImageData(0, 0, w, 96).data, w, 96), prof = new Float64Array(96);
-    for (let y = 0; y < 96; y++) { let s = 0; for (let xx = 0; xx < w; xx++) s += ink[y * w + xx]; prof[y] = s; }
+    const rule = rulingMask(ink, w, 96, Math.max(0.3 * w, 120));      // border lines do not count as writing
+    for (let y = 0; y < 96; y++) { let s = 0; for (let xx = 0; xx < w; xx++) s += ink[y * w + xx] && !(rule && rule[y * w + xx]) ? 1 : 0; prof[y] = s; }
     const sm = prof.map((_, y) => { let s = 0; for (let d = -2; d <= 2; d++) { const yy = y + d; if (yy >= 0 && yy < 96) s += prof[yy]; } return s / 5; });
-    let top = 0; for (let y = 1; y < 96; y++) if (sm[y] > sm[top]) top = y;
+    // the line is the stretch of rows with the MOST ink (not the single darkest row: a thin border line can be darker)
+    let mx = 0; for (let y = 0; y < 96; y++) mx = Math.max(mx, sm[y]);
+    let top = 0, bestSum = -1;
+    for (let y = 0; y < 96;) { if (sm[y] < 0.06 * mx) { y++; continue; } let e = y, sum = 0, pk = y;
+      while (e < 96 && sm[e] >= 0.06 * mx) { sum += prof[e]; if (sm[e] > sm[pk]) pk = e; e++; }
+      if (sum > bestSum) { bestSum = sum; top = pk; } y = e; }
     const t = 0.35 * sm[top]; let r0 = top, r1 = top;
     while (r0 > 0 && sm[r0 - 1] >= t) r0--; while (r1 < 95 && sm[r1 + 1] >= t) r1++;
     // the whole line: every row round the strongest one until the ink almost stops (tall signs reach far above and below
@@ -2605,23 +2703,33 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
   }
 
   /* ---------- 2: the line, its ink and the cuts ---------- */
+  const invColor = c => { const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(c); return m ? `rgb(${255 - m[1]},${255 - m[2]},${255 - m[3]})` : c; };
   function readLine(whole) {
     const f = (!whole && frame) ? frame : [0, 0, img.naturalWidth, img.naturalHeight];
     if (mode === 'print') { readPrint(f); return; }
     let st = straighten(f);
     if (whole || !frame) st = inkBand(f, st);           // a whole picture: only the strongest line of writing in it
     const H = R.H64, W = Math.max(8, Math.round(f[2] * H / st.Hb));
-    const c = document.createElement('canvas'); c.width = W; c.height = H;
-    const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high';
-    if (st.slope || st.band) {                        // a slanting line: each column is moved up or down to level it
-      x.fillStyle = st.bg; x.fillRect(0, 0, W, H);
-      const cw = f[2] / W;
-      for (let xo = 0; xo < W; xo++) { const X = f[0] + xo * cw; x.drawImage(img, X, st.top(X + cw / 2), cw, st.Hb, xo, 0, 1, H); }
-    } else x.drawImage(img, f[0], f[1], f[2], f[3], 0, 0, W, H);
-    const px = x.getImageData(0, 0, W, H).data;
+    const render = (source, bg) => { const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high';
+      if (st.slope || st.band) {                        // a slanting line: each column is moved up or down to level it
+        x.fillStyle = bg; x.fillRect(0, 0, W, H);
+        const cw = f[2] / W;
+        for (let xo = 0; xo < W; xo++) { const X = f[0] + xo * cw; x.drawImage(source, X, st.top(X + cw / 2), cw, st.Hb, xo, 0, 1, H); }
+      } else x.drawImage(source, f[0], f[1], f[2], f[3], 0, 0, W, H);
+      return c; };
+    const inv = imgP && imgP !== img, c = render(imgP || img, st.bg);
+    const px = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+    { // a ruling (border line) inside the line is wiped out of the copy the reader works on, so it does not join the signs
+      const ink0 = window.WordNet.inkMed(px, W, H), rule = rulingMask(ink0, W, H, inv ? Math.max(0.3 * W, 96) : Math.max(0.5 * W, 192));   // painted texts often have border lines; on papyrus only a very long one
+      if (rule) { const bgv = [0, 1, 2].map(k => { const v = []; for (let i = k; i < px.length; i += 4 * 7) v.push(px[i]); v.sort((a, b) => a - b); return v[v.length >> 1]; });
+        for (let y = 0; y < H; y++) for (let xx = 0; xx < W; xx++) { let r = 0;          // the ruling and a pixel round it
+          for (let dy = -1; dy <= 1 && !r; dy++) for (let dx = -1; dx <= 1 && !r; dx++) { const yy = y + dy, x2 = xx + dx; if (yy >= 0 && yy < H && x2 >= 0 && x2 < W && rule[yy * W + x2]) r = 1; }
+          if (r) { const i = 4 * (y * W + xx); px[i] = bgv[0]; px[i + 1] = bgv[1]; px[i + 2] = bgv[2]; } } } }
+    const shown = inv ? render(img, st.bg ? invColor(st.bg) : '#000') : c;   // on the screen the line keeps its own colours
     const ink = R.ink64(px, W, H), map = R.soft32(ink, W, H);
-    signCache && signCache.clear(); seqCache.clear(); redCache.clear(); ovCache.clear(); seqTodo.clear(); line = { src: c, map, W: map.W, px, W64: W, f, st, img, cuts: R.suggestCuts(map, density()) }; voteCache.clear();
-    choice.clear();
+    signCache && signCache.clear(); seqCache.clear(); redCache.clear(); ovCache.clear(); seqTodo.clear(); line = { src: shown, map, W: map.W, px, W64: W, f, st, img: imgP || img, cuts: R.suggestCuts(map, density()) }; voteCache.clear();
+    choice.clear(); signsEdited = false;
     $('lrCut').hidden = false; $('lrPieces').hidden = false; $('lrOut').hidden = false;
     $('lrList').innerHTML = '<li class="lw-hint">Loading the word pictures&hellip;</li>';
     drawLine();
@@ -2769,17 +2877,40 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   /* ---------- 4: the transcription of the chosen words ---------- */
+  let signsEdited = false, lastN = 0;
   function writeOut(n) {
+    lastN = n;
     const chosen = []; for (let i = 0; i < n; i++) { const c = choice.get(i); if (c != null && c >= 0) chosen.push(ALLW[c]); }
     const uni = chosen.map(w => w[1]).filter(Boolean).join(' ');
     $('lrTr').textContent = chosen.map(w => w[0]).join(' ');
     $('lrEn').textContent = chosen.map(w => w[4] ? w[4][1].split(';')[0] : w[2]).filter(Boolean).join(' · ');
-    if (!chosen.length) { $('lrStage').innerHTML = '<div class="lw-loading">Choose a word for a piece to start the transcription.</div>'; return; }
-    try { const p = AS.parseInput(uni, SM, G)[0];
+    if (!signsEdited) $('lrSigns').value = uni;          // signs you added yourself stay until you go back to the chosen words
+    drawSigns();
+  }
+  /* the signs box: codes and sound values are turned into hieroglyphs for copying (and in the box when you leave it) */
+  function codeToUni(t) {
+    if (!SM || !G) return null;
+    if (!SM.__inv) { SM.__inv = {}; Object.entries(SM.uni).forEach(([ch, cd]) => { if (!SM.__inv[cd]) SM.__inv[cd] = ch; }); }
+    if (!G.__lc) { G.__lc = {}; Object.keys(G.sign).forEach(k => { G.__lc[k.toLowerCase()] = k; }); }
+    const cd = G.sign[t] ? t : (G.phon[t] || (/\d/.test(t) ? G.__lc[t.toLowerCase()] : null));
+    return cd ? (SM.__inv[cd] || null) : null;
+  }
+  function signsToUni(text) {
+    const bad = [];
+    const out = text.replace(/[A-Za-z][A-Za-z0-9.]*/g, t => { const u = codeToUni(t); if (!u) { bad.push(t); return t; } return u; });
+    return { out, bad };
+  }
+  function drawSigns() {
+    const text = $('lrSigns').value, msg = $('lrSignsMsg'); msg.textContent = '';
+    $('lrSignsReset').hidden = !signsEdited;
+    if (!text.trim()) { $('lrStage').innerHTML = '<div class="lw-loading">Choose a word for a piece to start the transcription, or type signs below.</div>'; $('lrStage').dataset.uni = ''; return; }
+    const { out, bad } = signsToUni(text);
+    if (bad.length) msg.textContent = 'Not a known sign: ' + bad.join(', ');
+    try { const p = AS.parseInput(out, SM, G)[0];
       const L = LW.layoutLine(ST.toMdC(p.units), G, { direction: 'rtl' });
       $('lrStage').innerHTML = LW.toSVG(L, G, { unit: 4 });
     } catch (e) { $('lrStage').innerHTML = '<div class="lw-loading">These words have no hieroglyphs in our lists yet; the transliteration is below.</div>'; }
-    $('lrStage').dataset.uni = uni;
+    $('lrStage').dataset.uni = out;
   }
   function copy(text, btn) { const t = btn.textContent;
     const done = () => { btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = t; }, 1500); };
@@ -2802,13 +2933,17 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
     $('lrWhole').addEventListener('click', () => readLine(true));
     $('lrRead').addEventListener('click', () => readLine(false));
     $('lrCopyU').addEventListener('click', e => copy($('lrStage').dataset.uni || '', e.target));
+    $('lrSigns').addEventListener('input', () => { signsEdited = true; drawSigns(); });
+    $('lrSigns').addEventListener('change', () => { const { out } = signsToUni($('lrSigns').value); if (out !== $('lrSigns').value) { $('lrSigns').value = out; drawSigns(); } });
+    $('lrSignsReset').addEventListener('click', () => { signsEdited = false; writeOut(lastN); });
     $('lrCopyT').addEventListener('click', e => copy($('lrTr').textContent, e.target));
     $('lrFind').addEventListener('click', () => {
       if (!line) return; const b = $('lrFind'), msg = $('lrFindMsg'); b.disabled = true; msg.hidden = true;
       busy('lrBusy', 'Step 1 of 2: finding the words', 0, 'Please wait: the cuts and the guesses below will change when this is done.');
       loadAll().then(() => { if (!line.L2) line.L2 = window.WordNet.prepareLine(line.px, line.W64);
         return MODEL.findWords(line.L2, (d, n) => { busy('lrBusy', 'Step 1 of 2: finding the words', d / n, 'Please wait: the cuts and the guesses below will change when this is done.'); }); })
-        .then(cuts => { line.cuts = cuts.map(x => Math.round(x / 2)); line.found = true; choice.clear(); drawLine(); buildPieces();
+        .then(cuts => { if (MODEL_SEG && MODEL_SEG.spill && MODEL.spillMerge) cuts = MODEL.spillMerge(line.L2, cuts, typeof MODEL_SEG.spill === 'object' ? MODEL_SEG.spill : undefined);   // the end of a word cut off from it goes back to it
+          line.cuts = cuts.map(x => Math.round(x / 2)); line.found = true; choice.clear(); drawLine(); buildPieces();
           msg.hidden = false; msg.textContent = 'The reader has placed the cuts where it found words. Check them: click the line to add a cut, click a cut to remove it.'; })
         .catch(() => { line.found = true; msg.hidden = false; msg.textContent = 'The words could not be found. Set the cuts by hand.'; })
         .finally(() => { b.disabled = false; busyDone('lrBusy'); });
