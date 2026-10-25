@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TLA Fuzzy Search</title>
+<style>
+  :root { --bg:#fbf7ef; --fg:#2b2118; --mut:#7a6a58; --line:#e3d8c6; --acc:#9b2c1f; --chip:#f1e8d9; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1f1a15; --fg:#efe6d8; --mut:#a8988a; --line:#3b3229; --acc:#e0806f; --chip:#2c251e; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  .sub { color: var(--mut); margin: 0 0 28px; }
+  h2 { font-size: 18px; margin: 32px 0 8px; }
+  ol { padding-left: 22px; }
+  li { margin: 6px 0; }
+  .bm { display:inline-block; padding:10px 18px; border-radius:999px; background:var(--acc); color:#fff; text-decoration:none; font-weight:600; cursor:grab; }
+  .bm:active { cursor:grabbing; }
+  code { background:var(--chip); padding:1px 5px; border-radius:4px; font-size:14px; }
+  textarea { width:100%; height:84px; font:12px/1.4 ui-monospace,Consolas,monospace; border:1px solid var(--line); border-radius:8px; padding:8px; background:transparent; color:inherit; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; }
+  td { border-top: 1px solid var(--line); padding: 7px 8px 7px 0; vertical-align: top; }
+  td:first-child { white-space: nowrap; }
+  .note { color: var(--mut); font-size: 14px; }
+  a { color: var(--acc); }
+  details { margin-top: 18px; }
+  summary { cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <h1>TLA Fuzzy Search</h1>
+  <p class="sub">A search panel that lays over the Thesaurus Linguae Aegyptiae and forgives typos in transliteration, translation and hieroglyphs.</p>
+
+  <h2>Install (once, about a minute)</h2>
+  <ol>
+    <li>Add the free <b>Tampermonkey</b> extension to your browser:
+      <a href="https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo" target="_blank" rel="noopener">Chrome</a> ·
+      <a href="https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd" target="_blank" rel="noopener">Edge</a> ·
+      <a href="https://addons.mozilla.org/firefox/addon/tampermonkey/" target="_blank" rel="noopener">Firefox</a></li>
+    <li>Click <a class="bm" id="us" href="tla-fuzzy.user.js">Install TLA fuzzy</a> and press <b>Install</b> in the Tampermonkey tab that opens.</li>
+  </ol>
+  <p class="note">In Chrome or Edge, if the search bar doesn't appear: open the browser's Extensions page, click <b>Details</b> on Tampermonkey and switch on <b>Allow User Scripts</b> (Chrome may call it Developer mode).</p>
+
+  <h2>Use</h2>
+  <p>Open <a href="https://thesaurus-linguae-aegyptiae.de/search" target="_blank" rel="noopener">thesaurus-linguae-aegyptiae.de</a> and pass its "Verify" check. A <b>TLA fuzzy</b> search bar is waiting in the top-right corner of every page: type and press Enter. Click a result to preview it in the panel; Ctrl+click opens it in a new tab; the – button folds the panel back into the bar.</p>
+
+  <details>
+    <summary class="note">No extensions allowed? Use a bookmark instead</summary>
+    <p class="note">Drag this button to your bookmarks bar (Ctrl+Shift+B shows the bar), then click it while you are on the TLA site: <a class="bm" id="bm" href="#" title="Drag me to your bookmarks bar">TLA fuzzy</a></p>
+    <p class="note">Or make a bookmark by hand with this as its URL:</p>
+    <textarea id="code" readonly></textarea>
+  </details>
+
+  <h2>What you can type</h2>
+  <table>
+    <tr><td><code>nefer</code>, <code>hr</code>, <code>djehuty</code>, <code>sth</code></td><td>Plain letters. h/s/t/d/k also match ḥ ḫ ẖ / š z / ṯ / ḏ / q; a matches ꜣ ꜥ; e and o are treated as helper vowels.</td></tr>
+    <tr><td><code>nrf</code>, <code>nfrr</code></td><td>Typos: one wrong, missing, extra or swapped letter still finds nfr.</td></tr>
+    <tr><td><code>beutiful</code>, <code>schoen</code></td><td>English or German meanings, with spelling fixed automatically.</td></tr>
+    <tr><td><code>F35 I9 D21</code>, <code>G5</code>, or pasted signs</td><td>Gardiner codes or Unicode hieroglyphs; one sign off, missing or extra still matches.</td></tr>
+  </table>
+  <p class="note">Use the chips in the panel to limit a search to one field, and the checkboxes to include personal names or the Demotic lemma list.</p>
+
+  <h2>Notes</h2>
+  <p class="note">Results come live from the TLA's own search, fetched with your browser's verified session, a few requests at a time. Data: Thesaurus Linguae Aegyptiae, Berlin-Brandenburgische Akademie der Wissenschaften, CC BY-SA 4.0. English spelling list from Hunspell en_US.</p>
+</main>
+<script>
+  (function () {
+    var base = /^https?:/.test(location.protocol) ? new URL('.', location.href).href : 'https://rennefer.github.io/H-Sv4/';
+    var code = "javascript:(function(){var s=document.createElement('script');s.src='" + base + "tla-fuzzy.js?v='+Date.now();document.body.appendChild(s);})();";
+    document.getElementById('bm').href = code;
+    document.getElementById('code').value = code;
+    document.getElementById('bm').addEventListener('click', function (e) { e.preventDefault(); alert('Drag this button to your bookmarks bar, then click it while you are on the TLA website.'); });
+  })();
+</script>
+</body>
+</html>
