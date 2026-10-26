@@ -976,6 +976,9 @@ if ('serviceWorker' in navigator) {
        opt.known: Set of known spellings; opt.wordGlyph: spelling -> one glyph drawn for the whole word */
     /* the sign codes of some blocks, in order ("G41 G1"), whatever the stacking keys */
     function codesOf(bs) { return bs.map(b => (b.m.match(/[A-Z][a-z]?\d+[A-Z]?/g) || []).join(' ')).join(' '); }
+    function runIn(ws, run) { if (!run) return null;
+      for (let i = 0; i < ws.length; i++) for (let j = i + 1; j <= ws.length; j++) if (codesOf(ws.slice(i, j)) === run) return [i, j];
+      return null; }
     function blocksToMdC(blocks, opt) {
       opt = opt || {}; const out = []; let red = false;
       const words = []; blocks.forEach(b => { (words[b.word] = words[b.word] || []).push(b); });
@@ -984,9 +987,12 @@ if ('serviceWorker' in navigator) {
         for (let k = 0; k < (ws[0].pre || 0); k++) out.push('.');      // the extra spaces typed before the word
         if (opt.words) out.push(opt.known && opt.known.has(sp) ? '_t' : '_');
         // a word form replaces its blocks wherever they make up the spelling, also at the start or inside a longer word
-        const list = [];
-        for (let i = 0; i < ws.length; ) {
+        // a ligature made for this word: its own signs in the word are drawn as the ligature (the whole word, if its signs are not given)
+        const list = [], wl = opt.wholeWord && opt.wholeWord[codesOf(ws)], at = wl ? runIn(ws, wl.run) : null;
+        if (wl && !wl.run) list.push({ m: wl.code, red: ws[0].red });
+        else for (let i = 0; i < ws.length; ) {
           let hit = 0, code = null;
+          if (at && i === at[0]) { list.push({ m: wl.code, red: ws[i].red }); i = at[1]; continue; }
           if (opt.wordGlyph) for (let j = ws.length; j > i; j--) { const c = opt.wordGlyph[codesOf(ws.slice(i, j))]; if (c) { hit = j; code = c; break; } }
           if (code) { list.push({ m: code, red: ws[i].red }); i = hit; } else { list.push(ws[i]); i++; }
         }
@@ -996,7 +1002,7 @@ if ('serviceWorker' in navigator) {
       return out.join('-');
     }
     function toMdC(units) { return blocksToMdC(toBlocks(units)); }
-    return { cls, p, arrange, segmentUnits, toBlocks, blocksToMdC, toMdC, codesOf };
+    return { cls, p, arrange, segmentUnits, toBlocks, blocksToMdC, toMdC, codesOf, runIn };
   }
 
   /* reading the input. Signs are typed as Unicode hieroglyphs or as sign codes / sound values.
@@ -1700,16 +1706,37 @@ if ('serviceWorker' in navigator) {
     fromTyped = true;
     if (hier && GH) {                                    // the drawing in hieratic knows the words
       KNOWN = KNOWN || new Set(GH.words || []);
+      const WHOLE = ligWords();
       DRAWN = []; let bi = 0;                            // which typed blocks each drawn block stands for (a word form is one)
       per.forEach(bl => { const byWord = []; bl.forEach(b => { (byWord[b.word] = byWord[b.word] || []).push(bi++); });
         byWord.filter(Boolean).forEach(ix => {
+          const wl = WHOLE[ST.codesOf(ix.map(i => BLOCKS[i]))], at = wl ? ST.runIn(ix.map(i => BLOCKS[i]), wl.run) : null;
+          if (wl && !wl.run) { DRAWN.push(ix); return; }
           for (let a = 0; a < ix.length; ) { let hit = 0;
+            if (at && a === at[0]) { DRAWN.push(ix.slice(at[0], at[1])); a = at[1]; continue; }
             for (let b = ix.length; b > a; b--) if (GH.wordGlyph && GH.wordGlyph[ST.codesOf(ix.slice(a, b).map(i => BLOCKS[i]))]) { hit = b; break; }
             if (hit) { DRAWN.push(ix.slice(a, hit)); a = hit; } else { DRAWN.push([ix[a]]); a++; } } }); });
-      draw(per.map(bl => ST.blocksToMdC(bl, { words: true, known: KNOWN, wordGlyph: GH.wordGlyph })).filter(Boolean).join('-..-'));
+      draw(per.map(bl => ST.blocksToMdC(bl, { words: true, known: KNOWN, wordGlyph: GH.wordGlyph, wholeWord: WHOLE })).filter(Boolean).join('-..-'));
     } else { DRAWN = null; draw(mdc.replace(/ !\n/g, '-..-')); }
   }
   let BLOCKS = [], fromTyped = true, LAST = null, KNOWN = null, DRAWN = null;
+  /* ligatures made in the sign editor for words (GH.ligs[code].words): every spelling of such a word, typed as its
+     transliteration or put in as hieroglyphs, is drawn as the ligature. The signs of the word -> the ligature's code */
+  let LIGW = null, LIGW_KEY = null;
+  function ligWords() {
+    if (!GH || !GH.ligs || !SPELL) return {};
+    if (LIGW && LIGW_KEY === GH) return LIGW;
+    const out = {};
+    Object.entries(GH.ligs).forEach(([code, L]) => {
+      if (!GH.sign[code] || !L || !L.words) return;
+      const sg = (L.signs || '').match(/[A-Za-z]+\d+[A-Za-z]?/g) || [], run = sg.length && sg.every(c => GH.sign[c] || G.sign[c]) ? sg.join(' ') : null;   // its signs, if all are known
+      L.words.forEach(w => {
+        const sps = (SPELL[w] || []).concat(SPELLN[norm(w)] || []);
+        sps.forEach(x => { try { const u = AS.parseInput(x[0], M, G)[0].units; const k = ST.codesOf(ST.toBlocks(u)); if (k) out[k] = { code, run }; } catch (e) {} });
+      });
+    });
+    LIGW = out; LIGW_KEY = GH; return out;
+  }
   /* red ink: $r switches red on, $b back to black (the JSesh keys) */
   function tidyRed(v) {
     let prev; do { prev = v; v = v.replace(/\$r(\s*)\$b/g, '$1').replace(/\$b(\s*)\$r/g, '$1'); } while (v !== prev);

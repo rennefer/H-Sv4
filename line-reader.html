@@ -2161,7 +2161,8 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
       if (rg != null) { if (WATER.has(e.c) && rg < 0.13) s -= 0.5; if (STROKES.has(e.c) && rg > 0.17) s -= 0.3; }
       if (solid === 'flat' && HOLLOW.has(e.c)) s -= 0.6;   // a solid dash is a stroke, not a sign drawn in outline
       if (solid === 'bar' && e.c === 'Z1') s += 0.3;        // a plain solid upright bar is the stroke
-      const c = SAME[e.c] || e.c; if (!best.has(c) || s > best.get(c)) best.set(c, s);
+      const c = SAME[e.c] || e.c; if (HIER && !HIER.has(c)) s -= GREYPEN;
+      if (!best.has(c) || s > best.get(c)) best.set(c, s);
     }
     return [...best].sort((a, b) => b[1] - a[1]).slice(0, k);
   }
@@ -2442,7 +2443,10 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
     }
     return lines.length ? { text: lines.join('\n'), dir: dirs.filter(d => d === 'rtl').length * 2 >= dirs.length ? 'rtl' : 'ltr', lines: lines.length, mdc: mdcs, detail } : null;
   }
-  const API = { load, read, readLine, readImage, toText };
+  /* the signs that have a hieratic form: a sign without one is taken only when it is clearly the better match (it would be drawn as a grey stand-in) */
+  let HIER = null; const GREYPEN = W_.__lrGreyPen != null ? W_.__lrGreyPen : 0.1;
+  function setHier(set) { HIER = set; }
+  const API = { load, read, readLine, readImage, toText, setHier };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PrintReader = API;
 })(typeof window !== 'undefined' ? window : this);
 
@@ -2454,7 +2458,7 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
     || (after[0] === '\u{133CF}' && after[1] === '\u{13216}') || after.slice(0, 3).includes('\u{13123}');
   const R = window.LineReader, LW = window.LineWriter, AS = window.AutoStack, $ = id => document.getElementById(id);
   let G = null, ST = null, SM = null, MODEL = null, ready = null;
-  let img = null, imgP = null, frame = null, line = null;   // imgP: the picture the reader works on (colours turned round for light signs)     // line: {canvas, map, W, cuts:[], pieces:[]}
+  let img = null, imgP = null, imgInv = false, frame = null, line = null;   // imgP: the picture the reader works on (colours turned round for light signs)     // line: {canvas, map, W, cuts:[], pieces:[]}
   const choice = new Map(), voteCache = new Map();                       // piece index -> word index | -1 (left out)
 
   /* ---------- loading data ---------- */
@@ -2536,7 +2540,7 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
   function loadPrint() {
     if (PREADY) return PREADY;
     PREADY = Promise.all(['lw-glyphs.json', 'lw-stack.json', 'lw-hieratic.json', 'lr-print.json'].map(u => fetch(u, { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error(u); return r.json(); })))
-      .then(([g, sm, h, pr]) => { G = G || g; SM = SM || sm; ST = ST || AS.makeStacker(SM, G); GH = h; U2C = AS.unicodeIndex(SM); window.PrintReader.load(pr); });
+      .then(([g, sm, h, pr]) => { G = G || g; SM = SM || sm; ST = ST || AS.makeStacker(SM, G); GH = h; U2C = AS.unicodeIndex(SM); window.PrintReader.load(pr); window.PrintReader.setHier(new Set(Object.keys(GH.sign).filter(k => !GH.sign[k][3]))); });
     return PREADY;
   }
   function setMode(m) {
@@ -2593,8 +2597,8 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
     const tif = /tiff?$/i.test(file.type) || /\.tiff?$/i.test(file.name || '');
     if (!tif && !/^image\//.test(file.type)) return;
     const im = new Image();
-    im.onload = () => { img = im; imgP = polarity(im); frame = null; const m = $('lrTiffMsg'); if (m) m.hidden = true;
-      if (imgP !== im) alertMsg('Light signs on a dark ground: the reader turns the colours round (inside, not on the screen) so that the signs read as ink.');
+    im.onload = () => { img = im; const base = offPapyrus(im); imgP = polarity(base); imgInv = imgP !== base; frame = null;   // the ground round the papyrus first: white ground must not make the papyrus look like light signs on a dark ground const m = $('lrTiffMsg'); if (m) m.hidden = true;
+      if (imgInv) alertMsg('Light signs on a dark ground: the reader turns the colours round (inside, not on the screen) so that the signs read as ink.');
       showFrame(); };
     if (!tif) { im.src = URL.createObjectURL(file); return; }
     // TIFF: browsers cannot show it, so it is unpacked here (tiff.js) and handed on as a PNG
@@ -2633,6 +2637,32 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
      The line is looked at 96 rows high; the height of its ink is measured in overlapping strips across it and a
      straight line is fitted. Only a line that clearly slants (a good fit, and a drift of 30 of the 96 rows or more)
      is levelled: each column is then read from rows that follow the slope, in a band as high as the frame less the drift. */
+  /* off the papyrus: a cut-out photo on white (or a part blacked out) has ground round the papyrus that is not writing. That
+     ground, reached from the edge of the picture, is made papyrus-coloured in the copy the reader works on, so that the
+     reader finds the line of writing and does not take the papyrus edge or the black for signs. A white page with ink on
+     it (a facsimile) is left as it is. */
+  function offPapyrus(src) {
+    const W = src.naturalWidth || src.width, H = src.naturalHeight || src.height, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0); const id = x.getImageData(0, 0, W, H), px = id.data, N = W * H;
+    const off = new Uint8Array(N), cand = i => { const r = px[4 * i], g = px[4 * i + 1], b = px[4 * i + 2]; return Math.min(r, g, b) > 228 || Math.max(r, g, b) < 22; }, st = [];
+    const seed = i => { if (!off[i] && cand(i)) { off[i] = 1; st.push(i); } };
+    for (let xx = 0; xx < W; xx++) { seed(xx); seed((H - 1) * W + xx); } for (let y = 0; y < H; y++) { seed(y * W); seed(y * W + W - 1); }
+    while (st.length) { const i = st.pop(), y = (i / W) | 0, xx = i - y * W;
+      if (xx > 0) seed(i - 1); if (xx < W - 1) seed(i + 1); if (y > 0) seed(i - W); if (y < H - 1) seed(i + W); }
+    let n0 = 0; for (let i = 0; i < N; i++) n0 += off[i];
+    if (n0 < 0.005 * N || n0 > 0.8 * N) return src;
+    const bgv = [0, 1, 2].map(k => { const v = []; for (let i = 0; i < N; i += 5) if (!off[i]) v.push(px[4 * i + k]); v.sort((a, b) => a - b); return v[v.length >> 1]; });
+    if (0.3 * bgv[0] + 0.59 * bgv[1] + 0.11 * bgv[2] < 90) return src;            // the rest is dark: not papyrus on a ground
+    // the papyrus edge next to the ground is often dark (shadow, frayed fibres): a few pixels of it are taken in too
+    const rr = Math.max(2, Math.round(0.03 * Math.min(W, H))), off2 = new Uint8Array(N);
+    for (let y = 0; y < H; y++) { let last = -1e9; for (let xx = 0; xx < W; xx++) { if (off[y * W + xx]) last = xx; if (xx - last <= rr) off2[y * W + xx] = 1; }
+      last = 1e9; for (let xx = W - 1; xx >= 0; xx--) { if (off[y * W + xx]) last = xx; if (last - xx <= rr) off2[y * W + xx] = 1; } }
+    const off3 = new Uint8Array(N);
+    for (let xx = 0; xx < W; xx++) { let last = -1e9; for (let y = 0; y < H; y++) { if (off2[y * W + xx]) last = y; if (y - last <= rr) off3[y * W + xx] = 1; }
+      last = 1e9; for (let y = H - 1; y >= 0; y--) { if (off2[y * W + xx]) last = y; if (last - y <= rr) off3[y * W + xx] = 1; } }
+    for (let i = 0; i < N; i++) if (off3[i]) { px[4 * i] = bgv[0]; px[4 * i + 1] = bgv[1]; px[4 * i + 2] = bgv[2]; }
+    x.putImageData(id, 0, 0); c.naturalWidth = W; c.naturalHeight = H; return c;
+  }
   function straighten(f) {
     const plain = { slope: 0, Hb: f[3], top: () => f[1] };
     const w = Math.max(8, Math.round(f[2] * 96 / f[3])), c = document.createElement('canvas'); c.width = w; c.height = 96;
@@ -2718,7 +2748,7 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
         for (let xo = 0; xo < W; xo++) { const X = f[0] + xo * cw; x.drawImage(source, X, st.top(X + cw / 2), cw, st.Hb, xo, 0, 1, H); }
       } else x.drawImage(source, f[0], f[1], f[2], f[3], 0, 0, W, H);
       return c; };
-    const inv = imgP && imgP !== img, c = render(imgP || img, st.bg);
+    const inv = imgInv, c = render(imgP || img, st.bg);
     const px = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
     { // a ruling (border line) inside the line is wiped out of the copy the reader works on, so it does not join the signs
       const ink0 = window.WordNet.inkMed(px, W, H), rule = rulingMask(ink0, W, H, inv ? Math.max(0.3 * W, 96) : Math.max(0.5 * W, 192));   // painted texts often have border lines; on papyrus only a very long one
