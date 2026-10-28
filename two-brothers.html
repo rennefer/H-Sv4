@@ -1125,7 +1125,7 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
 <div class="search-zone paleo-zone" id="paleoZone">
   <div class="search-handle paleo-handle"><span class="sh-glyph">𓀢</span></div>
 </div>
-<div class="search-zone budge-zone" id="budgeZone" title="Budge Dictionary (raw, beta)">
+<div class="search-zone budge-zone" id="budgeZone" title="Budge Dictionary (modern: MdC and Gardiner codes)">
   <div class="search-handle budge-handle"><span class="sh-glyph">𓋈</span></div>
 </div>
 <aside class="search-panel" id="paleoPanel" aria-hidden="true">
@@ -1141,7 +1141,7 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
 </aside>
 <aside class="search-panel budge-panel" id="budgePanel" aria-hidden="true">
   <div class="budge-panel-head">
-    <h3>Budge Dictionary <span style="font-weight:400;font-style:italic;font-size:12px;color:var(--ink-faint-on-dark)">(raw, beta)</span></h3>
+    <h3>Budge Dictionary <span style="font-weight:400;font-style:italic;font-size:12px;color:var(--ink-faint-on-dark)">(modern: MdC and Gardiner codes)</span></h3>
     <button class="search-close" id="budgeClose" aria-label="Close Budge Dictionary search">&times;</button>
   </div>
   <div class="budge-frame-wrap">
@@ -1274,7 +1274,7 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
     closePanel();
     closePaleoPanel();
     if(!budgeFrameLoaded){
-      budgeFrame.src = 'https://rennefer.github.io/H-Sv3/?embed=1';
+      budgeFrame.src = 'https://rennefer.github.io/H-Sv3/?embed=1&v=20261028';
       budgeFrameLoaded = true;
     }
     budgeZone.classList.add('open');
