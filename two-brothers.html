@@ -1040,6 +1040,9 @@ nav.tabs a::before{
   max-width:min(1120px, 92vw);
 }
 .paleo-zoom.show{ display:block; }
+.paleo-zoom:not(.pz-overlay){ pointer-events:none; }
+/* while a side panel is open the other side tabs sit on top of it: keep them from opening by accident */
+html.sp-open .search-zone:not(.open){ pointer-events:none; opacity:.35; }
 /* phone / touch: the enlarged image opens as its own full-screen overlay */
 .paleo-zoom .pz-close{ display:none; }
 .paleo-zoom.pz-overlay{
@@ -1081,6 +1084,15 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
   .search-zone{ width:34px; }
   .search-handle{ width:34px; height:120px; }
   .search-handle .sh-glyph{ font-size:22px; }
+}
+</style>
+<style id="short-tabs">
+/* short windows (or a zoomed-in page): smaller side tabs so all three fit on screen */
+@media (max-height: 600px) {
+  .search-handle, .search-zone .search-handle{ height:80px; }
+  .search-zone{ transform:translateY(-90px); }
+  .search-zone.paleo-zone{ transform:translateY(0); }
+  .search-zone.budge-zone{ transform:translateY(90px); }
 }
 </style>
 </head><body>
@@ -1326,6 +1338,11 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
   /* phones and tablets have no real hover: open the side tabs by tapping
      only, close with the x or a tap outside. Enlarged images open full-screen. */
   window.PZ_TOUCH = !!(window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)').matches);
+  function markSidePanels(){
+    var any = document.querySelector('.search-panel.open');
+    document.documentElement.classList.toggle('sp-open', !!any);
+  }
+  document.querySelectorAll('.search-panel').forEach(function(p){ new MutationObserver(markSidePanels).observe(p, { attributes:true, attributeFilter:['class'] }); });
   function wireHoverPanel(zoneEl, panelEl, openFn, closeFn){
     if(window.PZ_TOUCH) return;
     var closeTimer = null;
@@ -1793,6 +1810,7 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
       return;
     }
     var r = thumb.getBoundingClientRect();
+    paleoZoom.style.maxWidth = Math.max(220, Math.min(1120, r.left - 24)) + 'px';
     var pw = paleoZoom.offsetWidth || 320;
     var ph = paleoZoom.offsetHeight || 200;
     var top = r.top + r.height / 2 - ph / 2;
@@ -1843,6 +1861,7 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
       return;
     }
     var r = thumb.getBoundingClientRect();
+    paleoZoom.style.maxWidth = Math.max(220, Math.min(1120, r.left - 24)) + 'px';
     var pw = paleoZoom.offsetWidth || 320;
     var ph = paleoZoom.offsetHeight || 200;
     var top = r.top + r.height / 2 - ph / 2;
