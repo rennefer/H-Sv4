@@ -471,6 +471,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
           <div class="lw-seg" role="group" aria-label="Script" id="lwScript">
             <button type="button" id="lwHg" class="on" aria-pressed="true">Hieroglyphs</button>
             <button type="button" id="lwHt" aria-pressed="false">Hieratic</button>
+            <button type="button" id="lwHc" aria-pressed="false" title="Hieratic signs from Christian Casey's sign list for the Shipwrecked Sailor (P. Hermitage 1115); signs he does not list are grey">Hieratic (Casey)</button>
           </div>
           <button type="button" id="lwPap" class="lw-tog" aria-pressed="false" hidden title="Draw the hieratic on papyrus (also in the downloads)">Papyrus</button>
           <label class="lw-field lw-size">Size <input type="range" id="lwSize" min="2" max="8" step="0.5" value="4"></label>
@@ -1555,7 +1556,7 @@ if ('serviceWorker' in navigator) {
   const HRSUF = after => ['\u{13191}', '\u{13000}', '\u{13050}', '\u{133A1}', '\u{132F4}', '\u{1337F}'].includes(after[0])
     || (after[0] === '\u{133CF}' && after[1] === '\u{13216}') || after.slice(0, 3).includes('\u{13123}');
   const LW = window.LineWriter, AS = window.AutoStack, $ = id => document.getElementById(id);
-  let G = null, M = null, ST = null, U2C = null, rtl = true, timer = 0, GH = null, hier = false;
+  let G = null, M = null, ST = null, U2C = null, rtl = true, timer = 0, GH = null, hier = false, GHS = {}, GHsrc = 'tb';
   const pref = { get(k, d) { try { const v = localStorage.getItem('lw.' + k); return v === null ? d : v; } catch (e) { return d; } },
                  set(k, v) { try { localStorage.setItem('lw.' + k, v); } catch (e) {} } };
 
@@ -1774,12 +1775,19 @@ if ('serviceWorker' in navigator) {
   const soon = f => () => { clearTimeout(timer); timer = setTimeout(f, 120); };
 
   /* script: printed hieroglyphs or the hieratic signs traced from our papyri (signs without a hieratic form yet are grey) */
-  function setScript(h) {
-    hier = h; pref.set('script', h ? 'hieratic' : 'hiero');
-    $('lwHt').classList.toggle('on', h); $('lwHg').classList.toggle('on', !h);
-    $('lwHt').setAttribute('aria-pressed', h); $('lwHg').setAttribute('aria-pressed', !h);
+  function setScript(h, src) {
+    /* src: 'tb' = signs traced from our papyri, 'casey' = Christian Casey's Shipwrecked Sailor sign list */
+    if (h) GHsrc = src || GHsrc;
+    hier = h; pref.set('script', h ? 'hieratic' : 'hiero'); pref.set('hsrc', GHsrc);
+    const ht = h && GHsrc === 'tb', hc = h && GHsrc === 'casey';
+    $('lwHt').classList.toggle('on', ht); $('lwHc').classList.toggle('on', hc); $('lwHg').classList.toggle('on', !h);
+    $('lwHt').setAttribute('aria-pressed', ht); $('lwHc').setAttribute('aria-pressed', hc); $('lwHg').setAttribute('aria-pressed', !h);
     applyPap();
-    if (h && !GH) { fetch('lw-hieratic.json', { cache: 'no-cache' }).then(r => r.json()).then(g => { GH = g; redraw(); }).catch(() => { $('lwMsg').textContent = 'The hieratic signs could not be loaded.'; }); }
+    GH = GHS[GHsrc] || null; KNOWN = null;
+    if (h && !GH) {
+      const want = GHsrc;
+      fetch(want === 'casey' ? 'lw-hieratic-casey.json' : 'lw-hieratic.json', { cache: 'no-cache' }).then(r => r.json()).then(g => { GHS[want] = g; if (GHsrc === want) { GH = g; KNOWN = null; redraw(); } }).catch(() => { $('lwMsg').textContent = 'The hieratic signs could not be loaded.'; });
+    }
     redraw();
   }
   const redraw = () => { if (fromTyped) fromText(); else fromCode(); };
@@ -1879,7 +1887,8 @@ if ('serviceWorker' in navigator) {
     $('lwIn').addEventListener('input', soon(fromCode));
     $('lwSize').addEventListener('input', () => { pref.set('size', $('lwSize').value); redraw(); });
     $('lwHg').addEventListener('click', () => setScript(false));
-    $('lwHt').addEventListener('click', () => setScript(true));
+    $('lwHt').addEventListener('click', () => setScript(true, 'tb'));
+    $('lwHc').addEventListener('click', () => setScript(true, 'casey'));
     $('lwRtl').addEventListener('click', () => setDir(true));
     $('lwLtr').addEventListener('click', () => setDir(false));
     $('lwPap').addEventListener('click', () => { pap = !pap; pref.set('pap', pap ? '1' : '0'); applyPap(); });
@@ -1920,7 +1929,7 @@ if ('serviceWorker' in navigator) {
     if (pref.get('dir', 'rtl') === 'ltr') { rtl = false; $('lwRtl').classList.remove('on'); $('lwLtr').classList.add('on'); $('lwRtl').setAttribute('aria-pressed', 'false'); $('lwLtr').setAttribute('aria-pressed', 'true'); }
     Promise.all([fetch('lw-glyphs.json', { cache: 'no-cache' }).then(r => r.json()), fetch('lw-stack.json', { cache: 'no-cache' }).then(r => r.json())]).then(([g, m]) => {
       G = g; M = m; ST = AS.makeStacker(M, G); U2C = AS.unicodeIndex(M); buildIndex(); fromText(); spellLoad().then(fromText);
-      if (!$('lwScript').hidden && pref.get('script', 'hiero') === 'hieratic') setScript(true);
+      if (!$('lwScript').hidden && pref.get('script', 'hiero') === 'hieratic') setScript(true, pref.get('hsrc', 'tb'));
       if (/^#t=/.test(location.hash)) {                 // a line sent from the Line Reader
         $('lwText').value = decodeURIComponent(location.hash.slice(3)); history.replaceState(null, '', location.pathname);
         if (!$('lwScript').hidden) setScript(true); else fromText();
