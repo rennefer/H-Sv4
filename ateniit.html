@@ -348,6 +348,7 @@ let splashSoundCallCount = 0;
 // disallowed gamepad silently reads as "none connected" -- never a thrown
 // error that could interrupt real gameplay.
 function getAudioCtx(){
+  return null;   // sound effects removed from the site
   try{
     if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(audioCtx.state === 'suspended') audioCtx.resume();
