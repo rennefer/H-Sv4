@@ -793,6 +793,7 @@ nav.tabs a::before{
         <button type="button" data-src="hs">Horus and Seth</button>
         <button type="button" data-src="wen">Wenamun</button>
         <button type="button" data-src="tb">Two Brothers</button>
+        <button type="button" data-src="ss">Shipwrecked Sailor</button>
       </div>
       <label class="wi-check"><input type="checkbox" id="wiNoDict"> Only words with no dictionary entry</label>
       <a class="wi-back" href="dictionary.html">← Dictionary</a>
@@ -800,7 +801,7 @@ nav.tabs a::before{
     <div class="result-count" id="wiCount">Loading the word index…</div>
     <div id="wiResults"></div>
     <button class="load-more" id="wiMore" style="display:none;">Show more words</button>
-    <p class="wi-note">Words are gathered into families: a base word with its forms (Dd with Ddt and Ddin; pAy with pAiif, pAii.i, pAiik). Pick a form to see its locations. The families are made by rule, so some may be wrong. Horus and Seth locations come from the dictionary's own word list; Wenamun and Two Brothers locations come from the AI annotations on those pages. Opening one takes you to that line (with the word marked, for Wenamun and Two Brothers). Orange locations are words whose dictionary link is uncertain; a dashed frame round a picture means the word's position on the hieratic is uncertain. The pictures of Wenamun and Two Brothers words are the ones checked and cleaned by hand in the word review (5,302 words); words marked unreadable or wrong there have no picture. Click a picture to see it larger, with a link to its line. Search by Gardiner code (G17, or several: G17 X1) or paste a sign (𓅓) to find every word written with it. Under a word stands its <em>lemma</em>, the dictionary word it belongs to, with its meaning from R.&nbsp;O. Faulkner, <em>A Concise Dictionary of Middle Egyptian</em>, where it could be matched by its transliteration and meaning; the search finds those meanings too.</p>
+    <p class="wi-note">Words are gathered into families: a base word with its forms (Dd with Ddt and Ddin; pAy with pAiif, pAii.i, pAiik). Pick a form to see its locations. The families are made by rule, so some may be wrong. Horus and Seth locations come from the dictionary's own word list; Wenamun and Two Brothers locations come from the AI annotations on those pages, and Shipwrecked Sailor locations from the boxes checked by hand in the review tool. Opening one takes you to that line (with the word marked, for Wenamun, Two Brothers and the Shipwrecked Sailor). Orange locations are words whose dictionary link is uncertain; a dashed frame round a picture means the word's position on the hieratic is uncertain. The pictures of Wenamun and Two Brothers words are the ones checked and cleaned by hand in the word review (5,302 words); words marked unreadable or wrong there have no picture. Click a picture to see it larger, with a link to its line. Search by Gardiner code (G17, or several: G17 X1) or paste a sign (𓅓) to find every word written with it. Under a word stands its <em>lemma</em>, the dictionary word it belongs to, with its meaning from R.&nbsp;O. Faulkner, <em>A Concise Dictionary of Middle Egyptian</em>, where it could be matched by its transliteration and meaning; the search finds those meanings too.</p>
   </section>
 
   </div>
@@ -824,7 +825,7 @@ nav.tabs a::before{
    Optional: word-index-images.json, a map "src:page.line:k" -> picture of that word cut from the hieratic photo.
    If that file exists its pictures are shown on the location chips; without it the page works as text only. */
 (function(){
-  const WI_V = '20261026a';   /* stamp of the data files; changes on every rebuild so an older cached copy is never used */
+  const WI_V = '20261101a';   /* stamp of the data files; changes on every rebuild so an older cached copy is never used */
   const PAGE_SIZE = 80, CHIPS = 18;   /* chips shown per manuscript before "+ N more" */
   let closeStart = 0, WI = null, GROUPS = [], FAMS = [], shown = PAGE_SIZE, current = [], IMGS = null, src = 'all';
   const $ = id => document.getElementById(id);
