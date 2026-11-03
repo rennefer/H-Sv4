@@ -473,6 +473,10 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
             <button type="button" id="lwHt" aria-pressed="false">Hieratic</button>
             <button type="button" id="lwHc" aria-pressed="false" title="Hieratic signs from Christian Casey's sign list for the Shipwrecked Sailor (P. Hermitage 1115); signs he does not list are grey">Hieratic (Casey)</button>
           </div>
+          <div class="lw-seg" role="group" aria-label="Stacking style" id="lwStyle">
+            <button type="button" id="lwStLe" class="on" aria-pressed="true" title="Blocks stacked as in the Late Egyptian stories (Two Brothers, Horus and Seth, Wenamun)">Late Egyptian</button>
+            <button type="button" id="lwStSs" aria-pressed="false" title="Blocks stacked as the scribe of the Shipwrecked Sailor (P. Hermitage 1115) wrote them, learnt from the checked sign boxes">Shipwrecked</button>
+          </div>
           <button type="button" id="lwPap" class="lw-tog" aria-pressed="false" hidden title="Draw the hieratic on papyrus (also in the downloads)">Papyrus</button>
           <label class="lw-field lw-size">Size <input type="range" id="lwSize" min="2" max="8" step="0.5" value="4"></label>
         </div>
@@ -490,6 +494,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
           <button type="button" data-key="()" title="Group signs, e.g. (𓏏*𓏤):𓆑">( ) <span>group</span></button>
           <button type="button" data-key="-" title="Start a new block here">- <span>new block</span></button>
           <button type="button" data-key="_" title="Write the sign before low, below the line (k, f; f also gets its long stroke)">_ <span>low</span></button>
+          <button type="button" id="lwCol" title="Start a column here (the signs after it are written top to bottom inside the line); press again to go back to the row (Shift+V)">⇅ <span>column / row</span></button>
           <button type="button" id="lwCycle" title="Hieroglyphs for the word before the cursor; press again for the next spelling (Shift+Space)">⇄ <span>spellings</span></button>
           <button type="button" id="lwRed" class="lw-red" title="Red ink: select signs and press to make them red (or black again); with nothing selected, red starts or stops where the cursor is">$r <span>red ink</span></button>
         </div>
@@ -521,22 +526,25 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
         <aside class="lw-rules" aria-label="How to type">
           <h3 class="lw-label">How to type</h3>
         <p class="lw-rule">A space starts a new word; more spaces add room between words. The signs are stacked for you.</p>
-        <p class="lw-rule">Words are suggested over the box while you type a transliteration, and after each word the words that most often follow it in the three stories. Tap one to put it in.</p>
+        <p class="lw-rule">Words are suggested over the box while you type a transliteration, and after each word the words that most often follow it in the three stories and the Shipwrecked Sailor. Tap one to put it in.</p>
         <p class="lw-rule">To fix a block, use JSesh keys: <code class="pb-code">𓈖:𓆑</code> above, <code class="pb-code">𓏏*𓏤</code> beside, <code class="pb-code">( )</code> group, <code class="pb-code">-</code> new block.</p>
         <p class="lw-rule">Codes and sound values work too: <code class="pb-code">G17G1</code>, <code class="pb-code">D:d n f</code>.</p>
         <p class="lw-rule">Type a transliteration like <code class="pb-code">Dd</code>. <kbd>Shift</kbd>+<kbd>Space</kbd> or <em>⇄ spellings</em> puts in the hieroglyphs; press again for other spellings and stackings, the most common first.</p>
         <p class="lw-rule"><em>Import picture</em> reads a picture of printed hieroglyphs into the box. You can also paste or drop a picture there. Check the signs it read.</p>
         <p class="lw-rule"><code class="pb-code">_</code> after a sign writes it low (f, k).</p>
+        <p class="lw-rule"><kbd>Shift</kbd>+<kbd>V</kbd> (or <em>⇅ column / row</em>) starts a column: the signs after it are written top to bottom inside the line. Press it again to go back to the row. In the box the column shows as <code class="pb-code">{v}</code> … <code class="pb-code">{h}</code>. A column is stacked as the Shipwrecked Sailor's columns. Sign codes with V are typed in small letters (<code class="pb-code">v28</code>).</p>
+        <p class="lw-rule"><em>Late Egyptian</em> or <em>Shipwrecked</em> chooses how the blocks are stacked: as in the three Late Egyptian stories, or as the scribe of the Shipwrecked Sailor wrote them.</p>
         <p class="lw-rule"><code class="pb-code">$r</code> red, <code class="pb-code">$b</code> black, or use <em>red ink</em> and click blocks in the drawing.</p>
         <p class="lw-rule">Hr is corrected as you type; <kbd>Shift</kbd>+<kbd>Space</kbd> right after it gives the plain D2-Z1.</p>
         </aside>
       </section>
 
       <h2>How the stacking is guessed</h2>
-      <p>The writer has learnt from about 26,000 blocks in the Two Brothers, Horus and Seth and Wenamun, encoded sign by sign after Gardiner's <em>Late Egyptian Stories</em>. For every run of signs it knows how often those signs were written together as one block, and in what arrangement, and it chooses the grouping of your line that the texts make most likely. Signs it has never seen together are grouped by their shape: low broad signs take a row of their own, small signs share a row. Tested on lines it had not learnt from, it put the same signs together and stacked them the same way in 93&nbsp;% of the blocks.</p>
+      <p>The writer has learnt from about 26,000 blocks in the Two Brothers, Horus and Seth and Wenamun, encoded sign by sign after Gardiner's <em>Late Egyptian Stories</em>. For every run of signs it knows how often those signs were written together as one block, and in what arrangement, and it chooses the grouping of your line that the texts make most likely. Signs it has never seen together are grouped by their shape: low broad signs take a row of their own, small signs share a row. Tested on lines it had not learnt from, it put the same signs together and stacked them the same way in 93&nbsp;% of the blocks. Runs of signs the three stories never show are looked up in the other papyri and ostraca of the JSesh text library.</p>
+      <p>The <em>Shipwrecked</em> style has learnt from the scribe of the Shipwrecked Sailor (P. Hermitage 1115): every sign of the 406 words in its horizontal lines was boxed on the photos, and the boxes show which signs the scribe wrote one above the other. These blocks count fifty times as much as the stories, and runs of signs neither shows are looked up in all the texts of the JSesh library. On words of the papyrus it had not learnt from, it stacked 80 of 101 words as the scribe did (the Late Egyptian style: 54). Columns (<code class="pb-code">{v}</code>) are stacked as in the 630 words of the papyrus's columns, where signs that share a row stand side by side; on columns it had not learnt from, 86&nbsp;% of the words came out as the scribe wrote them. Mixing all the JSesh texts in fully made both styles worse, because most of them follow the layout of a printed edition and the stelae group their signs very differently from a scribe.</p>
       <p>The hieratic signs are traced from the Tale of Two Brothers, one photo per sign chosen by hand. Their sizes are learnt from the reviewed words of Two Brothers: every word box tells how high its signs stand together, and from about 2,300 words each sign gets its own height. Signs that do not have a hieratic form yet are drawn as the printed sign in grey. The preposition Hr is always written with the face over the two strokes and the single stroke beside them; in Hry-ib and before the suffixes f, i and k the mouth takes the place of the two strokes.</p>
       <p>The hieratic was checked against the photos of Horus and Seth, and some words are traced from them. Signs missing from the Two Brothers list are traced from Möller's <em>Hieratische Paläographie</em> II (19th–21st dynasty columns).</p>
-      <p class="lw-credits">Sign shapes and the drawing rules come from JSesh by Serge Rosmorduc, with signs drawn by Serge J. P. Thomas (LGPL). The stacking was learnt from the encodings of the Two Brothers by Serge Rosmorduc (CC-BY), of Horus and Seth by Laurent Cimasoni and of Wenamun by Patricia Cassonnet, distributed with JSesh. Signs after Möller come from the Hieratische Paläographie DB (M. Nagai, T. Waki, Y. Takahashi, S. Nakamura), images of the University of Tokyo, CC BY 4.0.</p>
+      <p class="lw-credits">Sign shapes and the drawing rules come from JSesh by Serge Rosmorduc, with signs drawn by Serge J. P. Thomas (LGPL). The stacking was learnt from the encodings of the Two Brothers by Serge Rosmorduc (CC-BY), of Horus and Seth by Laurent Cimasoni and of Wenamun by Patricia Cassonnet, distributed with JSesh, and from the other texts of the JSesh text library (Manuel de Codage texts for JSesh, by many contributors, most of them CC-BY), counted only as how often signs are grouped. Signs after Möller come from the Hieratische Paläographie DB (M. Nagai, T. Waki, Y. Takahashi, S. Nakamura), images of the University of Tokyo, CC BY 4.0.</p>
 
       <h2>Moldenke Hieroglyphs font</h2>
       <p class="lw-font"><a href="MoldenkeHieroglyphs.ttf" download>Download the Moldenke Hieroglyphs font</a>, the signs of C. E. Moldenke's transcription of the Tale of Two Brothers (1898) in Unicode (TTF, free under the <a href="MoldenkeHieroglyphs-OFL.txt">SIL Open Font License</a>).</p>
@@ -555,6 +563,8 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 <script src="site-update-check.js" defer></script>
+<script src="ship-creak.js" defer></script>
+<script src="sign-list-pling.js" defer></script>
 <div id="visitor-counter" class="visitor-counter" style="text-align:center; padding:20px 0 30px; font-family:'EB Garamond',serif; font-style:italic; font-size:12px; color:var(--ink-faint); opacity:.75; min-height:14px;"></div>
 <script>
 (function(){
@@ -783,9 +793,27 @@ if ('serviceWorker' in navigator) {
     const SKIP = opts.skip != null ? opts.skip : SPEC.skip, WGAP = opts.wordGap != null ? opts.wordGap : SKIP, TIGHT = opts.tightSkip != null ? opts.tightSkip : SKIP;
     let curSkip = SKIP, nextGap = null, prevTok = null;
     const gap = () => { if (first) { nextGap = null; return 0; } const g = nextGap != null ? nextGap : curSkip; nextGap = null; return g; };   // the line's first block uses up a word mark too
+    /* {v} ... {h}: the blocks between are written in a column (top to bottom) inside the line, then the line goes on.
+       A column is one block wide; a block wider than the column is made smaller. */
+    const COLW = opts.colW || SPEC.quadW, CSKIP = opts.colSkip != null ? opts.colSkip : SPEC.skip;
+    let col = null, colBottom = 0;
+    const colGap = () => { if (col.first) { col.first = false; nextGap = null; return 0; } const g = nextGap != null ? Math.max(nextGap, CSKIP) : CSKIP; nextGap = null; return g; };
+    const endCol = () => { if (!col) return; x = col.x + COLW; colBottom = Math.max(colBottom, col.y); col = null; prevTok = null; };
     for (const it of items) {
       if (typeof it !== 'string') continue;                    // text runs are skipped
       if (it === '!') continue;
+      if (it === '{v}') { if (!col) { const g = gap(); col = { x: x + g, y: 0, first: true }; first = false; prevTok = null; } continue; }
+      if (it === '{h}') { if (col) { endCol(); nextGap = SKIP; } continue; }
+      if (col && (it === '..' || it === '.')) { col.y += (it === '..' ? SPEC.quadH : SPEC.quadH / 2); continue; }
+      if (col && /^[^_$#?^.\[\]{}"'&\/]/.test(it) && it !== 'v/' && it !== 'h/' && it !== '//') {
+        const cad = parseCadrat(it, G); let b = cadratBox(cad, G, false);
+        if (b.w > COLW) b = scaleBox(b, COLW / b.w);
+        const ys = b.glyphs.map(g => g.y), y0 = b.glyphs.length ? Math.min(...ys) : 0, y1 = b.glyphs.length ? Math.max(...b.glyphs.map(g => g.y + g.h)) : b.h;
+        const yy = col.y + colGap(), dx = col.x + (COLW - b.w) / 2;
+        out.push(...shift(b, dx, yy - y0).map(g => ({ ...g, red, col: true })));
+        quads.push({ x: col.x, y: yy, w: COLW, h: y1 - y0, shade: shading ? '1234' : cad.shade, tok: it, n: b.glyphs.length, col: true });
+        col.y = yy + (y1 - y0); continue;
+      }
       if (it === '_' || it === '_t') { nextGap = WGAP; curSkip = it === '_t' ? TIGHT : SKIP; continue; }
       if (it === '$r') { red = true; continue; }
       if (it === '$b') { red = false; continue; }
@@ -809,9 +837,10 @@ if ('serviceWorker' in navigator) {
       quads.push({ x, y: 0, w: b.w, h: SPEC.quadH, shade: shading ? '1234' : cad.shade, tok, n: b.glyphs.length });
       x += b.w; first = false;
     }
-    let height = SPEC.quadH;
+    endCol();
+    let height = Math.max(SPEC.quadH, colBottom);
     if (opts.lowForms) out.forEach(g => {
-      if (!g.drop) return;
+      if (!g.drop || g.col) return;
       const lowCode = g.code.replace(/_s$/, '') + '_low', lo = G.sign[lowCode];
       if (lo && !lo[3]) {                                        // the scribe's own low form (f, k): its stroke runs on under the next signs
         const k = G.scale, pl = (G.lowPlace && G.lowPlace[lowCode]) || {}, w0 = g.w;
@@ -907,7 +936,9 @@ if ('serviceWorker' in navigator) {
   'use strict';
   const VJ = '\u{13430}', HJ = '\u{13431}', SB = '\u{13437}', SE = '\u{13438}';   // Unicode hieroglyph joiners and segment brackets
 
-  function makeStacker(M, G) {
+  /* MC: a second model for the blocks of a column ({v} ... {h}), learnt from the Shipwrecked Sailor's columns */
+  function makeStacker(M0, G, MC) {
+    let M = M0;
     const K = G.scale;
     const clsCache = {};
     function cls(c) {
@@ -917,7 +948,8 @@ if ('serviceWorker' in navigator) {
         r = h >= 0.75 ? (w < 0.5 ? 'T' : 'B') : h < 0.5 ? (w >= 0.75 ? 'L' : 'S') : 'M'; }
       return (clsCache[c] = r);
     }
-    function p(t) {
+    function p(t, col) {
+      M = col && MC ? MC : M0;
       const key = t.join(' '), e = M.grp[key];
       const g = e ? e[0] : 0, o = e ? e[1] : (M.neg[key] || 0);
       const ck = t.map(cls).join(''), ce = M.cg[ck];
@@ -925,13 +957,15 @@ if ('serviceWorker' in navigator) {
       let pc = co ? (cg + 0.1) / (co + 1) : (t.length > 1 ? 0.02 : 0.5);
       if (t.length > 3 && g === 0) pc *= M.B;
       const v = (g + M.A * pc) / (o + M.A);
-      return t.length > 1 ? Math.pow(v, M.G) : v;
+      const r = t.length > 1 ? Math.pow(v, M.G) : v; M = M0; return r;
     }
     const fill = (tpl, codes) => tpl.replace(/\{(\d+)\}/g, (m, i) => codes[+i]);
-    function arrange(codes) {
+    function arrange(codes, col) {
       if (codes.length === 1) return codes[0];
-      const e = M.grp[codes.join(' ')]; if (e) return fill(e[2], codes);
-      const ce = M.cg[codes.map(cls).join('')]; if (ce) return fill(ce[2], codes);
+      const MM = col && MC ? MC : M0;
+      const e = MM.grp[codes.join(' ')]; if (e) return fill(e[2], codes);
+      const ce = MM.cg[codes.map(cls).join('')]; if (ce) return fill(ce[2], codes);
+      if (col) return codes.join('*');                 // in a column, signs of one block stand side by side
       // rule of thumb: low broad signs each take a row, other signs share rows side by side
       const rows = []; let cur = [];
       codes.forEach(c => { if (cls(c) === 'L') { if (cur.length) { rows.push(cur.join('*')); cur = []; } rows.push(c); } else cur.push(c); });
@@ -949,7 +983,7 @@ if ('serviceWorker' in navigator) {
           let sc;
           if (span[0].brk) sc = 0;
           else if (span[0].fixed !== undefined) sc = 0;
-          else sc = Math.log(Math.max(p(span.map(u => u.code)), 1e-9));
+          else sc = Math.log(Math.max(p(span.map(u => u.code), !!span[0].col), 1e-9));
           sc += best[j - k].s;
           if (!best[j] || sc > best[j].s) best[j] = { s: sc, from: j - k };
         }
@@ -965,7 +999,7 @@ if ('serviceWorker' in navigator) {
       segmentUnits(units).forEach(b => {
         if (b[0].brk) { if (b[0].word && started) word++; pre += b[0].extra || 0; return; }
         started = true;
-        out.push({ m: b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code)), red: !!b[0].red, word, pre,
+        out.push({ m: b[0].fixed !== undefined ? b[0].fixed : arrange(b.map(u => u.code), !!b[0].col), red: !!b[0].red, col: !!b[0].col, word, pre,
           ch: b.map(u => u.ch || '').join(''),
           src: [Math.min(...b.map(u => u.src ? u.src[0] : 1e9)), Math.max(...b.map(u => u.src ? u.src[1] : -1))] });
         pre = 0;
@@ -980,25 +1014,27 @@ if ('serviceWorker' in navigator) {
       for (let i = 0; i < ws.length; i++) for (let j = i + 1; j <= ws.length; j++) if (codesOf(ws.slice(i, j)) === run) return [i, j];
       return null; }
     function blocksToMdC(blocks, opt) {
-      opt = opt || {}; const out = []; let red = false;
+      opt = opt || {}; const out = []; let red = false, col = false;
       const words = []; blocks.forEach(b => { (words[b.word] = words[b.word] || []).push(b); });
       words.filter(Boolean).forEach(ws => {
         const sp = ws.map(b => b.ch).join('');
         for (let k = 0; k < (ws[0].pre || 0); k++) out.push('.');      // the extra spaces typed before the word
+        if (!!ws[0].col !== col) { col = !!ws[0].col; out.push(col ? '{v}' : '{h}'); }   // into a column, or back to the row
         if (opt.words) out.push(opt.known && opt.known.has(sp) ? '_t' : '_');
         // a word form replaces its blocks wherever they make up the spelling, also at the start or inside a longer word
         // a ligature made for this word: its own signs in the word are drawn as the ligature (the whole word, if its signs are not given)
         const list = [], wl = opt.wholeWord && opt.wholeWord[codesOf(ws)], at = wl ? runIn(ws, wl.run) : null;
-        if (wl && !wl.run) list.push({ m: wl.code, red: ws[0].red });
+        if (wl && !wl.run) list.push({ m: wl.code, red: ws[0].red, col: ws[0].col });
         else for (let i = 0; i < ws.length; ) {
           let hit = 0, code = null;
-          if (at && i === at[0]) { list.push({ m: wl.code, red: ws[i].red }); i = at[1]; continue; }
+          if (at && i === at[0]) { list.push({ m: wl.code, red: ws[i].red, col: ws[i].col }); i = at[1]; continue; }
           if (opt.wordGlyph) for (let j = ws.length; j > i; j--) { const c = opt.wordGlyph[codesOf(ws.slice(i, j))]; if (c) { hit = j; code = c; break; } }
-          if (code) { list.push({ m: code, red: ws[i].red }); i = hit; } else { list.push(ws[i]); i++; }
+          if (code) { list.push({ m: code, red: ws[i].red, col: ws[i].col }); i = hit; } else { list.push(ws[i]); i++; }
         }
         list.forEach(b => { if (b.red !== red) { out.push(b.red ? '$r' : '$b'); red = b.red; } out.push(b.m); });
       });
       if (red) out.push('$b');
+      if (col) out.push('{h}');
       return out.join('-');
     }
     function toMdC(units) { return blocksToMdC(toBlocks(units)); }
@@ -1036,8 +1072,9 @@ if ('serviceWorker' in navigator) {
     const out = toks.map(b => /:/.test(b) ? b.replace(/\bN35:I9\b/g, H.sign.N35_s ? 'N35_s:I9' : 'N35:I9').replace(/\bV31\b/g, H.sign.V31_s ? 'V31_s' : 'V31').replace(/\bX1\*Z1\b/g, H.sign.Z1_s ? 'X1*Z1_s' : 'X1*Z1').replace(/\bD46:O34\b/g, H.sign.D46_A ? 'D46_A:O34' : 'D46:O34') : (b === 'N35' && H.sign.N35_r ? 'N35_r' : b === 'D21' && H.sign.D21_r ? 'D21_r' : b));
     // one-sign words: the block between two word marks (or the line ends)
     for (let i = 0; i < out.length; i++) {
-      if (out[i] === '_' || out[i] === '_t' || /^[!.]/.test(out[i])) continue;
-      const prevMark = i === 0 || out[i - 1] === '_' || out[i - 1] === '_t', nextMark = i === out.length - 1 || out[i + 1] === '_' || out[i + 1] === '_t' || /^\./.test(out[i + 1]);
+      if (out[i] === '_' || out[i] === '_t' || /^[!.{]/.test(out[i])) continue;
+      const mk = t => t === '_' || t === '_t' || /^\{[vh]\}$/.test(t);
+      const prevMark = i === 0 || mk(out[i - 1]), nextMark = i === out.length - 1 || mk(out[i + 1]) || /^\./.test(out[i + 1]);
       const base = /_r$/.test(out[i]) ? null : out[i];
       if (prevMark && nextMark && base && H.sign[base + '_w']) out[i] = base + '_w';
     }
@@ -1061,6 +1098,7 @@ if ('serviceWorker' in navigator) {
       while (i < chars.length) {
         const ch = chars[i];
         if (ch === '$' && (chars[i + 1] === 'r' || chars[i + 1] === 'b')) { toks.push({ red: chars[i + 1] === 'r', at: [offs[i], offs[i + 2]] }); i += 2; continue; }
+        if (ch === '{' && (chars[i + 1] === 'v' || chars[i + 1] === 'h') && chars[i + 2] === '}') { toks.push({ orient: chars[i + 1] }); i += 3; continue; }   // {v} column, {h} row
         if (/\s/.test(ch)) {                              // one space ends a word; every further space leaves room in the drawing
           let j = i; while (j < chars.length && /\s/.test(chars[j])) j++;
           if (hiero || j - i > 1) toks.push({ brk: 'word', extra: j - i - 1 });   // typed codes: a single space only separates
@@ -1074,7 +1112,7 @@ if ('serviceWorker' in navigator) {
         if (ch === SB || ch === SE) { toks.push({ op: ch === SB ? '(' : ')' }); i++; continue; }   // Unicode segment brackets group like ( )
         if (isHiero(ch)) { const cd = M.uni[ch]; if (cd) toks.push({ s: cd, ch, at: [offs[i], offs[i + 1]] }); else unknown.push(ch); i++; continue; }
         // a typed code or sound value: letters, digits, dots, but not the keys above
-        let j = i; while (j < chars.length && !/[\s:*()\-$_]/.test(chars[j]) && !isHiero(chars[j]) && chars[j] !== VJ && chars[j] !== HJ) j++;
+        let j = i; while (j < chars.length && !/[\s:*()\-$_{]/.test(chars[j]) && !isHiero(chars[j]) && chars[j] !== VJ && chars[j] !== HJ) j++;
         if (j === i) { i++; continue; }
         const t = chars.slice(i, j).join('');
         if (hiero && !/[A-Za-z0-9]/.test(t)) { i = j; continue; }
@@ -1104,6 +1142,7 @@ if ('serviceWorker' in navigator) {
       while (i < toks.length) {
         const t = toks[i];
         if (t.red !== undefined) { if (t.red !== red) { red = t.red; pushBrk(false); } i++; continue; }   // colour changes end a block
+        if (t.orient) { pushBrk(true); units[units.length - 1].orient = t.orient; i++; continue; }        // a column starts or ends: a new word
         if (t.brk) { pushBrk(t.brk === 'word', t.extra); i++; continue; }
         if (t.op === ')' || t.op === ':' || t.op === '*' || t.low) { i++; continue; }      // stray key
         // gather a group: sign or '(' ... continuing while signs are joined by a key
@@ -1111,7 +1150,7 @@ if ('serviceWorker' in navigator) {
         while (j < toks.length) {
           const u = toks[j];
           if (u.low) break;
-          if (u.brk || u.red !== undefined) { if (depth > 0) { j++; continue; } break; }
+          if (u.brk || u.red !== undefined || u.orient) { if (depth > 0) { j++; continue; } break; }
           if (u.op === '(') { if (!wantSign) break; depth++; m += '('; j++; continue; }
           if (u.op === ')') { if (depth === 0) break; depth--; m += ')'; j++; wantSign = false; continue; }
           if (u.op === ':' || u.op === '*') { if (wantSign) { j++; continue; } m += u.op; wantSign = true; j++; continue; }
@@ -1131,7 +1170,10 @@ if ('serviceWorker' in navigator) {
         if (toks[i] && toks[i].brk === 'block') { units.push({ brk: true, soft: true }); i++; }
       }
       while (units.length && units[units.length - 1].brk) units.pop();
-      return { units: hardRules(units), unknown };
+      // the blocks after {v} are in a column until {h}
+      const hu = hardRules(units); let col = false;
+      hu.forEach(u => { if (u.orient) col = u.orient === 'v'; else if (!u.brk) u.col = col; });
+      return { units: hu, unknown };
     });
   }
 
@@ -1555,10 +1597,13 @@ if ('serviceWorker' in navigator) {
     || (after[0] === '\u{133CF}' && after[1] === '\u{13216}') || after.slice(0, 3).includes('\u{13123}');
   const LW = window.LineWriter, AS = window.AutoStack, $ = id => document.getElementById(id);
   let G = null, M = null, ST = null, U2C = null, rtl = true, timer = 0, GH = null, hier = false, GHS = {}, GHsrc = 'tb';
+  /* stacking style: 'le' as in the Late Egyptian stories, 'ss' as the Shipwrecked Sailor's scribe; MC: the columns ({v}) */
+  let style = 'le', MC = null; const MS = {}, STVS = {};
   const pref = { get(k, d) { try { const v = localStorage.getItem('lw.' + k); return v === null ? d : v; } catch (e) { return d; } },
                  set(k, v) { try { localStorage.setItem('lw.' + k, v); } catch (e) {} } };
 
   function draw(mdc) {
+    if (hier && GHsrc === 'casey') mdc = String(mdc).replace(/D2([*:\-])Z4(?![0-9A-Za-z])/g, 'D2');   // Casey's hieratic Hr: the Z4 of D2 Z4 Z1 is not written as its own sign
     const unit = +$('lwSize').value;
     let L;
     const GD = hier && GH ? GH : G;
@@ -1599,7 +1644,9 @@ if ('serviceWorker' in navigator) {
   let SPELLN = {};
   /* stackings of a spelling as found in the papyri (H&S, checked against the transcriptions, and Two Brothers), most common first */
   let STV = {};
-  const stvLoad = fetch('lw-stackvar.json', { cache: 'no-cache' }).then(r => r.json()).then(j => { STV = j; }).catch(() => {});
+  const stvFile = st => st === 'ss' ? 'lw-stackvar-ss.json' : 'lw-stackvar.json';
+  const stvGet = st => STVS[st] ? Promise.resolve(STVS[st]) : fetch(stvFile(st), { cache: 'no-cache' }).then(r => r.json()).then(j => (STVS[st] = j)).catch(() => (STVS[st] = {}));
+  const stvLoad = stvGet(pref.get('style', 'le') === 'ss' ? 'ss' : 'le').then(j => { STV = j; });
   const UOP = { ':': '\u{13430}', '*': '\u{13431}', '&': '\u{13431}', '(': '\u{13437}', ')': '\u{13438}', '-': '-' };
   function toUni(enc) {                                  // a stacking written with the Unicode joiners, blocks split by -
     let out = '', ok = true;
@@ -1697,6 +1744,9 @@ if ('serviceWorker' in navigator) {
     if (!G) return;
     const text = $('lwText').value, lines = text.split('\n');
     const parsed = AS.parseInput(text, M, G, { word: t => { const w = wordSpellings(t); return w.length ? w[0][0] : null; } });
+    if (hier && GHsrc === 'casey') parsed.forEach(p => {   // Casey's hieratic Hr: skip the Z4 of D2 Z4 Z1
+      p.units = p.units.filter((u, i, a) => !(u.code === 'Z4' && a[i - 1] && (a[i - 1].code === 'D2' || /D2$/.test(a[i - 1].fixed || ''))));
+      p.units.forEach(u => { if (u.fixed) u.fixed = u.fixed.replace(/D2([*:\-])Z4(?![0-9A-Za-z])/g, 'D2'); }); });
     const unknown = [].concat(...parsed.map(p => p.unknown));
     BLOCKS = []; let off = 0;
     const per = parsed.map((p, li) => { const bl = ST.toBlocks(p.units); bl.forEach(b => BLOCKS.push({ ...b, at: [b.src[0] + off, b.src[1] + off] })); off += lines[li].length + 1; return bl; });
@@ -1763,7 +1813,7 @@ if ('serviceWorker' in navigator) {
     const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
     const p = pt.matrixTransform(svg.getScreenCTM().inverse());
     const qs = LAST.quads.filter(q => q.tok);
-    const k = qs.findIndex(q => p.x >= q.x - 1 && p.x <= q.x + q.w + 1);
+    const k = qs.findIndex(q => p.x >= q.x - 1 && p.x <= q.x + q.w + 1 && (!q.col || (p.y >= q.y - 1 && p.y <= q.y + q.h + 1)));
     const grp = DRAWN ? DRAWN[k] : (BLOCKS[k] ? [k] : null);
     if (k < 0 || !grp) return;
     const bs = grp.map(i => BLOCKS[i]); setRed(Math.min(...bs.map(b => b.at[0])), Math.max(...bs.map(b => b.at[1])), !bs[0].red);
@@ -1796,6 +1846,19 @@ if ('serviceWorker' in navigator) {
     $('lwPap').hidden = !hier; $('lwPap').classList.toggle('on', pap); $('lwPap').setAttribute('aria-pressed', pap);
   }
   const papURL = () => { const m = /url\("?([^")]+)"?\)/.exec(getComputedStyle($('lwStage')).backgroundImage || ''); return m ? m[1] : null; };
+  /* stacking style: the model of the blocks, and the stackings offered for a spelling (⇄) */
+  const stackGet = st => MS[st] ? Promise.resolve(MS[st]) : fetch(st === 'ss' ? 'lw-stack-ss.json' : 'lw-stack.json', { cache: 'no-cache' }).then(r => r.json()).then(j => (MS[st] = j));
+  function showStyle() {
+    $('lwStLe').classList.toggle('on', style === 'le'); $('lwStSs').classList.toggle('on', style === 'ss');
+    $('lwStLe').setAttribute('aria-pressed', style === 'le'); $('lwStSs').setAttribute('aria-pressed', style === 'ss');
+  }
+  function setStyle(st) {
+    style = st; pref.set('style', st); showStyle();
+    Promise.all([stackGet(st), stvGet(st)]).then(([m, v]) => {
+      if (style !== st) return;
+      M = m; STV = v; if (G) { ST = AS.makeStacker(M, G, MC); LIGW = null; redraw(); }
+    }).catch(() => { $('lwMsg').textContent = 'The stacking could not be loaded.'; });
+  }
   function setDir(r) {
     rtl = r; pref.set('dir', r ? 'rtl' : 'ltr');
     $('lwRtl').classList.toggle('on', r); $('lwLtr').classList.toggle('on', !r);
@@ -1881,6 +1944,12 @@ if ('serviceWorker' in navigator) {
     $('lwText').addEventListener('click', () => suggest());
     $('lwText').addEventListener('focus', () => suggest());
     $('lwText').addEventListener('keydown', cycle);
+    /* Shift+V: into a column, and out of it again (V is no transliteration letter; codes like v28 are typed small) */
+    const inCol = (v, pos) => { const line = v.slice(v.lastIndexOf('\n', pos - 1) + 1, pos); return line.lastIndexOf('{v}') > line.lastIndexOf('{h}'); };
+    function colToggle() { const ta = $('lwText'); insertChar(inCol(ta.value, ta.selectionStart) ? '{h}' : '{v}'); }
+    $('lwText').addEventListener('keydown', e => { if ((e.key === 'V' || e.key === 'v') && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.isComposing) { e.preventDefault(); colToggle(); } });
+    $('lwCol').addEventListener('mousedown', e => e.preventDefault());
+    $('lwCol').addEventListener('click', colToggle);
     $('lwText').addEventListener('input', e => { if (e.isComposing) return; fixHr($('lwText')); soon(fromText)(); });   // a space is only a space; Shift+Space puts in the hieroglyphs
     $('lwIn').addEventListener('input', soon(fromCode));
     $('lwSize').addEventListener('input', () => { pref.set('size', $('lwSize').value); redraw(); });
@@ -1888,6 +1957,8 @@ if ('serviceWorker' in navigator) {
     $('lwHt').addEventListener('click', () => setScript(true, 'tb'));
     $('lwHc').addEventListener('click', () => setScript(true, 'casey'));
     $('lwRtl').addEventListener('click', () => setDir(true));
+    $('lwStLe').addEventListener('click', () => setStyle('le'));
+    $('lwStSs').addEventListener('click', () => setStyle('ss'));
     $('lwLtr').addEventListener('click', () => setDir(false));
     $('lwPap').addEventListener('click', () => { pap = !pap; pref.set('pap', pap ? '1' : '0'); applyPap(); });
     // with papyrus on, the downloads get the papyrus under the signs (the texture tiles as on the screen)
@@ -1925,8 +1996,10 @@ if ('serviceWorker' in navigator) {
     $('lwGrid').addEventListener('click', e => { const b = e.target.closest('button[data-ch]'); if (b) insertChar(b.dataset.ch); });
     $('lwSize').value = pref.get('size', '4');
     if (pref.get('dir', 'rtl') === 'ltr') { rtl = false; $('lwRtl').classList.remove('on'); $('lwLtr').classList.add('on'); $('lwRtl').setAttribute('aria-pressed', 'false'); $('lwLtr').setAttribute('aria-pressed', 'true'); }
-    Promise.all([fetch('lw-glyphs.json', { cache: 'no-cache' }).then(r => r.json()), fetch('lw-stack.json', { cache: 'no-cache' }).then(r => r.json())]).then(([g, m]) => {
-      G = g; M = m; ST = AS.makeStacker(M, G); U2C = AS.unicodeIndex(M); buildIndex(); fromText(); spellLoad().then(fromText);
+    style = pref.get('style', 'le') === 'ss' ? 'ss' : 'le'; showStyle();
+    Promise.all([fetch('lw-glyphs.json', { cache: 'no-cache' }).then(r => r.json()), stackGet(style),
+                 fetch('lw-stack-col.json', { cache: 'no-cache' }).then(r => r.json()).catch(() => null)]).then(([g, m, mc]) => {
+      G = g; M = m; MC = mc; ST = AS.makeStacker(M, G, MC); U2C = AS.unicodeIndex(M); buildIndex(); fromText(); spellLoad().then(fromText);
       if (!$('lwScript').hidden && pref.get('script', 'hiero') === 'hieratic') setScript(true, pref.get('hsrc', 'tb'));
       if (/^#t=/.test(location.hash)) {                 // a line sent from the Line Reader
         $('lwText').value = decodeURIComponent(location.hash.slice(3)); history.replaceState(null, '', location.pathname);
