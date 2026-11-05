@@ -495,6 +495,31 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
 .lr-signs textarea{width:100%;box-sizing:border-box;font:22px/1.5 'Noto Sans Egyptian Hieroglyphs','Segoe UI Historic',system-ui,sans-serif;padding:6px 8px;border:1px solid var(--lw-line,#c9b893);border-radius:6px;background:#fffaf0;color:#2a2116;resize:vertical}
 .lr-signs-row{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:4px;min-height:28px}
 .lr-signs-msg{font-size:13px;color:#b0452a}
+
+/* inscription photo */
+.lr-idir{ display:inline-flex; gap:6px; align-items:center; font-size:13px; }
+.lr-idir select{ font:inherit; padding:3px 6px; border-radius:3px; background:var(--panel-input-bg); color:var(--ink-on-dark); border:1px solid var(--panel-line); }
+#lrICanvas{ cursor:crosshair; touch-action:none; }
+.lr-isign{ display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+.lr-isign .thumb{ background:#fbf8f0; border-radius:3px; display:block; }
+.lr-isign .num{ font-weight:700; color:var(--rubric); min-width:1.6em; }
+.lr-icands{ display:flex; gap:6px; flex-wrap:wrap; }
+.lr-icands .lr-cand{ min-width:58px; }
+.lr-icands .p{ font-size:11px; opacity:.75; }
+
+/* checks for training (local version) */
+.fb-row{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0 2px; padding-top:6px; border-top:1px dashed var(--panel-line); font-size:13px; }
+.fb-lab{ color:var(--rubric); font-weight:600; }
+.fb-row button{ font:inherit; padding:4px 10px; border-radius:3px; cursor:pointer; background:var(--panel-input-bg); color:var(--ink-on-dark); border:1px solid var(--panel-line); }
+.fb-row button:disabled{ opacity:.45; cursor:default; }
+.fb-row[data-v="right"] .fb-ok{ background:#2f6b3a; border-color:#2f6b3a; color:#fff; }
+.fb-row[data-v="junk"] .fb-junk{ background:#8a2f22; border-color:#8a2f22; color:#fff; }
+.fb-code{ font:inherit; width:12em; padding:4px 6px; border-radius:3px; border:1px solid var(--panel-line); background:var(--panel-input-bg); color:var(--ink-on-dark); }
+.fb-state{ color:var(--rubric); }
+.fb-panel{ margin:10px 0 16px; padding:10px 14px; border:1px solid var(--rubric); border-radius:6px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.fb-panel .lw-hint{ flex-basis:100%; margin:0; }
+.fb-panel button{ font:inherit; padding:5px 12px; border-radius:3px; cursor:pointer; background:var(--panel-input-bg); color:var(--ink-on-dark); border:1px solid var(--panel-line); }
+.fb-panel button.lr-main{ background:var(--rubric); color:#fff; border-color:var(--rubric); }
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#a8461d">
@@ -551,6 +576,7 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
       <div class="lw-seg lr-mode" role="group" aria-label="What the picture shows">
         <button type="button" id="lrModeH" class="on" aria-pressed="true">Hieratic photo</button>
         <button type="button" id="lrModeP" aria-pressed="false">Printed hieroglyphs</button>
+        <button type="button" id="lrModeI" aria-pressed="false">Inscription photo</button>
       </div>
 
       <section class="lr-tool" aria-label="Line reader">
@@ -572,6 +598,23 @@ figure.pb-fig figcaption{ font-family:'EB Garamond',serif; font-style:italic; fo
           <p class="lw-hint" id="lrPNote">Correct any sign in the box and the hieratic follows.</p>
           <textarea id="lrPText" class="lw-hiero" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" rows="2"></textarea>
           <div class="lw-stage" id="lrPStage"></div>
+        </div>
+
+        <div class="lr-step" id="lrInsc" hidden>
+          <div class="lr-head"><span class="lw-label">2 · The signs</span>
+            <span class="lr-btns"><label class="lr-idir">Reading <select id="lrIDir"><option value="rtl">rows, right to left</option><option value="ltr">rows, left to right</option><option value="col-rtl">columns, top to bottom, from the right</option><option value="col-ltr">columns, top to bottom, from the left</option></select></label><button type="button" id="lrIFind">Find the signs again</button></span></div>
+          <p class="lw-hint">Each box is one sign. Drag across the picture to add a box; click a box to take it away. The numbers show the reading order. Choose the reading direction: signs of people and animals face the start of the line. In rows, signs over each other are read from the top; in columns, signs side by side are read in the direction of the columns.</p>
+          <p class="lw-hint" id="lrIMsg" hidden></p>
+          <div class="lr-canvas-wrap"><canvas id="lrICanvas"></canvas></div>
+          <ol class="lr-list" id="lrIList"></ol>
+        </div>
+        <div class="lr-step" id="lrIOut" hidden>
+          <div class="lr-head"><span class="lw-label">3 · The inscription in hieroglyphs</span>
+            <span class="lr-btns"><button type="button" id="lrICopy">Copy hieroglyphs</button><button type="button" id="lrIOpen" class="lr-main">Open in the Line Writer</button></span></div>
+          <div class="lw-stage" id="lrIStage"></div>
+          <p class="lr-translit" id="lrICodes"></p>
+          <p class="lr-english" id="lrIWords"></p>
+          <p class="lw-credits" id="lrICredit"></p>
         </div>
 
         <div class="lr-step" id="lrCut" hidden>
@@ -2449,6 +2492,285 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.PrintReader = API;
 })(typeof window !== 'undefined' ? window : this);
 
+/* The inscription reader: signs carved or painted on stone (stelae, tomb and temple walls).
+   1. finding the signs: the picture's own light is evened out, the edges and the paint of the signs are marked, joined
+      into patches, and each patch the size of a sign becomes a box;
+   2. naming the signs: a small network (the same layers as the word reader) trained on 9,703 pictures of single signs
+      in 310 Gardiner classes from carved and painted stelae (Fuentes-Ferrer, Duque-Domingo & Herrera 2025);
+   3. the order: rows (or columns) of boxes, signs over each other in a row make one group.
+   Twin of insc/sign_cnn.py (the network) and insc/insc_prep.py (how a sign picture is prepared). */
+(function (root) {
+  'use strict';
+  const S = 48;
+  function makeNet(N, WN) {
+    const P = N.params.map(WN.deq), ch = [1, 16, 32, 48, 64], nOut = N.params[N.params.length - 1].shape[1];
+    return function (pic) {
+      let x = pic, H = S, W = S;
+      for (let l = 0; l < 4; l++) { x = WN.conv(x, H, W, ch[l], P[2 * l], P[2 * l + 1], ch[l + 1]); x = WN.pool(x, H, W, ch[l + 1]); H >>= 1; W >>= 1; }
+      const e = WN.dense(x, P[8], P[9], 256, true);
+      return WN.dense(e, P[10], P[11], nOut, false);
+    };
+  }
+  /* one sign's picture as the network learnt it: grey, fitted into 44 px, contrast evened (mean 0, spread 1, cut at 2.5),
+     set in a 48 x 48 square */
+  function signPic(src, box) {
+    const [x0, y0, w, h] = box, k = (S - 4) / Math.max(w, h), nw = Math.max(1, Math.round(w * k)), nh = Math.max(1, Math.round(h * k));
+    const c = document.createElement('canvas'); c.width = nw; c.height = nh;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.imageSmoothingQuality = 'high'; x.drawImage(src, x0, y0, w, h, 0, 0, nw, nh);
+    const d = x.getImageData(0, 0, nw, nh).data, g = new Float32Array(nw * nh);
+    let m = 0; for (let i = 0; i < g.length; i++) { g[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2]; m += g[i]; }
+    m /= g.length; let s = 0; for (const v of g) s += (v - m) * (v - m); s = Math.sqrt(s / g.length) + 1e-3;
+    const out = new Float32Array(S * S).fill(128 / 255), oy = (S - nh) >> 1, ox = (S - nw) >> 1;
+    for (let yy = 0; yy < nh; yy++) for (let xx = 0; xx < nw; xx++) {
+      const v = Math.max(-2.5, Math.min(2.5, (g[yy * nw + xx] - m) / s)); out[(oy + yy) * S + ox + xx] = Math.round(Math.max(0, Math.min(255, v / 2.5 * 127 + 128))) / 255; }
+    return out;
+  }
+  function softmax(z) { let m = -Infinity; for (const v of z) if (v > m) m = v; const e = Array.from(z, v => Math.exp(v - m)); const s = e.reduce((a, b) => a + b, 0); return e.map(v => v / s); }
+
+  /* ---------- finding the signs ---------- */
+  function blur(a, W, H, r) {           // box blur, twice (close to a Gaussian)
+    let s = a;
+    for (let pass = 0; pass < 2; pass++) {
+      const t = new Float32Array(W * H), o = new Float32Array(W * H);
+      for (let y = 0; y < H; y++) { let acc = 0; const row = y * W;
+        for (let x = -r; x <= r; x++) acc += s[row + Math.min(W - 1, Math.max(0, x))];
+        for (let x = 0; x < W; x++) { t[row + x] = acc / (2 * r + 1); acc += s[row + Math.min(W - 1, x + r + 1)] - s[row + Math.max(0, x - r)]; } }
+      for (let x = 0; x < W; x++) { let acc = 0;
+        for (let y = -r; y <= r; y++) acc += t[Math.min(H - 1, Math.max(0, y)) * W + x];
+        for (let y = 0; y < H; y++) { o[y * W + x] = acc / (2 * r + 1); acc += t[Math.min(H - 1, y + r + 1) * W + x] - t[Math.max(0, y - r) * W + x]; } }
+      s = o; }
+    return s;
+  }
+  function morph(m, W, H, r, dil) {     // square dilation (dil) or erosion, done as two 1-D passes
+    const t = new Uint8Array(W * H), o = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let v = dil ? 0 : 1;
+      for (let d = -r; d <= r; d++) { const xx = x + d; const q = xx < 0 || xx >= W ? (dil ? 0 : 1) : m[y * W + xx]; if (dil ? q : !q) { v = dil ? 1 : 0; break; } } t[y * W + x] = v; }
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let v = dil ? 0 : 1;
+      for (let d = -r; d <= r; d++) { const yy = y + d; const q = yy < 0 || yy >= H ? (dil ? 0 : 1) : t[yy * W + x]; if (dil ? q : !q) { v = dil ? 1 : 0; break; } } o[y * W + x] = v; }
+    return o;
+  }
+  /* boxes round the signs of a picture (canvas or image). Returns [[x, y, w, h], ...] in the picture's pixels.
+     The signs are what differs from the stone round them: lighter (paint, gilding, light relief) or darker; the side
+     the far-off values lie on decides which. Border lines (runs far longer than a sign) are taken out first. If that
+     finds almost nothing (an unpainted relief), the cut edges are used instead. */
+  function findSigns(src, opt) {
+    const O = Object.assign({ maxSide: 700 }, opt || {});
+    const W0 = src.naturalWidth || src.width, H0 = src.naturalHeight || src.height, k = Math.min(1, O.maxSide / Math.max(W0, H0));
+    const W = Math.max(8, Math.round(W0 * k)), H = Math.max(8, Math.round(H0 * k));
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, W, H);
+    const d = x.getImageData(0, 0, W, H).data, g = new Float32Array(W * H);
+    for (let i = 0; i < g.length; i++) g[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2];
+    const side = Math.min(W, H), gs = blur(g, W, H, 1), bg = blur(gs, W, H, Math.max(4, Math.round(side / 6)));
+    const dv = new Float32Array(W * H); for (let i = 0; i < dv.length; i++) dv[i] = gs[i] - bg[i];
+    const srt = Float32Array.from(dv).sort(), q = f => srt[Math.min(srt.length - 1, Math.floor(f * srt.length))], med = q(0.5);
+    const light = (q(0.95) - med) > (med - q(0.05)), sd = light ? dv : dv.map(v => -v);
+    const stat = a => { let m = 0; for (const v of a) m += v; m /= a.length; let s = 0; for (const v of a) s += (v - m) * (v - m); return [m, Math.sqrt(s / a.length)]; };
+    const [sm, ss] = stat(sd);
+    const paint = new Uint8Array(W * H); for (let i = 0; i < paint.length; i++) paint[i] = sd[i] > sm + 0.8 * ss ? 1 : 0;
+    const mag = new Float32Array(W * H);
+    for (let y = 1; y < H - 1; y++) for (let xx = 1; xx < W - 1; xx++) { const i = y * W + xx;
+      const gx = gs[i - W + 1] + 2 * gs[i + 1] + gs[i + W + 1] - gs[i - W - 1] - 2 * gs[i - 1] - gs[i + W - 1];
+      const gy = gs[i + W - 1] + 2 * gs[i + W] + gs[i + W + 1] - gs[i - W - 1] - 2 * gs[i - W] - gs[i - W + 1]; mag[i] = Math.hypot(gx, gy); }
+    const [mm, ms] = stat(mag), edge = new Uint8Array(W * H); for (let i = 0; i < edge.length; i++) edge[i] = mag[i] > mm + 1.5 * ms ? 1 : 0;
+    const boxesOf = (mask0, closeK, ready) => {
+      const mask = Uint8Array.from(mask0);
+      if (!ready) {
+      // border lines: runs (gaps of up to 3 px allowed) longer than 0.3 of the picture, along rows and along columns
+      const clearRuns = (get, set, n, L, len) => { for (let r = 0; r < n; r++) { let p = 0;
+        while (p < L) { if (!get(r, p)) { p++; continue; } let e = p, gap = 0, last = p; while (e < L && gap <= 3) { if (get(r, e)) { last = e; gap = 0; } else gap++; e++; }
+          if (last - p + 1 >= 0.3 * len) for (let t = p; t <= last; t++) set(r, t); p = last + 1; } } };
+      clearRuns((y, xx) => mask[y * W + xx], (y, xx) => { mask[y * W + xx] = 0; }, H, W, W);
+      clearRuns((xx, y) => mask[y * W + xx], (xx, y) => { mask[y * W + xx] = 0; }, W, H, H);
+      }
+      const r = Math.max(1, Math.round(side * closeK)), m2 = ready ? mask : morph(morph(mask, W, H, r, true), W, H, r, false);
+      const lab = new Int32Array(W * H); let n = 0; const B = [];
+      for (let i = 0; i < W * H; i++) { if (!m2[i] || lab[i]) continue; n++; const st = [i]; lab[i] = n; let x0 = W, y0 = H, x1 = 0, y1 = 0, a = 0;
+        while (st.length) { const j = st.pop(), jy = (j / W) | 0, jx = j - jy * W; a++; if (jx < x0) x0 = jx; if (jx > x1) x1 = jx; if (jy < y0) y0 = jy; if (jy > y1) y1 = jy;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const yy = jy + dy, x2 = jx + dx; if (yy < 0 || yy >= H || x2 < 0 || x2 >= W) continue; const q2 = yy * W + x2; if (lab[q2] || !m2[q2]) continue; lab[q2] = n; st.push(q2); } }
+        const w = x1 - x0 + 1, h = y1 - y0 + 1;
+        if (Math.max(w, h) < side * 0.06 || a < side * side * 0.002) continue;
+        if ((w > 8 * h && w > 0.4 * W) || (h > 8 * w && h > 0.4 * H) || (w > 0.8 * W && h > 0.8 * H)) continue;
+        B.push([x0, y0, x1, y1]); }
+      if (!B.length) return B;
+      const hs = B.map(b => b[3] - b[1]).sort((p, q2) => p - q2), mh = hs[hs.length >> 1];
+      const out = B.filter(([x0, y0, x1, y1]) => { const w = x1 - x0, h = y1 - y0;
+        if (h < 0.35 * mh && (y1 > 0.88 * H || y0 < 0.12 * H)) return false;          // bits of a border along the edge
+        if (w > 3.5 * Math.max(h, mh) && h < 1.2 * mh) return false;                    // long low patches: signs joined by a border
+        return true; });
+      const res = [];                                                                   // a box mostly inside a bigger one: one sign
+      for (const b of out.sort((p, q2) => (q2[2] - q2[0]) * (q2[3] - q2[1]) - (p[2] - p[0]) * (p[3] - p[1]))) {
+        const inside = res.some(c2 => { const ox = Math.min(b[2], c2[2]) - Math.max(b[0], c2[0]), oy = Math.min(b[3], c2[3]) - Math.max(b[1], c2[1]); return ox > 0 && oy > 0 && ox * oy > 0.5 * (b[2] - b[0]) * (b[3] - b[1]); });
+        if (!inside) res.push(b); }
+      return res; };
+    // carved relief: where the stone is busy (the outlines and modelling of the signs), outlines closed and their insides
+    // filled; then thin lines (the ring of a cartouche, frames) are opened away and the filled signs stay
+    const tex = (() => {
+      const r = Math.max(2, Math.round(side * 0.012)), m1 = blur(gs, W, H, r), sq = new Float32Array(W * H);
+      for (let i = 0; i < sq.length; i++) sq[i] = gs[i] * gs[i];
+      const m2 = blur(sq, W, H, r), v = new Float32Array(W * H); for (let i = 0; i < v.length; i++) v[i] = Math.sqrt(Math.max(0, m2[i] - m1[i] * m1[i]));
+      const sv = Float32Array.from(v).sort(), t = sv[Math.floor(0.68 * sv.length)];
+      let m = new Uint8Array(W * H); for (let i = 0; i < m.length; i++) m[i] = v[i] > t ? 1 : 0;
+      const rc = Math.max(1, Math.round(side * 0.01)); m = morph(morph(m, W, H, rc, true), W, H, rc, false);
+      const lab = new Int32Array(W * H), sizes = [0], edgeL = new Set(); let n = 0;
+      for (let i = 0; i < W * H; i++) { if (m[i] || lab[i]) continue; n++; let a = 0; const st = [i]; lab[i] = n;
+        while (st.length) { const j = st.pop(), jy = (j / W) | 0, jx = j - jy * W; a++; if (jx === 0 || jy === 0 || jx === W - 1 || jy === H - 1) edgeL.add(n);
+          for (const q2 of [jx > 0 ? j - 1 : -1, jx < W - 1 ? j + 1 : -1, j - W, j + W]) { if (q2 < 0 || q2 >= W * H || m[q2] || lab[q2]) continue; lab[q2] = n; st.push(q2); } }
+        sizes.push(a); }
+      for (let i = 0; i < W * H; i++) if (!m[i] && !edgeL.has(lab[i]) && sizes[lab[i]] < 0.12 * W * H) m[i] = 1;      // insides of the signs
+      const ro = Math.max(1, Math.round(side * 0.015)); return morph(morph(m, W, H, ro, false), W, H, ro, true);
+    })();
+    const pad = Math.max(1, Math.round(side * 0.01));
+    const toPix = B => B.map(([x0, y0, x1, y1]) => { x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W - 1, x1 + pad); y1 = Math.min(H - 1, y1 + pad);
+      return [x0 / k, y0 / k, (x1 - x0 + 1) / k, (y1 - y0 + 1) / k]; });
+    if (O.all) return { paint: toPix(boxesOf(paint, 0.012)), relief: toPix(boxesOf(tex, 0, true)), edge: toPix(boxesOf(edge, 0.02)), side: side / k };
+    let B = boxesOf(paint, 0.012); if (B.length < 2) { const E = boxesOf(edge, 0.02); if (E.length > B.length) B = E; }
+    return B.map(([x0, y0, x1, y1]) => { x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W - 1, x1 + pad); y1 = Math.min(H - 1, y1 + pad);
+      return [x0 / k, y0 / k, (x1 - x0 + 1) / k, (y1 - y0 + 1) / k]; });
+  }
+
+  /* box proposals from the carving itself: the stone's busyness (edge strength), cut at several levels and closed at
+     several distances; every patch is a box, and neighbouring patches are also joined in pairs. Works on a smaller copy
+     of the picture (k); returns the boxes in picture pixels and what is needed to judge how cleanly a box is cut. */
+  function integral(a, W, H) { const I = new Float64Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) { let row = 0; for (let x = 0; x < W; x++) { row += a[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + row; } }
+    return I; }
+  function boxSum(I, W, x0, y0, x1, y1) { const w = W + 1; return I[y1 * w + x1] - I[y0 * w + x1] - I[y1 * w + x0] + I[y0 * w + x0]; }
+  function fastMorph(m, W, H, r, dil) {    // square dilation / erosion by counting ink in the square (integral image)
+    const I = integral(m, W, H), o = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) { const y0 = Math.max(0, y - r), y1 = Math.min(H, y + r + 1);
+      for (let x = 0; x < W; x++) { const x0 = Math.max(0, x - r), x1 = Math.min(W, x + r + 1), n = boxSum(I, W, x0, y0, x1, y1);
+        o[y * W + x] = dil ? (n > 0 ? 1 : 0) : (n === (x1 - x0) * (y1 - y0) ? 1 : 0); } }
+    return o; }
+  function proposals(src, opt) {
+    const O = Object.assign({ maxSide: 700, levels: [0.6, 0.7, 0.78, 0.85, 0.9], closes: [0.004, 0.01, 0.02, 0.035] }, opt || {});
+    const W0 = src.naturalWidth || src.width, H0 = src.naturalHeight || src.height, k = Math.min(1, O.maxSide / Math.max(W0, H0));
+    const W = Math.max(8, Math.round(W0 * k)), H = Math.max(8, Math.round(H0 * k)), side = Math.min(W, H);
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, W, H);
+    const d = x.getImageData(0, 0, W, H).data, g = new Float32Array(W * H);
+    for (let i = 0; i < g.length; i++) g[i] = 0.299 * d[4 * i] + 0.587 * d[4 * i + 1] + 0.114 * d[4 * i + 2];
+    const gs = blur(g, W, H, 1), mag = new Float32Array(W * H);
+    for (let y = 1; y < H - 1; y++) for (let xx = 1; xx < W - 1; xx++) { const i = y * W + xx;
+      const gx = gs[i - W + 1] + 2 * gs[i + 1] + gs[i + W + 1] - gs[i - W - 1] - 2 * gs[i - 1] - gs[i + W - 1];
+      const gy = gs[i + W - 1] + 2 * gs[i + W] + gs[i + W + 1] - gs[i - W - 1] - 2 * gs[i - W] - gs[i - W + 1]; mag[i] = Math.hypot(gx, gy); }
+    const m = blur(mag, W, H, 1), srt = Float32Array.from(m).sort(), seen = new Set(), out = [];
+    const add = (x0, y0, w, h) => { const key = x0 + ',' + y0 + ',' + w + ',' + h; if (!seen.has(key)) { seen.add(key); out.push([x0, y0, w, h]); } };
+    for (const lv of O.levels) {
+      const t = srt[Math.floor(lv * (srt.length - 1))], bin = new Uint8Array(W * H); for (let i = 0; i < bin.length; i++) bin[i] = m[i] > t ? 1 : 0;
+      for (const ck of O.closes) {
+        const r = Math.max(1, Math.round(side * ck)), cl = fastMorph(fastMorph(bin, W, H, r, true), W, H, r, false);
+        const lab = new Int32Array(W * H), bx = []; let n = 0;
+        for (let i = 0; i < W * H; i++) { if (!cl[i] || lab[i]) continue; n++; const st = [i]; lab[i] = n; let x0 = W, y0 = H, x1 = 0, y1 = 0, a = 0;
+          while (st.length) { const j = st.pop(), jy = (j / W) | 0, jx = j - jy * W; a++; if (jx < x0) x0 = jx; if (jx > x1) x1 = jx; if (jy < y0) y0 = jy; if (jy > y1) y1 = jy;
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const yy = jy + dy, x2 = jx + dx; if (yy < 0 || yy >= H || x2 < 0 || x2 >= W) continue; const q = yy * W + x2; if (lab[q] || !cl[q]) continue; lab[q] = n; st.push(q); } }
+          const w = x1 - x0 + 1, h = y1 - y0 + 1;
+          if (Math.max(w, h) < 0.04 * side || a < 0.0015 * side * side || (w > 0.9 * W && h > 0.9 * H)) continue;
+          if ((w > 10 * h && w > 0.3 * W) || (h > 10 * w && h > 0.3 * H)) continue;
+          bx.push([x0, y0, w, h]); add(x0, y0, w, h); }
+        for (let i = 0; i < bx.length; i++) for (let j = i + 1; j < bx.length; j++) { const a = bx[i], b = bx[j];
+          const gx = Math.max(0, Math.max(a[0], b[0]) - Math.min(a[0] + a[2], b[0] + b[2])), gy = Math.max(0, Math.max(a[1], b[1]) - Math.min(a[1] + a[3], b[1] + b[3]));
+          if (Math.max(gx, gy) > 0.03 * side) continue;
+          const x0 = Math.min(a[0], b[0]), y0 = Math.min(a[1], b[1]), x1 = Math.max(a[0] + a[2], b[0] + b[2]), y1 = Math.max(a[1] + a[3], b[1] + b[3]);
+          if ((x1 - x0) * (y1 - y0) > 3 * Math.max(a[2] * a[3], b[2] * b[3])) continue;
+          add(x0, y0, x1 - x0, y1 - y0); } } }
+    const E = integral(mag, W, H);
+    // how much carving the box's edge cuts through, against the carving inside it (0: a clean cut through bare stone)
+    const cut = b => { const x0 = Math.round(b[0]), y0 = Math.round(b[1]), x1 = Math.min(W, Math.round(b[0] + b[2])), y1 = Math.min(H, Math.round(b[1] + b[3])), t = Math.max(1, Math.floor(0.06 * Math.min(b[2], b[3])));
+      const all = boxSum(E, W, x0, y0, x1, y1), inS = x1 - x0 - 2 * t > 0 && y1 - y0 - 2 * t > 0 ? boxSum(E, W, x0 + t, y0 + t, x1 - t, y1 - t) : 0;
+      const nIn = Math.max(1, (x1 - x0 - 2 * t) * (y1 - y0 - 2 * t)), nRing = Math.max(1, (x1 - x0) * (y1 - y0) - Math.max(0, (x1 - x0 - 2 * t) * (y1 - y0 - 2 * t)));
+      return ((all - inS) / nRing) / (inS / nIn + 1e-3); };
+    const busyIn = b => { const x0 = Math.max(0, Math.round(b[0])), y0 = Math.max(0, Math.round(b[1])), x1 = Math.min(W, Math.round(b[0] + b[2])), y1 = Math.min(H, Math.round(b[1] + b[3]));
+      return x1 > x0 && y1 > y0 ? boxSum(E, W, x0, y0, x1, y1) / ((x1 - x0) * (y1 - y0)) : 0; };
+    return { boxes: out.slice(0, 3000), k, cut, busyIn };
+  }
+  /* reading order. dir: 'rtl' or 'ltr' (rows, read right to left or left to right; rows from the top), 'col-rtl' or
+     'col-ltr' (columns, each read from the top; the columns from the right or from the left). Signs that share a place in
+     the line form one group: in rows, signs over each other (read from the top); in columns, signs side by side (read in
+     the direction of the columns). Returns groups of box indices in reading order: [[i, j], [k], ...] */
+  function order(boxes, dir) {
+    const col = /^col/.test(dir), back = dir === 'rtl' || dir === 'col-rtl', N = boxes.length; if (!N) return [];
+    const A = col ? boxes.map(([x, y, w, h]) => [y, x, h, w]) : boxes;    // columns: the same with x and y swapped
+    const idx = A.map((_, i) => i).sort((i, j) => (A[i][1] + A[i][3] / 2) - (A[j][1] + A[j][3] / 2));
+    const hs = A.map(b => b[3]).sort((a, b) => a - b), mh = hs[hs.length >> 1];
+    const rows = [];                                                     // lines: a box belongs where its middle falls in the band
+    for (const i of idx) { const b = A[i], cy = b[1] + b[3] / 2; let r = rows.find(r => cy > r.y0 - 0.15 * mh && cy < r.y1 + 0.15 * mh && Math.abs(cy - r.cy) < 1.2 * mh);
+      if (!r) { r = { y0: b[1], y1: b[1] + b[3], cy, m: [] }; rows.push(r); } r.m.push(i); r.y0 = Math.min(r.y0, b[1]); r.y1 = Math.max(r.y1, b[1] + b[3]); r.cy = (r.y0 + r.y1) / 2; }
+    rows.sort((a, b) => a.cy - b.cy); if (col && back) rows.reverse();      // columns from the right
+    const out = [];
+    for (const r of rows) {
+      const m = r.m.slice().sort((i, j) => (A[i][0] + A[i][2] / 2) - (A[j][0] + A[j][2] / 2)); if (!col && back) m.reverse();
+      const groups = [];
+      for (const i of m) { const b = A[i], g = groups[groups.length - 1];
+        if (g) { const gx0 = Math.min(...g.map(j => A[j][0])), gx1 = Math.max(...g.map(j => A[j][0] + A[j][2]));
+          const ov = Math.min(gx1, b[0] + b[2]) - Math.max(gx0, b[0]); if (ov > 0.5 * Math.min(b[2], gx1 - gx0)) { g.push(i); continue; } }
+        groups.push([i]); }
+      groups.forEach(g => g.sort((i, j) => (col && back) ? A[j][1] - A[i][1] : A[i][1] - A[j][1]));
+      out.push(...groups); }
+    return out;
+  }
+  function load(json, WN) {
+    // one net, or two (one also trained on damaged signs): their guesses are averaged
+    const nets = [makeNet(json, WN)].concat(json.params2 ? [makeNet(Object.assign({}, json, { params: json.params2 }), WN)] : []);
+    function probs(x) { const ps = nets.map(n => softmax(n(x))); return ps[0].map((v, i) => ps.reduce((a, q) => a + q[i], 0) / ps.length); }
+    function classify(src, box, k) {
+      const p = probs(signPic(src, box)); const idx = p.map((v, i) => i).sort((a, b) => p[b] - p[a]).slice(0, k || 5);
+      return idx.map(i => ({ code: json.signs[i], p: p[i] }));
+    }
+    const J = json.signs[json.signs.length - 1] === 'junk' ? json.signs.length - 1 : -1;
+    function sure1(src, box) { const p = softmax(nets[0](signPic(src, box))); let m = 0; for (let i = 0; i < p.length; i++) if (i !== J && p[i] > m) m = p[i]; return J >= 0 ? m * (1 - p[J]) : m; }
+    function sure(src, box) { const p = probs(signPic(src, box)); let m = 0; for (let i = 0; i < p.length; i++) if (i !== J && p[i] > m) m = p[i]; return J >= 0 ? m * (1 - p[J]) : m; }
+    /* the signs of a picture: of the ways of finding them (paint, carved relief, edges), the one whose boxes the sign
+       reader names most surely; then two neighbouring boxes are joined when the sign reader names them more surely together */
+    /* the signs of a picture, read the way a person does: first the signs the reader is sure of (anchors); they tell how big
+       the signs are and where the lines (or columns, by the reading direction) run; then each line is searched along its
+       length at the expected size, next to what is found already. Boxes off the lines are never considered. */
+    function find(src, O2) { O2 = Object.assign({ anchor: 0.45, extend: 0.65, bigger: 0.15, dir: 'rtl' }, O2 || {});
+      const PR = proposals(src), k = PR.k, P = PR.boxes; if (!P.length) return [];
+      const Wr = Math.round((src.naturalWidth || src.width) * k), Hr = Math.round((src.naturalHeight || src.height) * k), col = /^col/.test(O2.dir);
+      // a box's edge cutting through carving costs sureness; measured against how busy this stone is anyway
+      const cuts = P.map(PR.cut).sort((p, q) => p - q), base = 0.7 * cuts[cuts.length >> 1];
+      const S1 = O2.quick === false ? sure : sure1;
+      const score = b => S1(src, [b[0] / k, b[1] / k, b[2] / k, b[3] / k]) * Math.exp(-1.5 * Math.max(0, PR.cut(b) - base));
+      const ov = (a, b) => { const ix = Math.max(0, Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0])), iy = Math.max(0, Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1])); const i = ix * iy;
+        return [i / (a[2] * a[3] + b[2] * b[3] - i), i / Math.min(a[2] * a[3], b[2] * b[3])]; };
+      const clash = (b, list, u0, c0) => list.some(c => { const [u, c2] = ov(b, c); return u > u0 || c2 > c0; });
+      const pick = (B, S, thr) => { const A = B.map(b => b[2] * b[3]), mA = A.slice().sort((p, q) => p - q)[A.length >> 1] || 1;
+        const R = S.map((s, i) => s * Math.pow(A[i] / mA, O2.bigger)), keep = [];
+        for (const i of R.map((_, i) => i).sort((i, j) => R[j] - R[i])) { if (S[i] < thr) continue; if (clash(B[i], keep.map(j => B[j]), 0.35, 0.5)) continue; keep.push(i); }
+        return keep; };
+      const bz = P.map(PR.busyIn).sort((p, q) => p - q), bare = 0.35 * bz[bz.length >> 1];
+      const SP = P.map(score), anchors = pick(P, SP, O2.anchor).map(i => P[i]); if (!anchors.length) return [];
+      const sz = anchors.map(b => Math.max(b[2], b[3])).sort((p, q) => p - q), scale = sz[sz.length >> 1];
+      // the lines: anchors whose centres lie within 0.6 of a sign of each other across the reading direction
+      const cen = b => col ? b[0] + b[2] / 2 : b[1] + b[3] / 2, lo = b => col ? b[0] : b[1], hi = b => col ? b[0] + b[2] : b[1] + b[3];
+      // the lines come from the anchors that are not thin strokes (a frame line or a crack must not make a line of its own)
+      const thin = b => Math.max(b[2], b[3]) > 4 * Math.min(b[2], b[3]), solid = anchors.filter(b => !thin(b)), lineFrom = solid.length ? solid : anchors;
+      const srt = lineFrom.slice().sort((p, q) => cen(p) - cen(q)), groups = [[srt[0]]];
+      for (const b of srt.slice(1)) { const g = groups[groups.length - 1]; if (cen(b) - cen(g[g.length - 1]) < 0.6 * scale) g.push(b); else groups.push([b]); }
+      let lines = groups.map(g => [Math.min(...g.map(lo)), Math.max(...g.map(hi))]).sort((p, q) => p[0] - q[0]); const L2 = [lines[0]];
+      for (const l of lines.slice(1)) { const m = L2[L2.length - 1]; if (l[0] < m[1] - 0.3 * scale) m[1] = Math.max(m[1], l[1]); else L2.push(l); }
+      const found = anchors.slice(), len = col ? Hr : Wr, across = col ? Wr : Hr;
+      // also every two neighbouring lines together: big signs that fill both (a bird beside a stack of small signs)
+      const L3 = L2.concat(L2.slice(0, -1).map((l, i) => [l[0], L2[i + 1][1]]).filter((l, i) => L2[i + 1][0] - L2[i][1] < 0.6 * scale));
+      for (let [a, b] of L3) {
+        a = Math.max(0, a - 0.1 * scale); b = Math.min(across, b + 0.1 * scale); const wid = b - a, V = [];
+        for (const f of [0.5, 0.75, 1]) { const cw = wid * f, offs = f < 1 ? [...new Set([0, (wid - cw) / 2, wid - cw])] : [0];
+          for (const off of offs) for (const ln of [0.4, 0.7, 1.05, 1.5, 2.2].map(v => v * scale)) {
+            const step = Math.max(2, 0.35 * Math.min(ln, scale));
+            for (let p = 0; p <= Math.max(0, len - ln); p += step) { const w = col ? [a + off, p, cw, ln] : [p, a + off, ln, cw]; if (PR.busyIn(w) > bare && !clash(w, found, 0.3, 0.5)) V.push(w); } } }
+        if (!V.length) continue;
+        const SV = V.map(score);
+        for (const i of pick(V, SV, O2.extend)) if (!clash(V[i], found, 0.3, 0.5)) found.push(V[i]);
+      }
+      // thin strokes outside every line are frames or cracks, not signs
+      const inLine = b => L2.some(([a, z]) => cen(b) > a - 0.15 * scale && cen(b) < z + 0.15 * scale);
+      return found.filter(b => !thin(b) || inLine(b)).map(b => [b[0] / k, b[1] / k, b[2] / k, b[3] / k]);
+    }
+    return { classify: (src, box, k) => classify(src, box, (k || 5) + 1).filter(c => c.code !== 'junk').slice(0, k || 5), find, findSigns, order, signs: json.signs, credit: json.credit };
+  }
+  const API = { load, findSigns, proposals, order, signPic };
+  if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.InscReader = API;
+})(typeof window !== 'undefined' ? window : this);
+
 /* Line reader page: import a photo of a line, frame it, cut it into pieces, choose words, write the transcription. */
 (function () {
   'use strict';
@@ -2544,12 +2866,14 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
   }
   function setMode(m) {
     mode = m; try { localStorage.setItem('lr.mode', m); } catch (e) {}
-    $('lrModeH').classList.toggle('on', m === 'hieratic'); $('lrModeP').classList.toggle('on', m === 'print');
-    $('lrModeH').setAttribute('aria-pressed', m === 'hieratic'); $('lrModeP').setAttribute('aria-pressed', m === 'print');
+    [['lrModeH', 'hieratic'], ['lrModeP', 'print'], ['lrModeI', 'insc']].forEach(([id, v]) => { $(id).classList.toggle('on', m === v); $(id).setAttribute('aria-pressed', m === v); });
     $('lrDropHint').textContent = m === 'print' ? 'One line of printed hieroglyphs (from JSesh, a book or a transcription), dark signs on a light ground. Drag across the picture to frame the line if it shows more.'
+      : m === 'insc' ? 'A photo of signs carved or painted on stone: a stela, a tomb or temple wall. Drag across the photo to frame the signs you want read, or use the whole photo.'
       : 'One line of hieratic, cut fairly close above and below. Drag across the photo to frame the line if it shows more.';
-    ['lrCut', 'lrPieces', 'lrOut', 'lrPrint'].forEach(id => { $(id).hidden = true; });
+    ['lrCut', 'lrPieces', 'lrOut', 'lrPrint', 'lrInsc', 'lrIOut'].forEach(id => { $(id).hidden = true; });
+    $('lrRead').textContent = m === 'insc' ? 'Read the framed signs' : 'Read the framed line';
     if (m === 'print') loadPrint().catch(() => {});
+    if (m === 'insc') loadInsc().catch(() => {});
   }
   const printText = res => window.PrintReader.toText(res, U2C);
   window.__lrP = { printText, drawPrint: () => drawPrint(), load: () => loadPrint() };
@@ -2732,10 +3056,98 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
   }
 
   /* ---------- 2: the line, its ink and the cuts ---------- */
+  /* ---------- inscription photo: the signs found, named and put in order (lr-insc.js) ---------- */
+  let IREADY = null, IR = null, insc = null, iscale = 1;
+  function loadInsc() {
+    if (IREADY) return IREADY;
+    IREADY = Promise.all([fetch('lr-insc.json', { cache: 'no-cache' }).then(r => { if (!r.ok) throw new Error('lr-insc.json'); return r.json(); }), loadPrint()])
+      .then(([j]) => { IR = window.InscReader.load(j, window.WordNet); $('lrICredit').textContent = 'The sign reader learnt from ' + j.count.filter((c, i) => j.signs[i] !== 'junk').reduce((a, b) => a + b, 0).toLocaleString('en') + ' pictures of single signs in ' + j.signs.filter(c => c !== 'junk').length + ' Gardiner classes. ' + j.credit; });
+    IREADY.catch(() => { IREADY = null; });
+    return IREADY;
+  }
+  function readInsc(f) {
+    $('lrInsc').hidden = false; $('lrIOut').hidden = true; $('lrIList').innerHTML = '<li class="lw-hint">Finding the signs&hellip;</li>';
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(f[2])); c.height = Math.max(1, Math.round(f[3]));
+    c.getContext('2d').drawImage(img, f[0], f[1], f[2], f[3], 0, 0, c.width, c.height);
+    insc = { src: c, boxes: [], cand: [], pick: [], dir: $('lrIDir').value };
+    loadInsc().then(() => { setTimeout(findInsc, 20); }).catch(() => { $('lrIList').innerHTML = '<li class="lw-note">The sign reader could not be loaded. Check the connection and reload the page.</li>'; });
+    $('lrInsc').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  }
+  function findInsc() {
+    insc.boxes = IR.find(insc.src, { dir: insc.dir }); insc.cand = insc.boxes.map(b => IR.classify(insc.src, b, 5)); insc.pick = insc.boxes.map(() => 0);
+    const m = $('lrIMsg'); m.hidden = false;
+    m.textContent = insc.boxes.length ? `${insc.boxes.length} signs found. Check the boxes: add the signs it missed, take away boxes that are not signs.` : 'No signs found. Drag across the picture to box the signs.';
+    drawInsc();
+  }
+  function addInscBox(b) { insc.boxes.push(b); insc.cand.push(IR.classify(insc.src, b, 5)); insc.pick.push(0); drawInsc(); inscCount(); }
+  const inscCount = () => { const m = $('lrIMsg'); m.hidden = false; m.textContent = insc.boxes.length + (insc.boxes.length === 1 ? ' sign' : ' signs') + ' boxed. Drag across the picture to add a box; click a box to take it away.'; };
+  function inscPointer() {
+    const c = $('lrICanvas'); let start = null, cur = null;
+    const pos = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width / iscale, (e.clientY - r.top) * c.height / r.height / iscale]; };
+    c.addEventListener('pointerdown', e => { if (!insc) return; start = pos(e); cur = start; c.setPointerCapture(e.pointerId); });
+    c.addEventListener('pointermove', e => { if (!start) return; cur = pos(e); drawInscCanvas([Math.min(start[0], cur[0]), Math.min(start[1], cur[1]), Math.abs(cur[0] - start[0]), Math.abs(cur[1] - start[1])]); });
+    c.addEventListener('pointerup', () => { if (!start) return; const a = start, b = cur; start = null;
+      const w = Math.abs(b[0] - a[0]), h = Math.abs(b[1] - a[1]);
+      if (w > 6 / iscale && h > 6 / iscale) { addInscBox([Math.min(a[0], b[0]), Math.min(a[1], b[1]), w, h]); return; }
+      // a click: the smallest box under it goes
+      let k = -1, ar = Infinity; insc.boxes.forEach(([x, y, bw, bh], i) => { if (a[0] >= x && a[0] <= x + bw && a[1] >= y && a[1] <= y + bh && bw * bh < ar) { ar = bw * bh; k = i; } });
+      if (k >= 0) { insc.boxes.splice(k, 1); insc.cand.splice(k, 1); insc.pick.splice(k, 1); drawInsc(); inscCount(); } else drawInscCanvas(); });
+  }
+  window.__inscFirst = () => insc && insc.boxes.length ? { x: insc.boxes[0][0] * iscale, y: insc.boxes[0][1] * iscale, cw: $('lrICanvas').width } : null;   // for tests
+  function drawInscCanvas(drag) {
+    const c = $('lrICanvas'), maxW = c.parentElement.clientWidth || 760, src = insc.src;
+    iscale = Math.min(1.5, maxW / src.width, 520 / src.height); c.width = Math.round(src.width * iscale); c.height = Math.round(src.height * iscale);
+    const x = c.getContext('2d'); x.drawImage(src, 0, 0, c.width, c.height);
+    const ord = IR.order(insc.boxes, insc.dir), num = new Map(); let k = 0; ord.forEach(g => g.forEach(i => num.set(i, ++k)));
+    x.lineWidth = 2; x.font = 'bold 13px system-ui, sans-serif';
+    insc.boxes.forEach(([bx, by, bw, bh], i) => { x.strokeStyle = '#e0661f'; x.strokeRect(bx * iscale, by * iscale, bw * iscale, bh * iscale);
+      const t = String(num.get(i)), tw = x.measureText(t).width + 6; x.fillStyle = '#e0661f'; x.fillRect(bx * iscale, by * iscale, tw, 16); x.fillStyle = '#fff'; x.fillText(t, bx * iscale + 3, by * iscale + 12); });
+    if (drag) { x.setLineDash([5, 4]); x.strokeStyle = '#2a7ad1'; x.strokeRect(drag[0] * iscale, drag[1] * iscale, drag[2] * iscale, drag[3] * iscale); x.setLineDash([]); }
+    return ord;
+  }
+  function signSVG(code, h) { try { const L = LW.layoutLine(code, G, { direction: 'rtl' }); return LW.toSVG(L, G, { unit: h / (L.height + 8), pad: 4 }); } catch (e) { return ''; } }
+  function drawInsc() {
+    const ord = drawInscCanvas(), list = $('lrIList'); list.innerHTML = ''; let k = 0;
+    ord.forEach(g => g.forEach(i => { k++;
+      const [bx, by, bw, bh] = insc.boxes[i], li = document.createElement('li'), th = document.createElement('canvas'), hh = 56, ww = Math.max(20, Math.round(bw * hh / bh));
+      th.width = Math.min(160, ww); th.height = hh; th.className = 'thumb'; th.getContext('2d').drawImage(insc.src, bx, by, bw, bh, 0, 0, th.width, hh);
+      li.innerHTML = `<div class="lr-isign"><span class="num">${k}</span></div>`; const row = li.firstChild; row.appendChild(th);
+      const cs = document.createElement('div'); cs.className = 'lr-icands';
+      insc.cand[i].forEach((c, j) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'lr-cand' + (insc.pick[i] === j ? ' on' : '');
+        b.innerHTML = `<span class="g">${signSVG(c.code, 44)}</span><span class="t">${esc(c.code)}</span><span class="p">${Math.round(100 * c.p)} %</span>`;
+        b.addEventListener('click', () => { insc.pick[i] = j; drawInsc(); }); cs.appendChild(b); });
+      row.appendChild(cs); list.appendChild(li);
+      if (window.ReaderFeedback) { if (!insc.fbKey) insc.fbKey = window.ReaderFeedback.hash(insc.src.toDataURL('image/jpeg', 0.5));
+        window.ReaderFeedback.signTools(li, { src: insc.src, srcKey: insc.fbKey, box: insc.boxes[i], code: insc.cand[i][insc.pick[i]].code, guess: insc.cand[i][0].code, file: window.__lrFile || '' }); } }));
+    writeInsc(ord);
+  }
+  function writeInsc(ord) {
+    if (!ord.length) { $('lrIOut').hidden = true; return; }
+    $('lrIOut').hidden = false;
+    if (!SM.__inv) { SM.__inv = {}; Object.entries(SM.uni).forEach(([ch, cd]) => { if (!SM.__inv[cd]) SM.__inv[cd] = ch; }); }
+    const code = i => insc.cand[i][insc.pick[i]].code;
+    const col = /^col/.test(insc.dir), J = col ? '*' : ':', UJ = col ? '\u{13431}' : '\u{13430}';   // a group: over each other (rows) or side by side (columns)
+    const mdc = ord.map(g => g.map(code).join(J)).join('-');
+    const uni = ord.map(g => g.map(i => SM.__inv[code(i)] || '').join(g.length > 1 ? UJ : '')).join('');
+    try { const L = LW.layoutLine(mdc, G, { direction: /ltr$/.test(insc.dir) ? 'ltr' : 'rtl' }); $('lrIStage').innerHTML = LW.toSVG(L, G, { unit: 4 }); }
+    catch (e) { $('lrIStage').innerHTML = '<div class="lw-loading">These signs could not be drawn.</div>'; }
+    $('lrIStage').dataset.uni = uni; $('lrICodes').textContent = ord.map(g => g.map(code).join(J)).join(' ');
+    // words of our dictionary spelt by the signs in a row (2 signs or more), longest first
+    const words = $('lrIWords'); words.textContent = '';
+    if (ALLW && ALLW.length) {
+      if (!window.__spellIdx) { const m = new Map(); ALLW.forEach(w => { if (w[1] && !w[5]) { const k2 = Array.from(w[1]).filter(ch => ch.codePointAt(0) >= 0x13000 && ch.codePointAt(0) <= 0x1342F).join(''); if (Array.from(k2).length >= 2 && (!m.has(k2) || (w[3] || 0) > (m.get(k2)[3] || 0))) m.set(k2, w); } }); window.__spellIdx = m; }
+      const seq = ord.flatMap(g => g.map(i => SM.__inv[code(i)] || '?')), out = [];
+      for (let a = 0; a < seq.length;) { let hit = null;
+        for (let b = Math.min(seq.length, a + 8); b >= a + 2 && !hit; b--) { const w = window.__spellIdx.get(seq.slice(a, b).join('')); if (w) hit = [w, b]; }
+        if (hit) { out.push(hit[0][0] + (hit[0][4] ? ' (' + hit[0][4][1].split(';')[0] + ')' : hit[0][2] ? ' (' + hit[0][2] + ')' : '')); a = hit[1]; } else a++; }
+      if (out.length) words.textContent = 'Words of our dictionary in these signs: ' + out.join(' · ');
+    } else loadAll().then(() => { if (insc) writeInsc(drawInscCanvas()); }).catch(() => {});
+  }
   const invColor = c => { const m = /rgb\((\d+),(\d+),(\d+)\)/.exec(c); return m ? `rgb(${255 - m[1]},${255 - m[2]},${255 - m[3]})` : c; };
   function readLine(whole) {
     const f = (!whole && frame) ? frame : [0, 0, img.naturalWidth, img.naturalHeight];
     if (mode === 'print') { readPrint(f); return; }
+    if (mode === 'insc') { readInsc(f); return; }
     let st = straighten(f);
     if (whole || !frame) st = inkBand(f, st);           // a whole picture: only the strongest line of writing in it
     const H = R.H64, W = Math.max(8, Math.round(f[2] * H / st.Hb));
@@ -2954,8 +3366,14 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
     document.addEventListener('paste', e => { const it = [...(e.clipboardData || {}).items || []].find(i => i.type.startsWith('image/')); if (it) useFile(it.getAsFile()); });
     $('lrModeH').addEventListener('click', () => setMode('hieratic'));
     $('lrModeP').addEventListener('click', () => setMode('print'));
+    $('lrModeI').addEventListener('click', () => setMode('insc'));
     let pm = 'hieratic'; try { pm = localStorage.getItem('lr.mode') || 'hieratic'; } catch (e) {}
-    setMode(pm === 'print' ? 'print' : 'hieratic');
+    setMode(pm === 'print' || pm === 'insc' ? pm : 'hieratic');
+    inscPointer();
+    $('lrIFind').addEventListener('click', () => { if (insc) findInsc(); });
+    $('lrIDir').addEventListener('change', () => { if (insc) { insc.dir = $('lrIDir').value; drawInsc(); } });
+    $('lrICopy').addEventListener('click', e => copy($('lrIStage').dataset.uni || '', e.target));
+    $('lrIOpen').addEventListener('click', () => { location.href = 'line-writer.html#t=' + encodeURIComponent($('lrIStage').dataset.uni || ''); });
     $('lrPText').addEventListener('input', () => { clearTimeout(window.__lrpT); window.__lrpT = setTimeout(drawPrint, 150); });
     $('lrPCopy').addEventListener('click', e => copy($('lrPText').value, e.target));
     $('lrPOpen').addEventListener('click', () => { location.href = 'line-writer.html#t=' + encodeURIComponent($('lrPText').value); });
@@ -2979,7 +3397,7 @@ window.LR_GRAMMAR = {"classes":["N","V","ADJ","NUM","PREP","SUF","DEP","ART","PA
     });
     $('lrDens').addEventListener('change', () => { if (!line) return; line.cuts = R.suggestCuts(line.map, density()); choice.clear(); drawLine(); if (MODEL) buildPieces(); });
     framePointer(); cutPointer();
-    window.addEventListener('resize', () => { if (img && !$('lrFrame').hidden) { const c = $('lrSrc'); const maxW = c.parentElement.clientWidth || 760; fscale = Math.min(1, maxW / img.naturalWidth, 420 / img.naturalHeight); c.width = Math.round(img.naturalWidth * fscale); c.height = Math.round(img.naturalHeight * fscale); drawFrame(); } if (line) drawLine(); });
+    window.addEventListener('resize', () => { if (img && !$('lrFrame').hidden) { const c = $('lrSrc'); const maxW = c.parentElement.clientWidth || 760; fscale = Math.min(1, maxW / img.naturalWidth, 420 / img.naturalHeight); c.width = Math.round(img.naturalWidth * fscale); c.height = Math.round(img.naturalHeight * fscale); drawFrame(); } if (line) drawLine(); if (insc && !$('lrInsc').hidden) drawInscCanvas(); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
