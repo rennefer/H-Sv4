@@ -1110,9 +1110,11 @@ html.pz-lock, html.pz-lock body{ overflow:hidden; }
     <a class="sb-link" href="horus-and-seth.html"><span class="g">𓅃𓅆𓁣𓅆</span>Horus and Seth</a>
     <a class="sb-link active" href="two-brothers.html"><span class="g">𓀀𓀁</span>Tale of Two Brothers</a>
     <a class="sb-link" href="shipwrecked-sailor.html"><span class="g">𓊛</span>Shipwrecked Sailor</a>
+    <a class="sb-link" href="doomed-prince.html"><span class="g">𓆊</span>Doomed Prince</a>
     </div>
     <a class="sb-link" href="playbook.html" style="margin-top:14px;"><span class="g">𓏛</span>Playbook</a>
     <a class="sb-link" href="line-writer.html"><span class="g">𓏞</span>Line Writer</a>
+    <a class="sb-link" href="line-reader.html"><span class="g">𓁹</span>Line Reader</a>
     <a class="sb-link" href="ateniit.html"><span class="g">𓈖</span>Ateniit – the game</a>
   </nav>
 </aside>
@@ -2264,4 +2266,13 @@ const twoBrothersTab = createLineTab(TWO_BROTHERS, {pageRow:'tbPageRow', count:'
   if(!isNaN(page) && !isNaN(line)) go(page, line, q.has('word') ? parseInt(q.get('word'), 10) : null);
 })();
 </script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+<script src="site-update-check.js" defer></script>
 </body></html>
